@@ -224,6 +224,7 @@
             const [isLocked, setIsLocked] = useState(true);
             const [view, setView] = useState('dashboard');
             const [transcripts, setTranscripts] = useState([]);
+            const [transcriptFolders, setTranscriptFolders] = useState([]);
             const [tags, setTags] = useState([]);
             const [globalArtifacts, setGlobalArtifacts] = useState([]);
             const [activityTypes, setActivityTypes] = useState(['Edited', 'First Review', 'Coded', 'Member Checked']);
@@ -252,6 +253,7 @@
             useEffect(() => {
                 const loadData = async () => {
                     setTranscripts(await dbGet('data', 'transcripts') || []);
+                    setTranscriptFolders(await dbGet('data', 'transcript_folders') || []);
                     setTags(await dbGet('data', 'tags') || []);
                     setGlobalArtifacts(await dbGet('data', 'global_artifacts') || []);
                     setParticipants(await dbGet('data', 'participants') || []);
@@ -266,33 +268,29 @@
             useEffect(() => {
                 if (isReady && !isLocked) {
                     dbSet('data', 'transcripts', transcripts);
+                    dbSet('data', 'transcript_folders', transcriptFolders);
                     dbSet('data', 'tags', tags);
                     dbSet('data', 'global_artifacts', globalArtifacts);
                     dbSet('data', 'activityTypes', activityTypes);
                     dbSet('data', 'participants', participants);
                     dbSet('data', 'analysis_canvases', analysisCanvases);
                 }
-            }, [transcripts, tags, globalArtifacts, activityTypes, participants, analysisCanvases, isReady, isLocked]);
+            }, [transcripts, transcriptFolders, tags, globalArtifacts, activityTypes, participants, analysisCanvases, isReady, isLocked]);
 
             if (isLocked) return <LockScreen onUnlock={() => setIsLocked(false)} />;
             if (!isReady) return <div className="flex h-screen items-center justify-center">Loading...</div>;
 
             const activeTranscript = transcripts.find(t => t.id === activeId);
-            const folders = [...new Set(transcripts.map(t => t.folder).filter(Boolean))];
-            const subfolderMap = transcripts.reduce((acc, t) => {
-                const top = t.folder || 'Uncategorized';
-                if (!acc[top]) acc[top] = new Set();
-                if (t.subfolder) acc[top].add(t.subfolder);
-                return acc;
-            }, {});
+            const folders = [...new Set([...transcriptFolders, ...transcripts.map(t => t.folder).filter(Boolean)])].sort((a, b) => a.localeCompare(b));
 
             const handleCreateTranscript = async (data) => {
                 const now = Date.now().toString();
+                const targetFolder = (data.folder || '').trim() || 'Uncategorized';
                 const newDoc = {
                     id: now,
                     title: data.title,
-                    folder: data.folder || 'Uncategorized',
-                    subfolder: data.subfolder || '',
+                    folder: targetFolder,
+                    subfolder: '',
                     content: '',
                     notes: '',
                     artifacts: [],
@@ -302,9 +300,66 @@
                     activityLog: [{ id: now + '_created', type: 'Created', note: 'Transcript initialized', timestamp: new Date().toISOString() }]
                 };
                 if (data.audioFile) await dbSet('files', `audio_${newDoc.id}`, data.audioFile);
+                if (targetFolder !== 'Uncategorized' && !transcriptFolders.includes(targetFolder)) {
+                    setTranscriptFolders([...transcriptFolders, targetFolder]);
+                }
                 setTranscripts([newDoc, ...transcripts]);
                 setActiveId(newDoc.id);
                 setView('editor');
+            };
+
+            const handleCreateFolder = (folderName) => {
+                const cleaned = folderName.trim();
+                if (!cleaned || cleaned === 'Uncategorized' || transcriptFolders.includes(cleaned)) return;
+                setTranscriptFolders([...transcriptFolders, cleaned]);
+            };
+
+            const handleRenameFolder = (oldName, newName) => {
+                if (!oldName || oldName === 'Uncategorized') return;
+                const cleaned = newName.trim();
+                if (!cleaned || cleaned === oldName) return;
+                if (cleaned === 'Uncategorized') {
+                    alert('Cannot rename a folder to Uncategorized.');
+                    return;
+                }
+
+                const allFolderNames = [...new Set([...transcriptFolders, ...transcripts.map(t => t.folder).filter(Boolean)])];
+                const targetExists = allFolderNames.includes(cleaned);
+                if (targetExists && !confirm(`Folder "${cleaned}" already exists. Merge "${oldName}" into it?`)) return;
+
+                const nextFolders = transcriptFolders
+                    .filter(f => f !== oldName)
+                    .concat(targetExists ? [] : [cleaned]);
+                setTranscriptFolders(nextFolders);
+                setTranscripts(transcripts.map(t => (t.folder || 'Uncategorized') === oldName ? { ...t, folder: cleaned, subfolder: '' } : t));
+            };
+
+            const handleDeleteFolder = (folderName) => {
+                if (!folderName || folderName === 'Uncategorized') return;
+                const count = transcripts.filter(t => (t.folder || 'Uncategorized') === folderName).length;
+                const ok = count > 0
+                    ? confirm(`Folder "${folderName}" contains ${count} transcript(s). Delete this folder and move them to Uncategorized?`)
+                    : confirm(`Delete empty folder "${folderName}"?`);
+                if (!ok) return;
+
+                setTranscriptFolders(transcriptFolders.filter(f => f !== folderName));
+                if (count > 0) {
+                    setTranscripts(transcripts.map(t => (t.folder || 'Uncategorized') === folderName ? { ...t, folder: 'Uncategorized', subfolder: '' } : t));
+                }
+            };
+
+            const handleMoveTranscriptToFolder = (transcriptId, folderName) => {
+                const targetFolder = folderName.trim() || 'Uncategorized';
+                if (targetFolder !== 'Uncategorized' && !transcriptFolders.includes(targetFolder)) {
+                    setTranscriptFolders([...transcriptFolders, targetFolder]);
+                }
+                setTranscripts(transcripts.map(t => t.id === transcriptId ? { ...t, folder: targetFolder, subfolder: '' } : t));
+            };
+
+            const handleRenameTranscript = (transcriptId, title) => {
+                const nextTitle = title.trim();
+                if (!nextTitle) return;
+                setTranscripts(transcripts.map(t => t.id === transcriptId ? { ...t, title: nextTitle } : t));
             };
 
             const handleDeleteTranscript = async (id) => {
@@ -390,6 +445,41 @@
                 }
             };
 
+            useEffect(() => {
+                const onSaveShortcut = async (e) => {
+                    const isSaveShortcut = (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's';
+                    if (!isSaveShortcut) return;
+
+                    e.preventDefault();
+                    if (isLocked || !isReady) return;
+
+                    const quickBackup = confirm('Backup shortcut: OK to enter a password and download backup now. Cancel to open Backup & Restore.');
+                    if (!quickBackup) {
+                        setView('backup');
+                        return;
+                    }
+
+                    const password = prompt('Enter backup password (minimum 6 characters):', '');
+                    if (password === null) return;
+                    if (password.length < 6) {
+                        alert('Backup password must be at least 6 characters. Opening Backup & Restore.');
+                        setView('backup');
+                        return;
+                    }
+
+                    try {
+                        await handleBackupDownload(password);
+                        alert('Encrypted backup downloaded.');
+                    } catch (err) {
+                        alert('Backup failed. Opening Backup & Restore.');
+                        setView('backup');
+                    }
+                };
+
+                window.addEventListener('keydown', onSaveShortcut);
+                return () => window.removeEventListener('keydown', onSaveShortcut);
+            }, [isLocked, isReady, handleBackupDownload]);
+
             return (
                 <div className="flex h-screen bg-hero relative">
                     <aside className="w-72 bg-ink text-slate-200 flex flex-col shadow-soft z-10">
@@ -415,8 +505,12 @@
                             <Dashboard
                                 transcripts={transcripts}
                                 folders={folders}
-                                subfolderMap={subfolderMap}
                                 onCreate={handleCreateTranscript}
+                                onCreateFolder={handleCreateFolder}
+                                onRenameFolder={handleRenameFolder}
+                                onDeleteFolder={handleDeleteFolder}
+                                onMoveTranscript={handleMoveTranscriptToFolder}
+                                onRenameTranscript={handleRenameTranscript}
                                 onOpen={(id) => { setActiveId(id); setView('editor'); }}
                                 onDelete={handleDeleteTranscript}
                                 participants={participants}
@@ -542,37 +636,103 @@
             );
         }
 
-        function Dashboard({ transcripts, folders, subfolderMap, onCreate, onOpen, onDelete, participants }) {
+        function Dashboard({ transcripts, folders, onCreate, onCreateFolder, onRenameFolder, onDeleteFolder, onMoveTranscript, onRenameTranscript, onOpen, onDelete, participants }) {
             const [showModal, setShowModal] = useState(false);
             const [title, setTitle] = useState('');
             const [folder, setFolder] = useState('');
-            const [subfolder, setSubfolder] = useState('');
             const [audioFile, setAudioFile] = useState(null);
             const [selectedParticipantId, setSelectedParticipantId] = useState('');
             const [showParticipantInfo, setShowParticipantInfo] = useState(false);
+            const [newFolderName, setNewFolderName] = useState('');
+            const [selectedFolder, setSelectedFolder] = useState('All');
+            const [dragTranscriptId, setDragTranscriptId] = useState(null);
+            const [hoverFolder, setHoverFolder] = useState('');
+            const [editingTitleId, setEditingTitleId] = useState(null);
+            const [editingTitle, setEditingTitle] = useState('');
+            const [editingFolderName, setEditingFolderName] = useState(null);
+            const [editingFolderValue, setEditingFolderValue] = useState('');
+            const [moveToast, setMoveToast] = useState('');
 
-            const existingSubfolders = (subfolderMap[folder] ? [...subfolderMap[folder]] : []);
+            const folderList = ['Uncategorized', ...folders.filter(f => f !== 'Uncategorized')];
+            const folderCounts = transcripts.reduce((acc, t) => {
+                const name = t.folder || 'Uncategorized';
+                acc[name] = (acc[name] || 0) + 1;
+                return acc;
+            }, {});
+            const visibleTranscripts = selectedFolder === 'All'
+                ? transcripts
+                : transcripts.filter(t => (t.folder || 'Uncategorized') === selectedFolder);
 
-            const handleSubmit = async (e) => {
+            useEffect(() => {
+                if (selectedFolder === 'All') return;
+                if (!folderList.includes(selectedFolder)) setSelectedFolder('All');
+            }, [selectedFolder, folderList]);
+
+            useEffect(() => {
+                if (!moveToast) return;
+                const timer = setTimeout(() => setMoveToast(''), 1800);
+                return () => clearTimeout(timer);
+            }, [moveToast]);
+
+            const handleSubmit = (e) => {
                 e.preventDefault();
                 if (!title.trim()) return;
-                onCreate({ title, folder, subfolder, audioFile, participantId: selectedParticipantId || null });
+                onCreate({ title: title.trim(), folder, audioFile, participantId: selectedParticipantId || null });
                 setShowModal(false);
                 setTitle('');
                 setFolder('');
-                setSubfolder('');
                 setAudioFile(null);
                 setSelectedParticipantId('');
+                setShowParticipantInfo(false);
             };
 
-            const grouped = transcripts.reduce((acc, curr) => {
-                const top = curr.folder || 'Uncategorized';
-                const sub = curr.subfolder || 'General';
-                if (!acc[top]) acc[top] = {};
-                if (!acc[top][sub]) acc[top][sub] = [];
-                acc[top][sub].push(curr);
-                return acc;
-            }, {});
+            const handleCreateFolder = () => {
+                if (!newFolderName.trim()) return;
+                onCreateFolder(newFolderName.trim());
+                setSelectedFolder(newFolderName.trim());
+                setNewFolderName('');
+            };
+
+            const startRenameFolder = (folderName) => {
+                setEditingFolderName(folderName);
+                setEditingFolderValue(folderName);
+            };
+
+            const saveRenameFolder = () => {
+                if (!editingFolderName) return;
+                const oldName = editingFolderName;
+                const newName = editingFolderValue.trim();
+                onRenameFolder(oldName, newName);
+                if (selectedFolder === oldName && newName) setSelectedFolder(newName);
+                setEditingFolderName(null);
+                setEditingFolderValue('');
+            };
+
+            const cancelRenameFolder = () => {
+                setEditingFolderName(null);
+                setEditingFolderValue('');
+            };
+
+            const saveTitleEdit = () => {
+                if (!editingTitleId) return;
+                onRenameTranscript(editingTitleId, editingTitle);
+                setEditingTitleId(null);
+                setEditingTitle('');
+            };
+
+            const showMoveToast = (transcriptId, targetFolder) => {
+                const moved = transcripts.find(t => t.id === transcriptId);
+                const target = targetFolder || 'Uncategorized';
+                setMoveToast(`${moved?.title || 'Transcript'} moved to ${target}`);
+            };
+
+            const handleQuickMove = (transcriptId, targetFolder) => {
+                if (!targetFolder) return;
+                const current = (transcripts.find(t => t.id === transcriptId)?.folder) || 'Uncategorized';
+                if (current === targetFolder) return;
+                onMoveTranscript(transcriptId, targetFolder);
+                showMoveToast(transcriptId, targetFolder);
+            };
 
             return (
                 <div className="p-8 h-full overflow-y-auto">
@@ -581,40 +741,204 @@
                             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                                 <div>
                                     <h2 className="text-4xl font-display">Transcript Workspace</h2>
-                                    <p className="text-slate-500 mt-1">Organize transcripts using folder and subfolder hierarchy (2 levels).</p>
+                                    <p className="text-slate-500 mt-1">Drag transcript cards into the folder sidebar. Rename titles and manage folders inline.</p>
                                 </div>
                                 <button onClick={() => setShowModal(true)} className="bg-tide hover:bg-teal-600 text-white px-5 py-3 rounded-xl shadow font-semibold">New Transcript</button>
                             </div>
                         </section>
 
-                        {Object.keys(grouped).length === 0 ? (
-                            <div className="text-center py-20 bg-white rounded-2xl border border-dashed text-slate-500">No transcripts yet.</div>
-                        ) : (
-                            Object.entries(grouped).map(([folderName, subGroups]) => (
-                                <div key={folderName} className="space-y-4">
-                                    <h3 className="text-2xl font-bold text-ink">Folder: {folderName}</h3>
-                                    {Object.entries(subGroups).map(([subName, items]) => (
-                                        <div key={subName} className="bg-white/80 rounded-2xl border p-4">
-                                            <h4 className="text-sm uppercase tracking-wider font-bold text-slate-500 mb-3">Subfolder: {subName}</h4>
-                                            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                                                {items.map(t => (
-                                                    <div key={t.id} className="bg-white p-5 rounded-xl border shadow-sm cursor-pointer relative group transition hover:border-tide" onClick={() => onOpen(t.id)}>
-                                                        <h5 className="font-semibold text-lg pr-8">{t.title}</h5>
-                                                        <p className="text-sm text-slate-500 mt-1">{t.content ? `${t.content.trim().split(/\s+/).length} words` : 'Empty transcript'}</p>
-                                                        <div className="mt-3 flex flex-wrap gap-2">
-                                                            {t.hasAudio && <span className="text-xs bg-teal-50 text-teal-700 px-2 py-1 rounded-full">Audio</span>}
-                                                            {t.notes && <span className="text-xs bg-amber-50 text-amber-700 px-2 py-1 rounded-full">Memo</span>}
-                                                            {t.activityLog && t.activityLog.length > 1 && <span className="text-xs bg-emerald-50 text-emerald-700 px-2 py-1 rounded-full">{t.activityLog.length} logs</span>}
-                                                        </div>
-                                                        <button onClick={(e) => { e.stopPropagation(); onDelete(t.id); }} className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-slate-300 hover:text-red-500 bg-white p-1 rounded">Delete</button>
+                        <section className="grid lg:grid-cols-[320px,1fr] gap-6 items-start">
+                            <aside className="bg-white/90 border rounded-2xl p-4 shadow-soft space-y-4 lg:sticky lg:top-6">
+                                <div className="space-y-2">
+                                    <p className="text-xs uppercase tracking-wider font-bold text-slate-500">Folders</p>
+                                    <div className="flex gap-2">
+                                        <input
+                                            value={newFolderName}
+                                            onChange={e => setNewFolderName(e.target.value)}
+                                            onKeyDown={e => e.key === 'Enter' && handleCreateFolder()}
+                                            className="flex-1 border border-slate-300 rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-tide"
+                                            placeholder="New folder"
+                                        />
+                                        <button onClick={handleCreateFolder} className="bg-ink hover:bg-slate-800 text-white px-3 py-2 rounded-lg text-sm font-semibold">Add</button>
+                                    </div>
+                                </div>
+
+                                <div className="space-y-2">
+                                    <button
+                                        onClick={() => setSelectedFolder('All')}
+                                        className={`w-full text-left px-3 py-2.5 rounded-lg border text-sm font-semibold transition ${selectedFolder === 'All' ? 'bg-ink text-white border-ink' : 'bg-white text-slate-700 border-slate-300 hover:border-slate-400'}`}
+                                    >
+                                        All Transcripts ({transcripts.length})
+                                    </button>
+
+                                    {folderList.map(folderName => (
+                                        <div
+                                            key={folderName}
+                                            onDragOver={(e) => {
+                                                e.preventDefault();
+                                                setHoverFolder(folderName);
+                                            }}
+                                            onDragLeave={() => setHoverFolder('')}
+                                            onDrop={(e) => {
+                                                e.preventDefault();
+                                                if (dragTranscriptId) {
+                                                    onMoveTranscript(dragTranscriptId, folderName);
+                                                    showMoveToast(dragTranscriptId, folderName);
+                                                }
+                                                setHoverFolder('');
+                                                setDragTranscriptId(null);
+                                            }}
+                                            className={`rounded-lg border p-2 transition ${hoverFolder === folderName ? 'border-ember ring-2 ring-ember/30' : 'border-slate-200'}`}
+                                        >
+                                            {editingFolderName === folderName ? (
+                                                <div className="space-y-2">
+                                                    <input
+                                                        autoFocus
+                                                        value={editingFolderValue}
+                                                        onChange={e => setEditingFolderValue(e.target.value)}
+                                                        onKeyDown={(e) => {
+                                                            if (e.key === 'Enter') {
+                                                                e.preventDefault();
+                                                                saveRenameFolder();
+                                                            }
+                                                            if (e.key === 'Escape') cancelRenameFolder();
+                                                        }}
+                                                        className="w-full border border-slate-300 rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-tide"
+                                                    />
+                                                    <div className="flex gap-2 justify-end">
+                                                        <button onClick={cancelRenameFolder} className="px-2 py-1 rounded bg-slate-100 text-slate-700 text-xs">Cancel</button>
+                                                        <button onClick={saveRenameFolder} className="px-2 py-1 rounded bg-tide text-white text-xs">Save</button>
                                                     </div>
-                                                ))}
-                                            </div>
+                                                </div>
+                                            ) : (
+                                                <div className="flex items-center gap-2">
+                                                    <button
+                                                        onClick={() => setSelectedFolder(folderName)}
+                                                        className={`flex-1 text-left px-2 py-1.5 rounded text-sm font-semibold transition ${selectedFolder === folderName ? 'bg-tide text-white' : 'text-slate-700 hover:bg-slate-100'}`}
+                                                    >
+                                                        {folderName} ({folderCounts[folderName] || 0})
+                                                    </button>
+                                                    {folderName !== 'Uncategorized' && (
+                                                        <>
+                                                            <button
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    startRenameFolder(folderName);
+                                                                }}
+                                                                className="text-slate-400 hover:text-tide text-xs px-1"
+                                                                title="Rename folder"
+                                                            >
+                                                                Rename
+                                                            </button>
+                                                            <button
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    onDeleteFolder(folderName);
+                                                                }}
+                                                                className="text-slate-400 hover:text-red-500 text-xs px-1"
+                                                                title="Delete folder"
+                                                            >
+                                                                Delete
+                                                            </button>
+                                                        </>
+                                                    )}
+                                                </div>
+                                            )}
+                                            {hoverFolder === folderName && dragTranscriptId && (
+                                                <p className="mt-2 text-[11px] font-semibold text-ember">Drop here to move transcript</p>
+                                            )}
                                         </div>
                                     ))}
                                 </div>
-                            ))
-                        )}
+                                <p className="text-xs text-slate-500">Drag a transcript card from the right and drop it onto a folder here.</p>
+                            </aside>
+
+                            <div>
+                                {visibleTranscripts.length === 0 ? (
+                                    <div className="text-center py-20 bg-white rounded-2xl border border-dashed text-slate-500">No transcripts in this view.</div>
+                                ) : (
+                                    <section className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                                        {visibleTranscripts.map(t => (
+                                            <article
+                                                key={t.id}
+                                                draggable
+                                                onDragStart={() => setDragTranscriptId(t.id)}
+                                                onDragEnd={() => {
+                                                    setDragTranscriptId(null);
+                                                    setHoverFolder('');
+                                                }}
+                                                className="bg-white p-5 rounded-xl border shadow-sm cursor-pointer relative group transition hover:border-tide"
+                                                onClick={() => editingTitleId !== t.id && onOpen(t.id)}
+                                            >
+                                                <div className="pr-12">
+                                                    {editingTitleId === t.id ? (
+                                                        <div className="space-y-2">
+                                                            <input
+                                                                autoFocus
+                                                                value={editingTitle}
+                                                                onChange={e => setEditingTitle(e.target.value)}
+                                                                onClick={(e) => e.stopPropagation()}
+                                                                onKeyDown={(e) => {
+                                                                    if (e.key === 'Enter') {
+                                                                        e.preventDefault();
+                                                                        saveTitleEdit();
+                                                                    }
+                                                                    if (e.key === 'Escape') {
+                                                                        setEditingTitleId(null);
+                                                                        setEditingTitle('');
+                                                                    }
+                                                                }}
+                                                                className="w-full border border-slate-300 rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-tide"
+                                                            />
+                                                            <div className="flex gap-2">
+                                                                <button onClick={(e) => { e.stopPropagation(); saveTitleEdit(); }} className="px-2 py-1 bg-tide text-white text-xs rounded">Save</button>
+                                                                <button onClick={(e) => { e.stopPropagation(); setEditingTitleId(null); setEditingTitle(''); }} className="px-2 py-1 bg-slate-100 text-slate-700 text-xs rounded">Cancel</button>
+                                                            </div>
+                                                        </div>
+                                                    ) : (
+                                                        <>
+                                                            <h5 className="font-semibold text-lg">{t.title}</h5>
+                                                            <p className="text-xs text-slate-500 mt-1">Folder: {t.folder || 'Uncategorized'}</p>
+                                                        </>
+                                                    )}
+                                                </div>
+                                                <p className="text-sm text-slate-500 mt-2">{t.content ? `${t.content.trim().split(/\s+/).length} words` : 'Empty transcript'}</p>
+                                                <div className="mt-3 flex flex-wrap gap-2">
+                                                    {t.hasAudio && <span className="text-xs bg-teal-50 text-teal-700 px-2 py-1 rounded-full">Audio</span>}
+                                                    {t.notes && <span className="text-xs bg-amber-50 text-amber-700 px-2 py-1 rounded-full">Memo</span>}
+                                                    {t.activityLog && t.activityLog.length > 1 && <span className="text-xs bg-emerald-50 text-emerald-700 px-2 py-1 rounded-full">{t.activityLog.length} logs</span>}
+                                                </div>
+                                                <div className="mt-3" onClick={(e) => e.stopPropagation()}>
+                                                    <label className="block text-[11px] font-semibold text-slate-500 mb-1">Move to folder</label>
+                                                    <select
+                                                        value={t.folder || 'Uncategorized'}
+                                                        onChange={(e) => handleQuickMove(t.id, e.target.value)}
+                                                        className="w-full border border-slate-300 rounded-lg p-2 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-tide"
+                                                    >
+                                                        {folderList.map(name => (
+                                                            <option key={name} value={name}>{name}</option>
+                                                        ))}
+                                                    </select>
+                                                </div>
+                                                {editingTitleId !== t.id && (
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            setEditingTitleId(t.id);
+                                                            setEditingTitle(t.title || '');
+                                                        }}
+                                                        className="absolute top-3 right-10 opacity-0 group-hover:opacity-100 text-slate-400 hover:text-tide bg-white p-1 rounded"
+                                                    >
+                                                        Rename
+                                                    </button>
+                                                )}
+                                                <button onClick={(e) => { e.stopPropagation(); onDelete(t.id); }} className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-slate-300 hover:text-red-500 bg-white p-1 rounded">Delete</button>
+                                            </article>
+                                        ))}
+                                    </section>
+                                )}
+                            </div>
+                        </section>
                     </div>
 
                     {showModal && (
@@ -627,17 +951,10 @@
                                     <input required autoFocus value={title} onChange={e => setTitle(e.target.value)} className="w-full border border-slate-300 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-tide" placeholder="Participant 01" />
                                 </div>
 
-                                <div className="grid md:grid-cols-2 gap-3">
-                                    <div>
-                                        <label className="block text-sm font-semibold text-slate-600 mb-1">Folder (Level 1)</label>
-                                        <input list="folder_list" value={folder} onChange={e => setFolder(e.target.value)} className="w-full border border-slate-300 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-tide" placeholder="e.g., Interviews" />
-                                        <datalist id="folder_list">{folders.map(f => <option key={f} value={f} />)}</datalist>
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-semibold text-slate-600 mb-1">Subfolder (Level 2)</label>
-                                        <input list="subfolder_list" value={subfolder} onChange={e => setSubfolder(e.target.value)} className="w-full border border-slate-300 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-tide" placeholder="e.g., Round 1" />
-                                        <datalist id="subfolder_list">{existingSubfolders.map(s => <option key={s} value={s} />)}</datalist>
-                                    </div>
+                                <div>
+                                    <label className="block text-sm font-semibold text-slate-600 mb-1">Folder</label>
+                                    <input list="folder_list" value={folder} onChange={e => setFolder(e.target.value)} className="w-full border border-slate-300 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-tide" placeholder="Leave empty for Uncategorized" />
+                                    <datalist id="folder_list">{folderList.map(f => <option key={f} value={f} />)}</datalist>
                                 </div>
 
                                 <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg">
@@ -650,7 +967,7 @@
                                     </select>
                                     {selectedParticipantId && (
                                         <button type="button" onClick={() => setShowParticipantInfo(!showParticipantInfo)} className="text-xs text-tide hover:text-teal-700 mt-2 font-semibold">
-                                            {showParticipantInfo ? '▼ Hide Info' : '▶ Show Info'}
+                                            {showParticipantInfo ? 'Hide Info' : 'Show Info'}
                                         </button>
                                     )}
                                     {showParticipantInfo && selectedParticipantId && (() => {
@@ -668,7 +985,7 @@
 
                                 <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg">
                                     <label className="block text-xs font-semibold text-slate-500 mb-1">Attach Original Audio (Optional)</label>
-                                    <input type="file" accept="audio/*" onChange={e => setAudioFile(e.target.files[0])} className="w-full text-sm text-slate-600" />
+                                    <input type="file" accept="audio/*" onChange={e => setAudioFile(e.target.files[0] || null)} className="w-full text-sm text-slate-600" />
                                 </div>
 
                                 <div className="flex justify-end gap-3 pt-2">
@@ -676,6 +993,14 @@
                                     <button type="submit" className="px-5 py-2.5 bg-tide text-white font-medium rounded-lg hover:bg-teal-600">Create Transcript</button>
                                 </div>
                             </form>
+                        </div>
+                    )}
+
+                    {moveToast && (
+                        <div className="fixed bottom-6 right-6 z-50 pointer-events-none">
+                            <div className="bg-ink text-white px-4 py-2.5 rounded-xl shadow-soft text-sm font-semibold border border-slate-700/60">
+                                {moveToast}
+                            </div>
                         </div>
                     )}
                 </div>
