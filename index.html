@@ -3,20 +3,48 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>QualiApp - Strict Offline</title>
+    <title>QualiApp - Offline Qualitative Studio</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        ink: '#102a43',
+                        tide: '#0f766e',
+                        ember: '#c2410c',
+                        mist: '#f8fafc'
+                    },
+                    fontFamily: {
+                        sans: ['Space Grotesk', 'sans-serif'],
+                        display: ['Fraunces', 'serif']
+                    },
+                    boxShadow: {
+                        soft: '0 10px 35px rgba(16, 42, 67, 0.12)'
+                    },
+                    backgroundImage: {
+                        hero: 'radial-gradient(circle at 20% 20%, rgba(15,118,110,0.15), transparent 45%), radial-gradient(circle at 80% 10%, rgba(194,65,12,0.15), transparent 40%), linear-gradient(180deg, #f8fafc 0%, #eef6f6 100%)'
+                    }
+                }
+            }
+        };
+    </script>
 </head>
-<body class="bg-slate-50 text-slate-800 font-sans">
+<body class="bg-mist text-ink font-sans">
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useEffect, useRef, useMemo, useCallback } = React;
+        const { useState, useEffect, useRef, useMemo } = React;
 
-        // --- 1. DATABASE (IndexedDB) ---
-        const dbName = 'QualiMacDB_v6';
+        const dbName = 'QualiMacDB_v7';
+        const participantPinKey = 'quali_participant_pin_hash';
+
         const openDB = () => new Promise((resolve, reject) => {
             const req = indexedDB.open(dbName, 1);
             req.onupgradeneeded = (e) => {
@@ -38,9 +66,10 @@
 
         const dbSet = async (store, key, val) => {
             const db = await openDB();
-            return new Promise((res) => {
+            return new Promise((res, rej) => {
                 const req = db.transaction(store, 'readwrite').objectStore(store).put(val, key);
                 req.onsuccess = () => res();
+                req.onerror = () => rej(req.error);
             });
         };
 
@@ -52,7 +81,100 @@
             });
         };
 
-        // --- 2. AUTHENTICATION SCREEN ---
+        const dbClear = async (store) => {
+            const db = await openDB();
+            return new Promise((res, rej) => {
+                const req = db.transaction(store, 'readwrite').objectStore(store).clear();
+                req.onsuccess = () => res();
+                req.onerror = () => rej(req.error);
+            });
+        };
+
+        const dbGetAllEntries = async (store) => {
+            const db = await openDB();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(store, 'readonly');
+                const os = tx.objectStore(store);
+                const out = [];
+                const req = os.openCursor();
+                req.onsuccess = (e) => {
+                    const cursor = e.target.result;
+                    if (!cursor) return resolve(out);
+                    out.push({ key: cursor.key, value: cursor.value });
+                    cursor.continue();
+                };
+                req.onerror = () => reject(req.error);
+            });
+        };
+
+        const toBase64 = (buffer) => {
+            let binary = '';
+            const bytes = new Uint8Array(buffer);
+            for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+            return btoa(binary);
+        };
+
+        const fromBase64 = (b64) => {
+            const binary = atob(b64);
+            const out = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i++) out[i] = binary.charCodeAt(i);
+            return out.buffer;
+        };
+
+        const blobToBase64 = (blob) => new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                const dataUrl = reader.result;
+                resolve(dataUrl.split(',')[1]);
+            };
+            reader.onerror = () => reject(reader.error);
+            reader.readAsDataURL(blob);
+        });
+
+        const deriveKey = async (password, salt, usages) => {
+            const enc = new TextEncoder();
+            const material = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveKey']);
+            return crypto.subtle.deriveKey(
+                { name: 'PBKDF2', salt, iterations: 150000, hash: 'SHA-256' },
+                material,
+                { name: 'AES-GCM', length: 256 },
+                false,
+                usages
+            );
+        };
+
+        const encryptPayload = async (payload, password) => {
+            const enc = new TextEncoder();
+            const salt = crypto.getRandomValues(new Uint8Array(16));
+            const iv = crypto.getRandomValues(new Uint8Array(12));
+            const key = await deriveKey(password, salt, ['encrypt']);
+            const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, enc.encode(JSON.stringify(payload)));
+            return {
+                version: 1,
+                algorithm: 'AES-GCM-256',
+                kdf: 'PBKDF2-SHA256-150000',
+                salt: toBase64(salt),
+                iv: toBase64(iv),
+                data: toBase64(ciphertext)
+            };
+        };
+
+        const decryptPayload = async (encryptedBlob, password) => {
+            const dec = new TextDecoder();
+            const salt = new Uint8Array(fromBase64(encryptedBlob.salt));
+            const iv = new Uint8Array(fromBase64(encryptedBlob.iv));
+            const data = fromBase64(encryptedBlob.data);
+            const key = await deriveKey(password, salt, ['decrypt']);
+            const plaintext = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, data);
+            return JSON.parse(dec.decode(plaintext));
+        };
+
+        const stringHash = async (value) => {
+            const enc = new TextEncoder();
+            const digest = await crypto.subtle.digest('SHA-256', enc.encode(value));
+            return toBase64(digest);
+        };
+
         function LockScreen({ onUnlock }) {
             const [password, setPassword] = useState('');
             const [isSettingUp, setIsSettingUp] = useState(false);
@@ -67,29 +189,37 @@
                 e.preventDefault();
                 const saved = localStorage.getItem('quali_pin');
                 if (isSettingUp) {
-                    if(password.length < 4) return setError("Password must be at least 4 characters.");
-                    localStorage.setItem('quali_pin', btoa(password)); 
+                    if (password.length < 4) return setError('Password must be at least 4 characters.');
+                    localStorage.setItem('quali_pin', btoa(password));
                     onUnlock();
                 } else {
                     if (btoa(password) === saved) onUnlock();
-                    else setError("Incorrect password.");
+                    else setError('Incorrect password.');
                 }
             };
 
             return (
-                <div className="h-screen w-screen flex items-center justify-center bg-slate-900 text-white">
-                    <form onSubmit={handleSubmit} className="bg-slate-800 p-8 rounded-2xl shadow-2xl max-w-sm w-full text-center">
-                        <div className="text-5xl mb-4">🔒</div>
-                        <h2 className="text-2xl font-bold mb-2">{isSettingUp ? "Set App Password" : "App Locked"}</h2>
-                        <input type="password" autoFocus value={password} onChange={e => setPassword(e.target.value)} className="w-full p-3 rounded-lg bg-slate-700 border border-slate-600 text-center text-xl mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="••••••" />
-                        {error && <p className="text-red-400 text-sm mb-4">{error}</p>}
-                        <button type="submit" className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-lg transition">{isSettingUp ? "Save & Enter" : "Unlock"}</button>
+                <div className="h-screen w-screen flex items-center justify-center bg-ink text-white">
+                    <form onSubmit={handleSubmit} className="bg-slate-900/90 p-8 rounded-2xl shadow-soft max-w-sm w-full text-center border border-slate-700">
+                        <h2 className="text-3xl font-display mb-2">QualiApp Locked</h2>
+                        <p className="text-slate-400 mb-6 text-sm">Local-only workspace protection.</p>
+                        <input
+                            type="password"
+                            autoFocus
+                            value={password}
+                            onChange={e => setPassword(e.target.value)}
+                            className="w-full p-3 rounded-lg bg-slate-800 border border-slate-700 text-center text-xl mb-4 focus:outline-none focus:ring-2 focus:ring-tide"
+                            placeholder="Enter password"
+                        />
+                        {error && <p className="text-red-300 text-sm mb-4">{error}</p>}
+                        <button type="submit" className="w-full bg-tide hover:bg-teal-600 text-white font-bold py-3 rounded-lg transition">
+                            {isSettingUp ? 'Save & Enter' : 'Unlock'}
+                        </button>
                     </form>
                 </div>
             );
         }
 
-        // --- 3. MAIN APP ---
         function App() {
             const [isLocked, setIsLocked] = useState(true);
             const [view, setView] = useState('dashboard');
@@ -97,28 +227,35 @@
             const [tags, setTags] = useState([]);
             const [globalArtifacts, setGlobalArtifacts] = useState([]);
             const [activityTypes, setActivityTypes] = useState(['Edited', 'First Review', 'Coded', 'Member Checked']);
+            const [participants, setParticipants] = useState([]);
+            const [analysisCanvases, setAnalysisCanvases] = useState([]);
             const [activeId, setActiveId] = useState(null);
             const [isReady, setIsReady] = useState(false);
 
-            // Auto-lock timer
             useEffect(() => {
                 let timeout;
-                const IDLE_TIME = 20 * 60 * 1000; 
+                const IDLE_TIME = 20 * 60 * 1000;
                 const resetTimer = () => {
                     clearTimeout(timeout);
                     if (!isLocked) timeout = setTimeout(() => setIsLocked(true), IDLE_TIME);
                 };
-                window.addEventListener('mousemove', resetTimer); window.addEventListener('keydown', resetTimer);
+                window.addEventListener('mousemove', resetTimer);
+                window.addEventListener('keydown', resetTimer);
                 resetTimer();
-                return () => { clearTimeout(timeout); window.removeEventListener('mousemove', resetTimer); window.removeEventListener('keydown', resetTimer); };
+                return () => {
+                    clearTimeout(timeout);
+                    window.removeEventListener('mousemove', resetTimer);
+                    window.removeEventListener('keydown', resetTimer);
+                };
             }, [isLocked]);
 
-            // Load & Save Data
             useEffect(() => {
                 const loadData = async () => {
                     setTranscripts(await dbGet('data', 'transcripts') || []);
                     setTags(await dbGet('data', 'tags') || []);
                     setGlobalArtifacts(await dbGet('data', 'global_artifacts') || []);
+                    setParticipants(await dbGet('data', 'participants') || []);
+                    setAnalysisCanvases(await dbGet('data', 'analysis_canvases') || []);
                     const savedActivityTypes = await dbGet('data', 'activityTypes');
                     if (savedActivityTypes) setActivityTypes(savedActivityTypes);
                     setIsReady(true);
@@ -132,85 +269,355 @@
                     dbSet('data', 'tags', tags);
                     dbSet('data', 'global_artifacts', globalArtifacts);
                     dbSet('data', 'activityTypes', activityTypes);
+                    dbSet('data', 'participants', participants);
+                    dbSet('data', 'analysis_canvases', analysisCanvases);
                 }
-            }, [transcripts, tags, globalArtifacts, activityTypes, isReady, isLocked]);
+            }, [transcripts, tags, globalArtifacts, activityTypes, participants, analysisCanvases, isReady, isLocked]);
 
             if (isLocked) return <LockScreen onUnlock={() => setIsLocked(false)} />;
             if (!isReady) return <div className="flex h-screen items-center justify-center">Loading...</div>;
 
             const activeTranscript = transcripts.find(t => t.id === activeId);
             const folders = [...new Set(transcripts.map(t => t.folder).filter(Boolean))];
+            const subfolderMap = transcripts.reduce((acc, t) => {
+                const top = t.folder || 'Uncategorized';
+                if (!acc[top]) acc[top] = new Set();
+                if (t.subfolder) acc[top].add(t.subfolder);
+                return acc;
+            }, {});
 
             const handleCreateTranscript = async (data) => {
+                const now = Date.now().toString();
                 const newDoc = {
-                    id: Date.now().toString(), 
-                    title: data.title, 
+                    id: now,
+                    title: data.title,
                     folder: data.folder || 'Uncategorized',
-                    content: '', notes: '', artifacts: [], hasAudio: !!data.audioFile, 
+                    subfolder: data.subfolder || '',
+                    content: '',
+                    notes: '',
+                    artifacts: [],
+                    hasAudio: !!data.audioFile,
                     createdAt: new Date().toISOString(),
-                    activityLog: [{ id: Date.now().toString(), type: 'Created', note: 'Transcript initialized', timestamp: new Date().toISOString() }]
+                    activityLog: [{ id: now + '_created', type: 'Created', note: 'Transcript initialized', timestamp: new Date().toISOString() }]
                 };
                 if (data.audioFile) await dbSet('files', `audio_${newDoc.id}`, data.audioFile);
                 setTranscripts([newDoc, ...transcripts]);
-                setActiveId(newDoc.id); setView('editor');
+                setActiveId(newDoc.id);
+                setView('editor');
             };
 
             const handleDeleteTranscript = async (id) => {
-                if (confirm("Delete transcript and all attached files?")) {
+                if (confirm('Delete transcript and all attached files?')) {
                     const t = transcripts.find(x => x.id === id);
-                    if(t) {
+                    if (t) {
                         await dbDelete('files', `audio_${id}`);
-                        for (let a of (t.artifacts || [])) await dbDelete('files', `artifact_${a.id}`);
+                        for (const a of (t.artifacts || [])) await dbDelete('files', `artifact_${a.id}`);
                     }
                     setTranscripts(transcripts.filter(t => t.id !== id));
                     setTags(tags.filter(t => t.transcriptId !== id));
                 }
             };
 
-            const TopBar = () => (
-                <div className="absolute top-4 right-6 z-50">
-                    <button onClick={() => setIsLocked(true)} className="bg-slate-800 hover:bg-red-600 text-white px-4 py-2 rounded-lg shadow flex items-center gap-2 text-sm font-medium transition-colors">🔒 Lock</button>
-                </div>
-            );
+            const handleBackupDownload = async (backupPassword) => {
+                const fileEntries = await dbGetAllEntries('files');
+                const serializedFiles = [];
+                for (const entry of fileEntries) {
+                    const value = entry.value;
+                    if (!(value instanceof Blob)) continue;
+                    serializedFiles.push({
+                        key: String(entry.key),
+                        type: value.type || 'application/octet-stream',
+                        name: value.name || null,
+                        lastModified: value.lastModified || null,
+                        bytes: await blobToBase64(value)
+                    });
+                }
+
+                const payload = {
+                    exportedAt: new Date().toISOString(),
+                    data: {
+                        transcripts,
+                        tags,
+                        globalArtifacts,
+                        activityTypes,
+                        participants,
+                        analysisCanvases
+                    },
+                    files: serializedFiles,
+                    security: {
+                        appPin: localStorage.getItem('quali_pin') || null,
+                        participantPinHash: localStorage.getItem(participantPinKey) || null
+                    }
+                };
+
+                const encrypted = await encryptPayload(payload, backupPassword);
+                const blob = new Blob([JSON.stringify(encrypted, null, 2)], { type: 'application/json' });
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = `QualiApp_Backup_${new Date().toISOString().slice(0, 10)}.qbk`;
+                a.click();
+                URL.revokeObjectURL(a.href);
+            };
+
+            const handleRestoreUpload = async (file, backupPassword) => {
+                const text = await file.text();
+                const encrypted = JSON.parse(text);
+                const payload = await decryptPayload(encrypted, backupPassword);
+
+                const d = payload.data || {};
+                setTranscripts(d.transcripts || []);
+                setTags(d.tags || []);
+                setGlobalArtifacts(d.globalArtifacts || []);
+                setActivityTypes(d.activityTypes || ['Edited', 'First Review', 'Coded', 'Member Checked']);
+                setParticipants(d.participants || []);
+                setAnalysisCanvases(d.analysisCanvases || []);
+                setActiveId(null);
+                setView('dashboard');
+
+                await dbClear('files');
+                for (const f of (payload.files || [])) {
+                    const bytes = fromBase64(f.bytes);
+                    const blob = f.name
+                        ? new File([bytes], f.name, { type: f.type || 'application/octet-stream', lastModified: f.lastModified || Date.now() })
+                        : new Blob([bytes], { type: f.type || 'application/octet-stream' });
+                    await dbSet('files', f.key, blob);
+                }
+
+                if (payload.security) {
+                    if (payload.security.appPin) localStorage.setItem('quali_pin', payload.security.appPin);
+                    if (payload.security.participantPinHash) localStorage.setItem(participantPinKey, payload.security.participantPinHash);
+                }
+            };
 
             return (
-                <div className="flex h-screen bg-slate-50 relative">
-                    <div className="w-64 bg-slate-900 text-slate-300 flex flex-col shadow-xl z-10">
-                        <div className="p-6 border-b border-slate-800 mb-2">
-                            <h1 className="text-2xl font-bold text-white flex items-center gap-2">🎧 QualiApp</h1>
-                            <p className="text-xs mt-1 text-slate-500">Strict Offline Editon</p>
+                <div className="flex h-screen bg-hero relative">
+                    <aside className="w-72 bg-ink text-slate-200 flex flex-col shadow-soft z-10">
+                        <div className="p-6 border-b border-slate-700/60">
+                            <h1 className="text-3xl font-display text-white leading-none">QualiApp</h1>
+                            <p className="text-xs mt-2 text-slate-400">Offline Qualitative Studio</p>
                         </div>
-                        <nav className="flex-1 px-4 space-y-2">
-                            <button onClick={() => setView('dashboard')} className={`w-full text-left px-4 py-3 rounded-lg ${view === 'dashboard' ? 'bg-blue-600 text-white' : 'hover:bg-slate-800'}`}>🏠 Transcripts</button>
-                            <button onClick={() => setView('artifacts')} className={`w-full text-left px-4 py-3 rounded-lg ${view === 'artifacts' ? 'bg-blue-600 text-white' : 'hover:bg-slate-800'}`}>📚 Project Artifacts</button>
-                            <button onClick={() => setView('codebook')} className={`w-full text-left px-4 py-3 rounded-lg ${view === 'codebook' ? 'bg-blue-600 text-white' : 'hover:bg-slate-800'}`}>🏷️ Codebook</button>
+                        <nav className="flex-1 px-4 py-4 space-y-2 text-sm">
+                            <NavButton active={view === 'dashboard'} label="Transcripts" onClick={() => setView('dashboard')} />
+                            <NavButton active={view === 'artifacts'} label="Project Artifacts" onClick={() => setView('artifacts')} />
+                            <NavButton active={view === 'participants'} label="Participant Coding" onClick={() => setView('participants')} />
+                            <NavButton active={view === 'analysis'} label="Analysis Canvas" onClick={() => setView('analysis')} />
+                            <NavButton active={view === 'codebook'} label="Codebook" onClick={() => setView('codebook')} />
                         </nav>
-                    </div>
-                    <div className="flex-1 overflow-hidden flex flex-col relative">
-                        <TopBar />
-                        {view === 'dashboard' && <Dashboard transcripts={transcripts} folders={folders} onCreate={handleCreateTranscript} onOpen={(id) => { setActiveId(id); setView('editor'); }} onDelete={handleDeleteTranscript} />}
+                        <div className="p-4 border-t border-slate-700/60 space-y-2">
+                            <button onClick={() => setIsLocked(true)} className="w-full bg-slate-800 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition">Lock App</button>
+                        </div>
+                    </aside>
+
+                    <main className="flex-1 overflow-hidden flex flex-col relative">
+                        {view === 'dashboard' && (
+                            <Dashboard
+                                transcripts={transcripts}
+                                folders={folders}
+                                subfolderMap={subfolderMap}
+                                onCreate={handleCreateTranscript}
+                                onOpen={(id) => { setActiveId(id); setView('editor'); }}
+                                onDelete={handleDeleteTranscript}
+                                onBackup={handleBackupDownload}
+                                onRestore={handleRestoreUpload}
+                            />
+                        )}
                         {view === 'artifacts' && <ArtifactDashboard artifacts={globalArtifacts} onUpdate={setGlobalArtifacts} />}
-                        {view === 'editor' && activeTranscript && 
-                            <Editor 
-                                transcript={activeTranscript} 
-                                tags={tags.filter(t => t.transcriptId === activeTranscript.id)} 
-                                allTags={tags} 
+                        {view === 'participants' && <ParticipantVault participants={participants} onUpdate={setParticipants} />}
+                        {view === 'analysis' && <AnalysisBoard tags={tags} canvases={analysisCanvases} onUpdate={setAnalysisCanvases} />}
+                        {view === 'editor' && activeTranscript && (
+                            <Editor
+                                transcript={activeTranscript}
+                                tags={tags.filter(t => t.transcriptId === activeTranscript.id)}
+                                allTags={tags}
                                 activityTypes={activityTypes}
                                 onAddActivityType={(newType) => !activityTypes.includes(newType) && setActivityTypes([...activityTypes, newType])}
-                                onBack={() => setView('dashboard')} 
-                                onUpdateTranscript={(updated) => setTranscripts(transcripts.map(t => t.id === updated.id ? updated : t))} 
-                                onAddTag={(tag) => setTags([...tags, tag])} 
-                                onUpdateTag={(updatedTag) => setTags(tags.map(t => t.id === updatedTag.id ? updatedTag : t))} 
-                                onRemoveTag={(tagId) => setTags(tags.filter(t => t.id !== tagId))} 
+                                onBack={() => setView('dashboard')}
+                                onUpdateTranscript={(updated) => setTranscripts(transcripts.map(t => t.id === updated.id ? updated : t))}
+                                onAddTag={(tag) => setTags([...tags, tag])}
+                                onUpdateTag={(updatedTag) => setTags(tags.map(t => t.id === updatedTag.id ? updatedTag : t))}
+                                onRemoveTag={(tagId) => setTags(tags.filter(t => t.id !== tagId))}
                             />
-                        }
+                        )}
                         {view === 'codebook' && <Codebook tags={tags} transcripts={transcripts} />}
-                    </div>
+                    </main>
                 </div>
             );
         }
 
-        // --- 4. GLOBAL ARTIFACTS DASHBOARD ---
+        function NavButton({ active, label, onClick }) {
+            return (
+                <button
+                    onClick={onClick}
+                    className={`w-full text-left px-4 py-3 rounded-xl transition font-medium ${active ? 'bg-tide text-white shadow' : 'hover:bg-slate-800 text-slate-200'}`}
+                >
+                    {label}
+                </button>
+            );
+        }
+
+        function BackupPanel({ onBackup, onRestore }) {
+            const [backupPassword, setBackupPassword] = useState('');
+            const [restorePassword, setRestorePassword] = useState('');
+            const [restoreFile, setRestoreFile] = useState(null);
+            const [message, setMessage] = useState('');
+
+            const backupNow = async () => {
+                if (backupPassword.length < 6) return setMessage('Backup password must be at least 6 characters.');
+                await onBackup(backupPassword);
+                setMessage('Encrypted backup downloaded. Keep the password safe.');
+                setBackupPassword('');
+            };
+
+            const restoreNow = async () => {
+                if (!restoreFile) return setMessage('Choose a backup file first.');
+                if (!restorePassword) return setMessage('Enter backup password.');
+                try {
+                    await onRestore(restoreFile, restorePassword);
+                    setMessage('Backup restored successfully.');
+                    setRestorePassword('');
+                    setRestoreFile(null);
+                } catch (err) {
+                    setMessage('Restore failed. Wrong password or invalid backup file.');
+                }
+            };
+
+            return (
+                <div className="bg-white border rounded-2xl p-5 shadow-soft space-y-4">
+                    <h3 className="text-lg font-bold">Backup & Restore</h3>
+                    <p className="text-sm text-slate-500">Create a password-protected encrypted backup file and restore complete app state, including media files.</p>
+
+                    <div className="grid md:grid-cols-2 gap-4">
+                        <div className="border rounded-xl p-4 space-y-3">
+                            <p className="text-xs uppercase font-semibold tracking-wide text-slate-500">Download Encrypted Backup</p>
+                            <input type="password" value={backupPassword} onChange={e => setBackupPassword(e.target.value)} placeholder="Backup password" className="w-full border rounded-lg p-2.5 focus:outline-none focus:ring-2 focus:ring-tide" />
+                            <button onClick={backupNow} className="w-full bg-tide hover:bg-teal-600 text-white px-4 py-2.5 rounded-lg font-semibold">Download .qbk</button>
+                        </div>
+                        <div className="border rounded-xl p-4 space-y-3">
+                            <p className="text-xs uppercase font-semibold tracking-wide text-slate-500">Restore Backup</p>
+                            <input type="file" accept=".qbk,.json" onChange={e => setRestoreFile(e.target.files[0] || null)} className="w-full text-sm" />
+                            <input type="password" value={restorePassword} onChange={e => setRestorePassword(e.target.value)} placeholder="Backup password" className="w-full border rounded-lg p-2.5 focus:outline-none focus:ring-2 focus:ring-ember" />
+                            <button onClick={restoreNow} className="w-full bg-ember hover:bg-orange-700 text-white px-4 py-2.5 rounded-lg font-semibold">Restore Instance</button>
+                        </div>
+                    </div>
+
+                    {message && <p className="text-sm text-slate-600 bg-slate-50 border rounded-lg px-3 py-2">{message}</p>}
+                </div>
+            );
+        }
+
+        function Dashboard({ transcripts, folders, subfolderMap, onCreate, onOpen, onDelete, onBackup, onRestore }) {
+            const [showModal, setShowModal] = useState(false);
+            const [title, setTitle] = useState('');
+            const [folder, setFolder] = useState('');
+            const [subfolder, setSubfolder] = useState('');
+            const [audioFile, setAudioFile] = useState(null);
+
+            const existingSubfolders = (subfolderMap[folder] ? [...subfolderMap[folder]] : []);
+
+            const handleSubmit = async (e) => {
+                e.preventDefault();
+                if (!title.trim()) return;
+                onCreate({ title, folder, subfolder, audioFile });
+                setShowModal(false);
+                setTitle('');
+                setFolder('');
+                setSubfolder('');
+                setAudioFile(null);
+            };
+
+            const grouped = transcripts.reduce((acc, curr) => {
+                const top = curr.folder || 'Uncategorized';
+                const sub = curr.subfolder || 'General';
+                if (!acc[top]) acc[top] = {};
+                if (!acc[top][sub]) acc[top][sub] = [];
+                acc[top][sub].push(curr);
+                return acc;
+            }, {});
+
+            return (
+                <div className="p-8 h-full overflow-y-auto">
+                    <div className="max-w-7xl mx-auto pt-2 space-y-8">
+                        <section className="bg-white/90 border rounded-2xl p-7 shadow-soft">
+                            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                                <div>
+                                    <h2 className="text-4xl font-display">Transcript Workspace</h2>
+                                    <p className="text-slate-500 mt-1">Organize transcripts using folder and subfolder hierarchy (2 levels).</p>
+                                </div>
+                                <button onClick={() => setShowModal(true)} className="bg-tide hover:bg-teal-600 text-white px-5 py-3 rounded-xl shadow font-semibold">New Transcript</button>
+                            </div>
+                        </section>
+
+                        <BackupPanel onBackup={onBackup} onRestore={onRestore} />
+
+                        {Object.keys(grouped).length === 0 ? (
+                            <div className="text-center py-20 bg-white rounded-2xl border border-dashed text-slate-500">No transcripts yet.</div>
+                        ) : (
+                            Object.entries(grouped).map(([folderName, subGroups]) => (
+                                <div key={folderName} className="space-y-4">
+                                    <h3 className="text-2xl font-bold text-ink">Folder: {folderName}</h3>
+                                    {Object.entries(subGroups).map(([subName, items]) => (
+                                        <div key={subName} className="bg-white/80 rounded-2xl border p-4">
+                                            <h4 className="text-sm uppercase tracking-wider font-bold text-slate-500 mb-3">Subfolder: {subName}</h4>
+                                            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                                                {items.map(t => (
+                                                    <div key={t.id} className="bg-white p-5 rounded-xl border shadow-sm cursor-pointer relative group transition hover:border-tide" onClick={() => onOpen(t.id)}>
+                                                        <h5 className="font-semibold text-lg pr-8">{t.title}</h5>
+                                                        <p className="text-sm text-slate-500 mt-1">{t.content ? `${t.content.trim().split(/\s+/).length} words` : 'Empty transcript'}</p>
+                                                        <div className="mt-3 flex flex-wrap gap-2">
+                                                            {t.hasAudio && <span className="text-xs bg-teal-50 text-teal-700 px-2 py-1 rounded-full">Audio</span>}
+                                                            {t.notes && <span className="text-xs bg-amber-50 text-amber-700 px-2 py-1 rounded-full">Memo</span>}
+                                                            {t.activityLog && t.activityLog.length > 1 && <span className="text-xs bg-emerald-50 text-emerald-700 px-2 py-1 rounded-full">{t.activityLog.length} logs</span>}
+                                                        </div>
+                                                        <button onClick={(e) => { e.stopPropagation(); onDelete(t.id); }} className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-slate-300 hover:text-red-500 bg-white p-1 rounded">Delete</button>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            ))
+                        )}
+                    </div>
+
+                    {showModal && (
+                        <div className="fixed inset-0 bg-slate-900/65 flex items-center justify-center z-50 backdrop-blur-sm p-4">
+                            <form onSubmit={handleSubmit} className="bg-white rounded-2xl p-8 w-full max-w-lg space-y-5 shadow-soft">
+                                <h3 className="text-3xl font-display">Add Transcript</h3>
+
+                                <div>
+                                    <label className="block text-sm font-semibold text-slate-600 mb-1">Title</label>
+                                    <input required autoFocus value={title} onChange={e => setTitle(e.target.value)} className="w-full border border-slate-300 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-tide" placeholder="Participant 01" />
+                                </div>
+
+                                <div className="grid md:grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="block text-sm font-semibold text-slate-600 mb-1">Folder (Level 1)</label>
+                                        <input list="folder_list" value={folder} onChange={e => setFolder(e.target.value)} className="w-full border border-slate-300 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-tide" placeholder="e.g., Interviews" />
+                                        <datalist id="folder_list">{folders.map(f => <option key={f} value={f} />)}</datalist>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-semibold text-slate-600 mb-1">Subfolder (Level 2)</label>
+                                        <input list="subfolder_list" value={subfolder} onChange={e => setSubfolder(e.target.value)} className="w-full border border-slate-300 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-tide" placeholder="e.g., Round 1" />
+                                        <datalist id="subfolder_list">{existingSubfolders.map(s => <option key={s} value={s} />)}</datalist>
+                                    </div>
+                                </div>
+
+                                <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg">
+                                    <label className="block text-xs font-semibold text-slate-500 mb-1">Attach Original Audio (Optional)</label>
+                                    <input type="file" accept="audio/*" onChange={e => setAudioFile(e.target.files[0])} className="w-full text-sm text-slate-600" />
+                                </div>
+
+                                <div className="flex justify-end gap-3 pt-2">
+                                    <button type="button" onClick={() => setShowModal(false)} className="px-5 py-2.5 bg-slate-100 text-slate-600 font-medium rounded-lg hover:bg-slate-200">Cancel</button>
+                                    <button type="submit" className="px-5 py-2.5 bg-tide text-white font-medium rounded-lg hover:bg-teal-600">Create Transcript</button>
+                                </div>
+                            </form>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
         function ArtifactDashboard({ artifacts, onUpdate }) {
             const handleFileUpload = async (e) => {
                 const file = e.target.files[0];
@@ -225,30 +632,34 @@
                 const file = await dbGet('files', `global_art_${art.id}`);
                 if (file) {
                     const url = URL.createObjectURL(file);
-                    const a = document.createElement('a'); a.href = url; a.download = art.name; a.click(); URL.revokeObjectURL(url);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = art.name;
+                    a.click();
+                    URL.revokeObjectURL(url);
                 }
             };
 
             const deleteArtifact = async (artId) => {
-                if (confirm("Delete this project artifact forever?")) {
+                if (confirm('Delete this project artifact forever?')) {
                     await dbDelete('files', `global_art_${artId}`);
                     onUpdate(artifacts.filter(a => a.id !== artId));
                 }
             };
 
             return (
-                <div className="p-8 h-full overflow-y-auto w-full max-w-5xl mx-auto pt-16">
+                <div className="p-8 h-full overflow-y-auto w-full max-w-6xl mx-auto">
                     <div className="flex justify-between items-center mb-8">
                         <div>
-                            <h2 className="text-3xl font-bold text-slate-800">Project Artifacts</h2>
+                            <h2 className="text-3xl font-display text-ink">Project Artifacts</h2>
                             <p className="text-slate-500 mt-1">Store literature, IRB docs, or non-transcript materials here.</p>
                         </div>
-                        <label className="bg-purple-600 hover:bg-purple-700 text-white px-5 py-2.5 rounded-lg shadow-sm cursor-pointer transition">
-                            ➕ Upload Document
+                        <label className="bg-ink hover:bg-slate-800 text-white px-5 py-2.5 rounded-lg shadow-sm cursor-pointer transition">
+                            Upload Document
                             <input type="file" className="hidden" onChange={handleFileUpload} />
                         </label>
                     </div>
-                    
+
                     {artifacts.length === 0 ? (
                         <div className="text-center py-20 bg-white rounded-xl border border-dashed text-slate-500">No project artifacts uploaded yet.</div>
                     ) : (
@@ -256,14 +667,11 @@
                             {artifacts.map(art => (
                                 <div key={art.id} className="bg-white p-5 rounded-xl border shadow-sm group">
                                     <div className="flex justify-between items-start">
-                                        <div className="flex items-center gap-3 overflow-hidden cursor-pointer hover:text-purple-600" onClick={() => downloadArtifact(art)}>
-                                            <span className="text-3xl">📄</span>
-                                            <div>
-                                                <h4 className="font-semibold text-sm truncate w-40" title={art.name}>{art.name}</h4>
-                                                <p className="text-xs text-slate-400">{art.date}</p>
-                                            </div>
+                                        <div className="overflow-hidden cursor-pointer hover:text-tide" onClick={() => downloadArtifact(art)}>
+                                            <h4 className="font-semibold text-sm truncate w-44" title={art.name}>{art.name}</h4>
+                                            <p className="text-xs text-slate-400">{art.date}</p>
                                         </div>
-                                        <button onClick={() => deleteArtifact(art.id)} className="opacity-0 group-hover:opacity-100 text-slate-300 hover:text-red-500 transition p-1">🗑️</button>
+                                        <button onClick={() => deleteArtifact(art.id)} className="opacity-0 group-hover:opacity-100 text-slate-300 hover:text-red-500 transition p-1">Delete</button>
                                     </div>
                                 </div>
                             ))}
@@ -273,99 +681,159 @@
             );
         }
 
-        // --- 5. TRANSCRIPT DASHBOARD ---
-        function Dashboard({ transcripts, folders, onCreate, onOpen, onDelete }) {
-            const [showModal, setShowModal] = useState(false);
-            const [title, setTitle] = useState(''); const [folder, setFolder] = useState(''); 
-            const [audioFile, setAudioFile] = useState(null);
+        function ParticipantVault({ participants, onUpdate }) {
+            const [isUnlocked, setIsUnlocked] = useState(false);
+            const [isSetup, setIsSetup] = useState(false);
+            const [password, setPassword] = useState('');
+            const [error, setError] = useState('');
 
-            const handleSubmit = async (e) => {
+            const [pseudo, setPseudo] = useState('');
+            const [realName, setRealName] = useState('');
+            const [interviewDate, setInterviewDate] = useState('');
+            const [notes, setNotes] = useState('');
+
+            useEffect(() => {
+                const saved = localStorage.getItem(participantPinKey);
+                if (!saved) setIsSetup(true);
+            }, []);
+
+            const unlock = async (e) => {
                 e.preventDefault();
-                if (!title.trim()) return;
-                onCreate({ title, folder, audioFile });
-                setShowModal(false); setTitle(''); setFolder(''); setAudioFile(null);
+                const mainPin = localStorage.getItem('quali_pin');
+                if (isSetup) {
+                    if (password.length < 4) return setError('Participant password must be at least 4 characters.');
+                    if (mainPin && btoa(password) === mainPin) return setError('Use a different password from the main platform password.');
+                    localStorage.setItem(participantPinKey, await stringHash(password));
+                    setIsUnlocked(true);
+                    return;
+                }
+                const savedHash = localStorage.getItem(participantPinKey);
+                const inputHash = await stringHash(password);
+                if (savedHash === inputHash) setIsUnlocked(true);
+                else setError('Incorrect participant password.');
             };
 
-            const grouped = transcripts.reduce((acc, curr) => {
-                const f = curr.folder || 'Uncategorized';
-                if (!acc[f]) acc[f] = [];
-                acc[f].push(curr); return acc;
-            }, {});
+            const addParticipant = (e) => {
+                e.preventDefault();
+                if (!pseudo.trim()) return;
+                onUpdate([
+                    {
+                        id: Date.now().toString(),
+                        pseudonym: pseudo.trim(),
+                        actualName: realName.trim(),
+                        interviewDate,
+                        notes,
+                        createdAt: new Date().toISOString()
+                    },
+                    ...participants
+                ]);
+                setPseudo('');
+                setRealName('');
+                setInterviewDate('');
+                setNotes('');
+            };
+
+            const removeParticipant = (id) => {
+                if (confirm('Delete participant record?')) onUpdate(participants.filter(p => p.id !== id));
+            };
+
+            if (!isUnlocked) {
+                return (
+                    <div className="p-8 h-full flex items-center justify-center">
+                        <form onSubmit={unlock} className="w-full max-w-md bg-white border rounded-2xl p-8 shadow-soft">
+                            <h2 className="text-3xl font-display mb-2">Participant Vault</h2>
+                            <p className="text-sm text-slate-500 mb-5">Protected section for participant identifiers and interview metadata.</p>
+                            <input type="password" value={password} onChange={e => setPassword(e.target.value)} className="w-full border rounded-lg p-3 mb-3 focus:outline-none focus:ring-2 focus:ring-ember" placeholder={isSetup ? 'Set participant password' : 'Enter participant password'} />
+                            {error && <p className="text-red-500 text-sm mb-3">{error}</p>}
+                            <button type="submit" className="w-full bg-ember hover:bg-orange-700 text-white py-3 rounded-lg font-semibold">{isSetup ? 'Save & Unlock' : 'Unlock Vault'}</button>
+                        </form>
+                    </div>
+                );
+            }
 
             return (
                 <div className="p-8 h-full overflow-y-auto">
-                    <div className="max-w-6xl mx-auto pt-4">
-                        <div className="flex justify-between items-center mb-8 pr-32">
-                            <h2 className="text-3xl font-bold text-slate-800">My Transcripts</h2>
-                            <button onClick={() => setShowModal(true)} className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg shadow-sm">➕ New Transcript</button>
+                    <div className="max-w-6xl mx-auto space-y-6">
+                        <div className="bg-white border rounded-2xl p-6 shadow-soft">
+                            <h2 className="text-3xl font-display">Participant Coding</h2>
+                            <p className="text-slate-500 mt-1">Store pseudonym, real participant name, interview date, and sensitive notes.</p>
                         </div>
-                        {Object.entries(grouped).length === 0 ? (
-                            <div className="text-center py-20 bg-white rounded-xl border border-dashed text-slate-500">No transcripts yet.</div>
-                        ) : (
-                            Object.entries(grouped).map(([folderName, items]) => (
-                                <div key={folderName} className="mb-8">
-                                    <h3 className="text-xl font-semibold text-slate-700 mb-4">📁 {folderName}</h3>
-                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                        {items.map(t => (
-                                            <div key={t.id} className="bg-white p-5 rounded-xl border shadow-sm cursor-pointer relative group transition hover:border-blue-300" onClick={() => onOpen(t.id)}>
-                                                <h4 className="font-semibold text-lg pr-8">{t.title}</h4>
-                                                <p className="text-sm text-slate-500 mt-1">📄 {t.content ? `${t.content.trim().split(/\s+/).length} words` : 'Empty'}</p>
-                                                <div className="mt-3 flex flex-wrap gap-2">
-                                                    {t.hasAudio && <span className="text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded-full">▶️ Audio</span>}
-                                                    {t.notes && <span className="text-xs bg-yellow-50 text-yellow-700 px-2 py-1 rounded-full">📝 Notes</span>}
-                                                    {t.activityLog && t.activityLog.length > 1 && <span className="text-xs bg-green-50 text-green-700 px-2 py-1 rounded-full">⏱️ {t.activityLog.length} Logs</span>}
-                                                </div>
-                                                <button onClick={(e) => { e.stopPropagation(); onDelete(t.id); }} className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 text-slate-300 hover:text-red-500 bg-white p-1 rounded">🗑️</button>
-                                            </div>
-                                        ))}
-                                    </div>
+
+                        <form onSubmit={addParticipant} className="bg-white border rounded-2xl p-6 shadow-soft space-y-4">
+                            <div className="grid md:grid-cols-2 gap-4">
+                                <div>
+                                    <label className="text-sm font-semibold text-slate-600">Participant Code Name / Pseudonym</label>
+                                    <input value={pseudo} onChange={e => setPseudo(e.target.value)} required className="w-full border rounded-lg p-2.5 mt-1 focus:outline-none focus:ring-2 focus:ring-tide" placeholder="P-001" />
                                 </div>
-                            ))
-                        )}
+                                <div>
+                                    <label className="text-sm font-semibold text-slate-600">Actual Participant Name</label>
+                                    <input value={realName} onChange={e => setRealName(e.target.value)} className="w-full border rounded-lg p-2.5 mt-1 focus:outline-none focus:ring-2 focus:ring-tide" placeholder="Jane Doe" />
+                                </div>
+                            </div>
+                            <div className="grid md:grid-cols-2 gap-4">
+                                <div>
+                                    <label className="text-sm font-semibold text-slate-600">Interview Date</label>
+                                    <input type="date" value={interviewDate} onChange={e => setInterviewDate(e.target.value)} className="w-full border rounded-lg p-2.5 mt-1 focus:outline-none focus:ring-2 focus:ring-tide" />
+                                </div>
+                                <div>
+                                    <label className="text-sm font-semibold text-slate-600">Notes</label>
+                                    <input value={notes} onChange={e => setNotes(e.target.value)} className="w-full border rounded-lg p-2.5 mt-1 focus:outline-none focus:ring-2 focus:ring-tide" placeholder="Context, demographics, special considerations" />
+                                </div>
+                            </div>
+                            <div className="flex justify-end">
+                                <button type="submit" className="bg-tide hover:bg-teal-600 text-white px-5 py-2.5 rounded-lg font-semibold">Add Participant</button>
+                            </div>
+                        </form>
+
+                        <div className="bg-white border rounded-2xl p-4 shadow-soft overflow-x-auto">
+                            <table className="w-full text-sm">
+                                <thead>
+                                    <tr className="text-left border-b text-slate-500 uppercase text-xs tracking-wider">
+                                        <th className="p-3">Pseudonym</th>
+                                        <th className="p-3">Actual Name</th>
+                                        <th className="p-3">Interview Date</th>
+                                        <th className="p-3">Notes</th>
+                                        <th className="p-3">Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {participants.length === 0 && (
+                                        <tr><td colSpan="5" className="p-8 text-center text-slate-400">No participants recorded yet.</td></tr>
+                                    )}
+                                    {participants.map(p => (
+                                        <tr key={p.id} className="border-b last:border-0">
+                                            <td className="p-3 font-semibold">{p.pseudonym}</td>
+                                            <td className="p-3">{p.actualName || '-'}</td>
+                                            <td className="p-3">{p.interviewDate || '-'}</td>
+                                            <td className="p-3">{p.notes || '-'}</td>
+                                            <td className="p-3"><button onClick={() => removeParticipant(p.id)} className="text-red-600 hover:text-red-700">Delete</button></td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
-
-                    {showModal && (
-                        <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center z-50 backdrop-blur-sm">
-                            <form onSubmit={handleSubmit} className="bg-white rounded-2xl p-8 w-full max-w-md space-y-5 shadow-2xl">
-                                <h3 className="text-2xl font-bold text-slate-800">Add Transcript</h3>
-                                
-                                <div><label className="block text-sm font-semibold text-slate-600 mb-1">Title</label><input required autoFocus value={title} onChange={e => setTitle(e.target.value)} className="w-full border border-slate-300 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-blue-500" placeholder="Participant 01" /></div>
-                                <div><label className="block text-sm font-semibold text-slate-600 mb-1">Folder / Group</label><input list="flist" value={folder} onChange={e => setFolder(e.target.value)} className="w-full border border-slate-300 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-blue-500" placeholder="e.g., Round 1 Interviews" /><datalist id="flist">{folders.map(f => <option key={f} value={f} />)}</datalist></div>
-                                
-                                <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg space-y-3">
-                                    <div className="pt-1"><label className="block text-xs font-semibold text-slate-500 mb-1">🎧 Attach Original Audio (Optional)</label><input type="file" accept="audio/*" onChange={e => setAudioFile(e.target.files[0])} className="w-full text-sm text-slate-600" /></div>
-                                </div>
-
-                                <div className="flex justify-end gap-3 pt-2">
-                                    <button type="button" onClick={() => setShowModal(false)} className="px-5 py-2.5 bg-slate-100 text-slate-600 font-medium rounded-lg hover:bg-slate-200">Cancel</button>
-                                    <button type="submit" className="px-5 py-2.5 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700">Create Transcript</button>
-                                </div>
-                            </form>
-                        </div>
-                    )}
                 </div>
             );
         }
 
-        // --- 6. EDITOR & CATEGORIZED CODING ---
         function Editor({ transcript, tags, allTags, activityTypes, onAddActivityType, onBack, onUpdateTranscript, onAddTag, onUpdateTag, onRemoveTag }) {
-            const [mode, setMode] = useState('edit'); // 'edit', 'code', 'notes', 'log'
+            const [mode, setMode] = useState('edit');
             const [content, setContent] = useState(transcript.content || '');
             const [notes, setNotes] = useState(transcript.notes || '');
             const [audioUrl, setAudioUrl] = useState(null);
-            
+
             const [pendingSelection, setPendingSelection] = useState(null);
             const [editingTagId, setEditingTagId] = useState(null);
-            
-            const [tagFormCategory, setTagFormCategory] = useState(''); 
-            const [tagFormName, setTagFormName] = useState('');
-            const [tagFormMemo, setTagFormMemo] = useState(''); 
 
-            // Activity Log State
+            const [tagFormCategory, setTagFormCategory] = useState('');
+            const [tagFormName, setTagFormName] = useState('');
+            const [tagFormMemo, setTagFormMemo] = useState('');
+
             const [logType, setLogType] = useState('');
             const [logNote, setLogNote] = useState('');
             const activityLog = transcript.activityLog || [];
-            
+
             const textRef = useRef(null);
 
             useEffect(() => {
@@ -375,26 +843,17 @@
 
             const handleSave = () => onUpdateTranscript({ ...transcript, content, notes });
 
-            // LOGGING HANDLER
             const submitActivityLog = (e) => {
                 e.preventDefault();
                 if (!logType.trim()) return;
-                
                 onAddActivityType(logType.trim());
-
                 const newLog = {
                     id: Date.now().toString(),
                     type: logType.trim(),
                     note: logNote.trim(),
                     timestamp: new Date().toISOString()
                 };
-
-                onUpdateTranscript({ 
-                    ...transcript, 
-                    content, notes,
-                    activityLog: [newLog, ...activityLog] 
-                });
-
+                onUpdateTranscript({ ...transcript, content, notes, activityLog: [newLog, ...activityLog] });
                 setLogType('');
                 setLogNote('');
             };
@@ -404,8 +863,11 @@
                 if (!sel.rangeCount) return null;
                 const r = sel.getRangeAt(0);
                 if (r.collapsed || !containerNode.contains(r.startContainer)) return null;
-                const pre = r.cloneRange(); pre.selectNodeContents(containerNode); pre.setEnd(r.startContainer, r.startOffset);
-                const start = pre.toString().length; pre.setEnd(r.endContainer, r.endOffset);
+                const pre = r.cloneRange();
+                pre.selectNodeContents(containerNode);
+                pre.setEnd(r.startContainer, r.startOffset);
+                const start = pre.toString().length;
+                pre.setEnd(r.endContainer, r.endOffset);
                 return { start, end: pre.toString().length, text: r.toString() };
             };
 
@@ -415,11 +877,13 @@
                     const offset = getSelectionOffset(textRef.current);
                     if (offset && offset.text.trim()) {
                         setPendingSelection(offset);
-                        setTagFormCategory(''); setTagFormName(''); setTagFormMemo('');
+                        setTagFormCategory('');
+                        setTagFormName('');
+                        setTagFormMemo('');
                     } else {
                         setPendingSelection(null);
                     }
-                }, 50);
+                }, 40);
             };
 
             const submitTagForm = (e) => {
@@ -431,41 +895,58 @@
                     onUpdateTag({ ...existing, category: tagFormCategory.trim() || 'Uncategorized', tagName: tagFormName.trim(), memo: tagFormMemo });
                     setEditingTagId(null);
                 } else if (pendingSelection) {
-                    onAddTag({ 
-                        id: Date.now().toString(), transcriptId: transcript.id, 
-                        category: tagFormCategory.trim() || 'Uncategorized', 
-                        tagName: tagFormName.trim(), memo: tagFormMemo,
-                        textSnippet: pendingSelection.text, start: pendingSelection.start, end: pendingSelection.end 
+                    onAddTag({
+                        id: Date.now().toString(),
+                        transcriptId: transcript.id,
+                        category: tagFormCategory.trim() || 'Uncategorized',
+                        tagName: tagFormName.trim(),
+                        memo: tagFormMemo,
+                        textSnippet: pendingSelection.text,
+                        start: pendingSelection.start,
+                        end: pendingSelection.end
                     });
-                    setPendingSelection(null); window.getSelection().removeAllRanges();
+                    setPendingSelection(null);
+                    window.getSelection().removeAllRanges();
                 }
-                setTagFormCategory(''); setTagFormName(''); setTagFormMemo('');
+                setTagFormCategory('');
+                setTagFormName('');
+                setTagFormMemo('');
             };
 
             const openEditTag = (tag) => {
-                setPendingSelection(null); window.getSelection().removeAllRanges();
+                setPendingSelection(null);
+                window.getSelection().removeAllRanges();
                 setEditingTagId(tag.id);
-                setTagFormCategory(tag.category); setTagFormName(tag.tagName); setTagFormMemo(tag.memo || '');
+                setTagFormCategory(tag.category);
+                setTagFormName(tag.tagName);
+                setTagFormMemo(tag.memo || '');
             };
 
             const cancelTagForm = () => {
-                setPendingSelection(null); setEditingTagId(null); window.getSelection().removeAllRanges();
-                setTagFormCategory(''); setTagFormName(''); setTagFormMemo('');
+                setPendingSelection(null);
+                setEditingTagId(null);
+                window.getSelection().removeAllRanges();
+                setTagFormCategory('');
+                setTagFormName('');
+                setTagFormMemo('');
             };
 
             const renderHighlighted = () => {
                 if (!tags.length) return content;
                 const sorted = [...tags].sort((a, b) => a.start - b.start);
-                const nodes = []; let last = 0;
+                const nodes = [];
+                let last = 0;
                 sorted.forEach((tag, i) => {
                     if (tag.start >= last) {
                         nodes.push(<span key={`t-${i}`}>{content.slice(last, tag.start)}</span>);
                         const isEditingThis = editingTagId === tag.id;
                         nodes.push(
-                            <mark key={`m-${tag.id}`} 
+                            <mark
+                                key={`m-${tag.id}`}
                                 onClick={() => openEditTag(tag)}
-                                className={`px-1 rounded cursor-pointer transition ${isEditingThis ? 'bg-orange-400 text-white shadow-md' : 'bg-blue-200 hover:bg-blue-300'}`} 
-                                title={`${tag.category} > ${tag.tagName}`}>
+                                className={`px-1 rounded cursor-pointer transition ${isEditingThis ? 'bg-orange-400 text-white shadow-md' : 'bg-teal-200 hover:bg-teal-300'}`}
+                                title={`${tag.category} > ${tag.tagName}`}
+                            >
                                 {content.slice(tag.start, tag.end)}
                             </mark>
                         );
@@ -477,128 +958,70 @@
             };
 
             const existingCategories = [...new Set(allTags.map(t => t.category).filter(Boolean))];
-            const existingCodes = [...new Set(allTags.map(t => t.tagName))];
+            const existingCodes = [...new Set(allTags.map(t => t.tagName).filter(Boolean))];
 
             return (
                 <div className="flex flex-col h-full bg-white relative">
-                    {/* Top Header */}
-                    <div className="border-b px-6 py-4 flex items-center justify-between bg-slate-50 shadow-sm z-10">
+                    <div className="border-b px-6 py-4 flex items-center justify-between bg-white z-10">
                         <div className="flex items-center gap-4">
-                            <button onClick={() => { handleSave(); onBack(); }} className="p-2 hover:bg-slate-200 rounded-full font-bold">⬅️ Back</button>
+                            <button onClick={() => { handleSave(); onBack(); }} className="p-2 hover:bg-slate-200 rounded-full font-bold">Back</button>
                             <h2 className="text-xl font-bold truncate max-w-sm border-l-2 pl-4 border-slate-300" title={transcript.title}>{transcript.title}</h2>
                         </div>
-                        <div className="flex bg-slate-200 p-1 rounded-lg mr-32"> 
-                            <button onClick={() => {handleSave(); setMode('edit');}} className={`px-4 py-2 rounded-md text-sm font-bold transition-all ${mode==='edit'?'bg-white shadow-md text-yellow-700':'text-slate-600 hover:bg-slate-300'}`}>✏️ Edit Transcript</button>
-                            <button onClick={() => {handleSave(); setMode('code');}} className={`px-4 py-2 rounded-md text-sm font-bold transition-all ${mode==='code'?'bg-blue-600 shadow-md text-white':'text-slate-600 hover:bg-slate-300'}`}>🏷️ Code</button>
-                            <button onClick={() => {handleSave(); setMode('notes');}} className={`px-4 py-2 rounded-md text-sm font-bold transition-all ${mode==='notes'?'bg-purple-600 shadow-md text-white':'text-slate-600 hover:bg-slate-300'}`}>📝 Memos</button>
-                            <button onClick={() => {handleSave(); setMode('log');}} className={`px-4 py-2 rounded-md text-sm font-bold transition-all ${mode==='log'?'bg-green-600 shadow-md text-white':'text-slate-600 hover:bg-slate-300'}`}>⏱️ Activity Log</button>
+                        <div className="flex bg-slate-100 p-1 rounded-lg">
+                            <button onClick={() => {handleSave(); setMode('edit');}} className={`px-4 py-2 rounded-md text-sm font-bold transition-all ${mode==='edit'?'bg-amber-500 text-white':'text-slate-600 hover:bg-slate-200'}`}>Edit</button>
+                            <button onClick={() => {handleSave(); setMode('code');}} className={`px-4 py-2 rounded-md text-sm font-bold transition-all ${mode==='code'?'bg-tide text-white':'text-slate-600 hover:bg-slate-200'}`}>Code</button>
+                            <button onClick={() => {handleSave(); setMode('notes');}} className={`px-4 py-2 rounded-md text-sm font-bold transition-all ${mode==='notes'?'bg-ink text-white':'text-slate-600 hover:bg-slate-200'}`}>Memos</button>
+                            <button onClick={() => {handleSave(); setMode('log');}} className={`px-4 py-2 rounded-md text-sm font-bold transition-all ${mode==='log'?'bg-emerald-600 text-white':'text-slate-600 hover:bg-slate-200'}`}>Activity</button>
                         </div>
                     </div>
 
                     <div className="flex-1 flex overflow-hidden">
                         <div className="flex-1 flex flex-col border-r relative bg-white">
                             {audioUrl && mode !== 'log' && (
-                                <div className="p-4 border-b bg-slate-50 shadow-sm z-10 flex gap-4 items-center">
-                                    <span className="text-xl">🎧</span>
+                                <div className="p-4 border-b bg-slate-50 z-10 flex gap-4 items-center">
                                     <audio src={audioUrl} controls className="w-full h-10 outline-none" />
                                 </div>
                             )}
-                            
-                            <div className="flex-1 overflow-y-auto p-8 pt-4">
-                                {/* INTUITIVE MODE BANNERS */}
-                                {mode === 'edit' && (
-                                    <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 p-3 rounded-lg mb-6 flex items-center gap-3 shadow-sm">
-                                        <span className="text-2xl">✏️</span>
-                                        <div>
-                                            <h4 className="font-bold">Edit Mode</h4>
-                                            <p className="text-sm">Paste your raw transcript text here, or fix typos. Highlighting is disabled in this mode.</p>
-                                        </div>
-                                    </div>
-                                )}
-                                {mode === 'code' && (
-                                    <div className="bg-blue-50 border border-blue-200 text-blue-800 p-3 rounded-lg mb-6 flex items-center gap-3 shadow-sm">
-                                        <span className="text-2xl">🏷️</span>
-                                        <div>
-                                            <h4 className="font-bold">Coding Mode</h4>
-                                            <p className="text-sm">Highlight text below to assign codes and memos. Click on existing highlights to edit them.</p>
-                                        </div>
-                                    </div>
-                                )}
-                                {mode === 'notes' && (
-                                    <div className="bg-purple-50 border border-purple-200 text-purple-800 p-3 rounded-lg mb-6 flex items-center gap-3 shadow-sm">
-                                        <span className="text-2xl">📝</span>
-                                        <div>
-                                            <h4 className="font-bold">Memo Mode</h4>
-                                            <p className="text-sm">Jot down overarching ideas and context for this entire transcript.</p>
-                                        </div>
-                                    </div>
-                                )}
-                                {mode === 'log' && (
-                                    <div className="bg-green-50 border border-green-200 text-green-800 p-3 rounded-lg mb-6 flex items-center gap-3 shadow-sm max-w-3xl mx-auto w-full">
-                                        <span className="text-2xl">⏱️</span>
-                                        <div>
-                                            <h4 className="font-bold">Activity Log</h4>
-                                            <p className="text-sm">Keep a record of when you review, edit, or code this specific transcript.</p>
-                                        </div>
-                                    </div>
-                                )}
 
-                                {/* CONTENT AREAS */}
+                            <div className="flex-1 overflow-y-auto p-8 pt-4">
                                 {mode === 'edit' && (
-                                    <textarea value={content} onChange={e => setContent(e.target.value)} onBlur={handleSave} placeholder="Paste transcript text here..." className="w-full h-full min-h-[500px] resize-none outline-none text-lg leading-relaxed text-slate-800 p-2 border-dashed border-2 border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:border-yellow-400 transition" />
+                                    <textarea value={content} onChange={e => setContent(e.target.value)} onBlur={handleSave} placeholder="Paste transcript text here..." className="w-full h-full min-h-[500px] resize-none outline-none text-lg leading-relaxed text-slate-800 p-3 border-dashed border-2 border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:border-amber-400 transition" />
                                 )}
                                 {mode === 'code' && (
-                                    <div ref={textRef} onMouseUp={handleMouseUp} className="text-lg leading-relaxed whitespace-pre-wrap outline-none pb-32 font-serif text-slate-800 p-2">
+                                    <div ref={textRef} onMouseUp={handleMouseUp} className="text-lg leading-relaxed whitespace-pre-wrap outline-none pb-32 text-slate-800 p-2">
                                         {content ? renderHighlighted() : <span className="text-slate-400 italic">No text found. Switch to Edit mode to paste your transcript.</span>}
                                     </div>
                                 )}
                                 {mode === 'notes' && (
                                     <div className="h-full flex flex-col max-w-3xl mx-auto w-full">
-                                        <textarea value={notes} onChange={e => setNotes(e.target.value)} onBlur={handleSave} placeholder="Type your overarching observations, theoretical ideas, and context about this specific interview/transcript..." className="flex-1 w-full resize-none outline-none border border-purple-200 bg-white p-6 rounded-xl text-lg text-slate-800 leading-relaxed shadow-sm focus:ring-2 ring-purple-300 transition" />
+                                        <textarea value={notes} onChange={e => setNotes(e.target.value)} onBlur={handleSave} placeholder="Type overarching observations and context for this transcript..." className="flex-1 w-full resize-none outline-none border border-slate-300 bg-white p-6 rounded-xl text-lg text-slate-800 leading-relaxed shadow-sm focus:ring-2 ring-ink transition" />
                                     </div>
                                 )}
                                 {mode === 'log' && (
                                     <div className="flex flex-col max-w-3xl mx-auto w-full">
-                                        {/* Activity Entry Form */}
                                         <form onSubmit={submitActivityLog} className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm mb-8">
                                             <h3 className="font-bold text-lg text-slate-800 mb-4">Add New Activity</h3>
                                             <div className="flex flex-col md:flex-row gap-4 mb-4">
                                                 <div className="w-full md:w-1/3">
                                                     <label className="block text-xs uppercase font-bold text-slate-500 mb-1">Activity Type *</label>
-                                                    <input 
-                                                        type="text" required
-                                                        list="activityTypesList" 
-                                                        value={logType} onChange={e => setLogType(e.target.value)} 
-                                                        placeholder="e.g. Coded" 
-                                                        className="w-full border border-slate-300 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-green-500 bg-slate-50" 
-                                                    />
-                                                    <datalist id="activityTypesList">
-                                                        {activityTypes.map(t => <option key={t} value={t} />)}
-                                                    </datalist>
+                                                    <input type="text" required list="activityTypesList" value={logType} onChange={e => setLogType(e.target.value)} placeholder="e.g. Coded" className="w-full border border-slate-300 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-emerald-500 bg-slate-50" />
+                                                    <datalist id="activityTypesList">{activityTypes.map(t => <option key={t} value={t} />)}</datalist>
                                                 </div>
                                                 <div className="w-full md:w-2/3">
                                                     <label className="block text-xs uppercase font-bold text-slate-500 mb-1">Details / Notes (Optional)</label>
-                                                    <input 
-                                                        type="text" 
-                                                        value={logNote} onChange={e => setLogNote(e.target.value)} 
-                                                        placeholder="e.g. Finished first pass of coding." 
-                                                        className="w-full border border-slate-300 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-green-500 bg-slate-50" 
-                                                    />
+                                                    <input type="text" value={logNote} onChange={e => setLogNote(e.target.value)} placeholder="e.g. Finished first pass of coding." className="w-full border border-slate-300 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-emerald-500 bg-slate-50" />
                                                 </div>
                                             </div>
                                             <div className="flex justify-end">
-                                                <button type="submit" className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-6 rounded-lg shadow-sm transition">
-                                                    Log Activity
-                                                </button>
+                                                <button type="submit" className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-6 rounded-lg">Log Activity</button>
                                             </div>
                                         </form>
 
-                                        {/* Activity Timeline */}
                                         <h3 className="font-bold text-lg text-slate-800 mb-4">History</h3>
                                         <div className="relative border-l-2 border-slate-200 ml-3 space-y-6 pb-12">
                                             {activityLog.map((log) => (
                                                 <div key={log.id} className="relative pl-6">
-                                                    <div className="absolute w-4 h-4 bg-green-500 rounded-full -left-[9px] top-1 border-2 border-white shadow-sm"></div>
+                                                    <div className="absolute w-4 h-4 bg-emerald-500 rounded-full -left-[9px] top-1 border-2 border-white shadow-sm"></div>
                                                     <div className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm">
                                                         <div className="flex justify-between items-start mb-1">
                                                             <span className="font-bold text-slate-800">{log.type}</span>
@@ -615,139 +1038,284 @@
                             </div>
                         </div>
 
-                        {/* RIGHT SIDEBAR FOR CODING */}
                         {mode === 'code' && (
-                            <div className="w-80 bg-slate-50 flex flex-col border-l border-slate-200 shadow-inner z-20">
-                                <div className="p-5 border-b bg-white shadow-sm">
-                                    <h3 className="font-bold text-lg text-slate-800 mb-2">
-                                        {editingTagId ? '✏️ Edit Code & Memo' : (pendingSelection ? '🏷️ Save New Code' : '📑 Document Codes')}
-                                    </h3>
-                                    
+                            <div className="w-96 bg-slate-50 flex flex-col border-l border-slate-200 z-20">
+                                <div className="p-5 border-b bg-white">
+                                    <h3 className="font-bold text-lg text-slate-800 mb-2">{editingTagId ? 'Edit Code' : (pendingSelection ? 'Save New Code' : 'Document Codes')}</h3>
                                     {(pendingSelection || editingTagId) ? (
-                                        <form onSubmit={submitTagForm} className={`p-4 rounded-xl border-2 ${editingTagId ? 'bg-orange-50 border-orange-300' : 'bg-blue-50 border-blue-300'}`}>
-                                            <p className="text-xs text-slate-600 mb-3 line-clamp-3 italic bg-white p-2 rounded border shadow-sm">
-                                                "{pendingSelection ? pendingSelection.text : tags.find(t=>t.id===editingTagId)?.textSnippet}"
-                                            </p>
-                                            
+                                        <form onSubmit={submitTagForm} className={`p-4 rounded-xl border-2 ${editingTagId ? 'bg-orange-50 border-orange-300' : 'bg-teal-50 border-teal-300'}`}>
+                                            <p className="text-xs text-slate-600 mb-3 line-clamp-3 italic bg-white p-2 rounded border">"{pendingSelection ? pendingSelection.text : tags.find(t=>t.id===editingTagId)?.textSnippet}"</p>
+
                                             <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1">Parent Category</label>
-                                            <input type="text" list="categories" value={tagFormCategory} onChange={e=>setTagFormCategory(e.target.value)} placeholder="e.g. Coping Mechanisms" className="w-full border border-slate-300 rounded p-2 text-sm mb-3 focus:ring-2 focus:ring-blue-400 outline-none shadow-sm" />
+                                            <input type="text" list="categories" value={tagFormCategory} onChange={e=>setTagFormCategory(e.target.value)} placeholder="e.g. Coping" className="w-full border border-slate-300 rounded p-2 text-sm mb-2 focus:ring-2 focus:ring-tide outline-none" />
                                             <datalist id="categories">{existingCategories.map(c=><option key={c} value={c}/>)}</datalist>
 
+                                            <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1">Or Select Existing Category</label>
+                                            <select value={tagFormCategory} onChange={e => setTagFormCategory(e.target.value)} className="w-full border border-slate-300 rounded p-2 text-sm mb-3 bg-white">
+                                                <option value="">Select existing category</option>
+                                                {existingCategories.map(c => <option key={c} value={c}>{c}</option>)}
+                                            </select>
+
                                             <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1">Specific Code *</label>
-                                            <input type="text" autoFocus list="tags" value={tagFormName} onChange={e=>setTagFormName(e.target.value)} placeholder="e.g. Humor" className="w-full border border-slate-300 rounded p-2 text-sm mb-3 focus:ring-2 focus:ring-blue-400 outline-none shadow-sm" />
+                                            <input type="text" autoFocus list="tags" value={tagFormName} onChange={e=>setTagFormName(e.target.value)} placeholder="e.g. Humor" className="w-full border border-slate-300 rounded p-2 text-sm mb-2 focus:ring-2 focus:ring-tide outline-none" />
                                             <datalist id="tags">{existingCodes.map(c=><option key={c} value={c}/>)}</datalist>
 
-                                            <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1">Code Memo (Notes on this quote)</label>
-                                            <textarea value={tagFormMemo} onChange={e=>setTagFormMemo(e.target.value)} placeholder="Why is this interesting? Theoretical thoughts..." className="w-full border border-slate-300 rounded p-2 text-sm mb-4 focus:ring-2 focus:ring-blue-400 outline-none shadow-sm resize-none h-20" />
+                                            <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1">Or Select Existing Code</label>
+                                            <select value={tagFormName} onChange={e => setTagFormName(e.target.value)} className="w-full border border-slate-300 rounded p-2 text-sm mb-3 bg-white">
+                                                <option value="">Select existing code</option>
+                                                {existingCodes.map(c => <option key={c} value={c}>{c}</option>)}
+                                            </select>
+
+                                            <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1">Code Memo</label>
+                                            <textarea value={tagFormMemo} onChange={e=>setTagFormMemo(e.target.value)} placeholder="Why is this interesting?" className="w-full border border-slate-300 rounded p-2 text-sm mb-4 focus:ring-2 focus:ring-tide outline-none resize-none h-20" />
 
                                             <div className="flex gap-2">
-                                                <button type="button" onClick={cancelTagForm} className="flex-1 py-2 bg-white border border-slate-300 text-slate-600 font-semibold rounded shadow-sm hover:bg-slate-100 transition">Cancel</button>
-                                                <button type="submit" className={`flex-1 py-2 text-white font-bold rounded shadow-sm transition ${editingTagId ? 'bg-orange-500 hover:bg-orange-600' : 'bg-blue-600 hover:bg-blue-700'}`}>
-                                                    {editingTagId ? 'Update' : 'Save Code'}
-                                                </button>
+                                                <button type="button" onClick={cancelTagForm} className="flex-1 py-2 bg-white border border-slate-300 text-slate-600 font-semibold rounded">Cancel</button>
+                                                <button type="submit" className={`flex-1 py-2 text-white font-bold rounded ${editingTagId ? 'bg-orange-500 hover:bg-orange-600' : 'bg-tide hover:bg-teal-600'}`}>{editingTagId ? 'Update' : 'Save Code'}</button>
                                             </div>
                                         </form>
                                     ) : (
-                                        <p className="text-sm text-slate-500 border-2 border-dashed border-slate-300 p-4 rounded-xl text-center bg-slate-100">Highlight text in the transcript to assign a code, or click an existing highlight to edit it.</p>
+                                        <p className="text-sm text-slate-500 border-2 border-dashed border-slate-300 p-4 rounded-xl text-center bg-slate-100">Highlight text in the transcript to assign a code.</p>
                                     )}
                                 </div>
 
                                 <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-slate-50">
                                     {tags.length === 0 && !pendingSelection && !editingTagId && <p className="text-center text-slate-400 text-sm mt-10">No codes yet in this document.</p>}
                                     {tags.map(tag => (
-                                        <div key={tag.id} className={`bg-white p-3 rounded-lg border shadow-sm relative group transition cursor-pointer ${editingTagId === tag.id ? 'ring-2 ring-orange-400 border-orange-400' : 'hover:border-blue-400'}`} onClick={() => !editingTagId && openEditTag(tag)}>
+                                        <div key={tag.id} className={`bg-white p-3 rounded-lg border shadow-sm relative group transition cursor-pointer ${editingTagId === tag.id ? 'ring-2 ring-orange-400 border-orange-400' : 'hover:border-tide'}`} onClick={() => !editingTagId && openEditTag(tag)}>
                                             <div className="mb-1 pr-6">
                                                 <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">{tag.category || 'Uncategorized'}</span>
-                                                <span className="text-xs font-bold text-blue-800 bg-blue-100 border border-blue-200 px-2 py-0.5 rounded inline-block">{tag.tagName}</span>
+                                                <span className="text-xs font-bold text-teal-800 bg-teal-100 border border-teal-200 px-2 py-0.5 rounded inline-block">{tag.tagName}</span>
                                             </div>
                                             <p className="text-xs text-slate-600 italic mt-2 line-clamp-2 bg-slate-50 p-1 rounded">"{tag.textSnippet}"</p>
-                                            {tag.memo && (
-                                                <div className="mt-2 border-t border-slate-100 pt-2 flex gap-1">
-                                                    <span className="text-xs">📝</span>
-                                                    <p className="text-[11px] text-purple-700 font-medium line-clamp-2">{tag.memo}</p>
-                                                </div>
-                                            )}
-                                            <button onClick={(e) => { e.stopPropagation(); onRemoveTag(tag.id); }} className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 hover:text-red-500 bg-slate-100 rounded-full p-1 text-sm transition" title="Delete Code">🗑️</button>
+                                            {tag.memo && <p className="text-[11px] text-slate-700 mt-2 line-clamp-2">{tag.memo}</p>}
+                                            <button onClick={(e) => { e.stopPropagation(); onRemoveTag(tag.id); }} className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 hover:text-red-500 bg-slate-100 rounded-full p-1 text-sm transition" title="Delete Code">Delete</button>
                                         </div>
                                     ))}
                                 </div>
                             </div>
                         )}
-                        
-                        {/* Placeholder for non-coding mode so layout doesn't break */}
-                        {mode !== 'code' && <div className="w-80 bg-slate-100 flex flex-col justify-center items-center border-l border-slate-200 p-8 text-center text-slate-400 shadow-inner">
-                            <span className="text-4xl mb-4">👀</span>
-                            Switch to <strong className="text-blue-600 mx-1">Code & Analyze</strong> mode to view, edit, and add qualitative codes.
-                        </div>}
+
+                        {mode !== 'code' && (
+                            <div className="w-80 bg-slate-100 flex flex-col justify-center items-center border-l border-slate-200 p-8 text-center text-slate-500">
+                                Switch to Code mode to add and edit qualitative codes.
+                            </div>
+                        )}
                     </div>
                 </div>
             );
         }
 
-        // --- 7. CODEBOOK ---
+        function AnalysisBoard({ tags, canvases, onUpdate }) {
+            const [newCanvasName, setNewCanvasName] = useState('');
+            const [activeCanvasId, setActiveCanvasId] = useState(canvases[0]?.id || null);
+            const [newThemeName, setNewThemeName] = useState('');
+
+            useEffect(() => {
+                if (!activeCanvasId && canvases[0]) setActiveCanvasId(canvases[0].id);
+            }, [canvases, activeCanvasId]);
+
+            const codeStats = useMemo(() => {
+                const map = {};
+                tags.forEach(t => {
+                    if (!map[t.tagName]) map[t.tagName] = { count: 0, categories: new Set() };
+                    map[t.tagName].count += 1;
+                    map[t.tagName].categories.add(t.category || 'Uncategorized');
+                });
+                return Object.entries(map)
+                    .map(([name, val]) => ({
+                        name,
+                        count: val.count,
+                        category: [...val.categories][0] || 'Uncategorized'
+                    }))
+                    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+            }, [tags]);
+
+            const activeCanvas = canvases.find(c => c.id === activeCanvasId) || null;
+
+            const createCanvas = () => {
+                if (!newCanvasName.trim()) return;
+                const c = { id: Date.now().toString(), name: newCanvasName.trim(), themes: [] };
+                onUpdate([c, ...canvases]);
+                setActiveCanvasId(c.id);
+                setNewCanvasName('');
+            };
+
+            const addTheme = () => {
+                if (!activeCanvas || !newThemeName.trim()) return;
+                const updated = { ...activeCanvas, themes: [...activeCanvas.themes, { id: Date.now().toString(), name: newThemeName.trim(), codes: [] }] };
+                onUpdate(canvases.map(c => c.id === updated.id ? updated : c));
+                setNewThemeName('');
+            };
+
+            const moveCodeToTheme = (themeId, codeName) => {
+                if (!activeCanvas) return;
+                const nextThemes = activeCanvas.themes.map(t => ({ ...t, codes: t.codes.filter(c => c !== codeName) }));
+                const idx = nextThemes.findIndex(t => t.id === themeId);
+                if (idx >= 0 && !nextThemes[idx].codes.includes(codeName)) nextThemes[idx].codes.push(codeName);
+                const updated = { ...activeCanvas, themes: nextThemes };
+                onUpdate(canvases.map(c => c.id === updated.id ? updated : c));
+            };
+
+            const removeCodeFromTheme = (themeId, codeName) => {
+                if (!activeCanvas) return;
+                const updated = {
+                    ...activeCanvas,
+                    themes: activeCanvas.themes.map(t => t.id === themeId ? { ...t, codes: t.codes.filter(c => c !== codeName) } : t)
+                };
+                onUpdate(canvases.map(c => c.id === updated.id ? updated : c));
+            };
+
+            const assignedCodes = new Set((activeCanvas?.themes || []).flatMap(t => t.codes));
+            const unassigned = codeStats.filter(c => !assignedCodes.has(c.name));
+
+            return (
+                <div className="p-8 h-full overflow-y-auto">
+                    <div className="max-w-7xl mx-auto space-y-6">
+                        <div className="bg-white border rounded-2xl p-6 shadow-soft">
+                            <h2 className="text-3xl font-display">Analysis Canvases</h2>
+                            <p className="text-slate-500 mt-1">Create theme buckets and drag/drop existing codes into themes.</p>
+                        </div>
+
+                        <div className="bg-white border rounded-2xl p-5 shadow-soft grid md:grid-cols-3 gap-4">
+                            <div className="md:col-span-2 flex gap-2">
+                                <input value={newCanvasName} onChange={e => setNewCanvasName(e.target.value)} placeholder="New canvas name" className="flex-1 border rounded-lg p-2.5 focus:outline-none focus:ring-2 focus:ring-tide" />
+                                <button onClick={createCanvas} className="bg-tide hover:bg-teal-600 text-white px-4 rounded-lg font-semibold">Create Canvas</button>
+                            </div>
+                            <select value={activeCanvasId || ''} onChange={e => setActiveCanvasId(e.target.value)} className="border rounded-lg p-2.5">
+                                <option value="">Select canvas</option>
+                                {canvases.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                            </select>
+                        </div>
+
+                        {!activeCanvas ? (
+                            <div className="text-center py-16 bg-white border rounded-2xl text-slate-500">Create or select a canvas to begin analysis.</div>
+                        ) : (
+                            <div className="grid lg:grid-cols-3 gap-5">
+                                <div className="bg-white border rounded-2xl p-4 shadow-soft lg:col-span-1">
+                                    <h3 className="font-bold mb-3">Code Bank (with quote counts)</h3>
+                                    <p className="text-xs text-slate-500 mb-3">Drag a code card into a theme bucket.</p>
+                                    <div className="space-y-2 max-h-[520px] overflow-y-auto pr-1">
+                                        {codeStats.map(code => (
+                                            <div
+                                                key={code.name}
+                                                draggable
+                                                onDragStart={(e) => e.dataTransfer.setData('text/plain', code.name)}
+                                                className={`border rounded-lg p-2 cursor-grab bg-white hover:border-tide ${assignedCodes.has(code.name) ? 'opacity-60' : ''}`}
+                                            >
+                                                <div className="font-semibold text-sm">{code.name}</div>
+                                                <div className="text-xs text-slate-500">{code.count} quotes • {code.category}</div>
+                                            </div>
+                                        ))}
+                                        {codeStats.length === 0 && <p className="text-sm text-slate-400">No codes available yet.</p>}
+                                    </div>
+                                </div>
+
+                                <div className="bg-white border rounded-2xl p-4 shadow-soft lg:col-span-2">
+                                    <div className="flex gap-2 mb-4">
+                                        <input value={newThemeName} onChange={e => setNewThemeName(e.target.value)} placeholder="New theme bucket" className="flex-1 border rounded-lg p-2.5 focus:outline-none focus:ring-2 focus:ring-ember" />
+                                        <button onClick={addTheme} className="bg-ember hover:bg-orange-700 text-white px-4 rounded-lg font-semibold">Add Theme</button>
+                                    </div>
+
+                                    {activeCanvas.themes.length === 0 && <p className="text-slate-400 text-sm">No themes yet in this canvas.</p>}
+
+                                    <div className="space-y-3">
+                                        {activeCanvas.themes.map(theme => (
+                                            <div
+                                                key={theme.id}
+                                                onDragOver={(e) => e.preventDefault()}
+                                                onDrop={(e) => {
+                                                    e.preventDefault();
+                                                    const codeName = e.dataTransfer.getData('text/plain');
+                                                    moveCodeToTheme(theme.id, codeName);
+                                                }}
+                                                className="border-2 border-dashed rounded-xl p-4 bg-slate-50"
+                                            >
+                                                <h4 className="font-bold text-ink mb-2">{theme.name}</h4>
+                                                <div className="flex flex-wrap gap-2">
+                                                    {theme.codes.map(codeName => {
+                                                        const found = codeStats.find(c => c.name === codeName);
+                                                        return (
+                                                            <span key={codeName} className="inline-flex items-center gap-2 text-xs bg-teal-100 text-teal-900 px-3 py-1 rounded-full border border-teal-200">
+                                                                {codeName} ({found?.count || 0})
+                                                                <button onClick={() => removeCodeFromTheme(theme.id, codeName)} className="text-teal-700 hover:text-red-600">x</button>
+                                                            </span>
+                                                        );
+                                                    })}
+                                                    {theme.codes.length === 0 && <span className="text-xs text-slate-400">Drop codes here</span>}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+
+                                    {unassigned.length > 0 && (
+                                        <div className="mt-5 pt-4 border-t">
+                                            <p className="text-xs uppercase text-slate-500 font-bold mb-2">Unassigned in this canvas</p>
+                                            <p className="text-sm text-slate-600">{unassigned.map(c => `${c.name} (${c.count})`).join(', ')}</p>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        }
+
         function Codebook({ tags, transcripts }) {
             const [searchTerm, setSearchTerm] = useState('');
             const tableData = useMemo(() => {
                 return tags.map(tag => {
                     const parent = transcripts.find(t => t.id === tag.transcriptId);
-                    return { ...tag, transcriptTitle: parent?.title || 'Unknown', folder: parent?.folder || 'Uncategorized', category: tag.category || 'Uncategorized' };
-                }).filter(item => 
-                    item.tagName.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                    item.category.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                    return {
+                        ...tag,
+                        transcriptTitle: parent?.title || 'Unknown',
+                        folder: parent?.folder || 'Uncategorized',
+                        subfolder: parent?.subfolder || 'General',
+                        category: tag.category || 'Uncategorized'
+                    };
+                }).filter(item =>
+                    item.tagName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                    item.category.toLowerCase().includes(searchTerm.toLowerCase()) ||
                     item.textSnippet.toLowerCase().includes(searchTerm.toLowerCase()) ||
                     (item.memo && item.memo.toLowerCase().includes(searchTerm.toLowerCase()))
                 ).sort((a, b) => a.category.localeCompare(b.category) || a.tagName.localeCompare(b.tagName));
             }, [tags, transcripts, searchTerm]);
 
-            const handleExportCSV = () => {
-                let csvContent = '\uFEFF' + "Category,Code/Tag,Code Memo,Folder,Transcript,Highlighted Quote\n";
-                tableData.forEach(r => { 
-                    const memo = r.memo ? r.memo.replace(/"/g, '""').replace(/\n/g, ' ') : '';
-                    csvContent += `"${r.category.replace(/"/g, '""')}","${r.tagName.replace(/"/g, '""')}","${memo}","${r.folder.replace(/"/g, '""')}","${r.transcriptTitle.replace(/"/g, '""')}","${r.textSnippet.replace(/"/g, '""').replace(/\n/g, ' ')}"\n`; 
-                });
-                const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-                const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = `Codebook_Export_${new Date().toISOString().split('T')[0]}.csv`;
-                document.body.appendChild(link); link.click(); document.body.removeChild(link);
-            };
-
             return (
-                <div className="p-8 h-full overflow-y-auto bg-slate-50 flex flex-col">
-                    <div className="max-w-[1400px] mx-auto w-full flex-1 flex flex-col pt-4">
-                        <div className="flex justify-between items-end mb-8 bg-white p-6 rounded-2xl shadow-sm border pr-32">
+                <div className="p-8 h-full overflow-y-auto flex flex-col">
+                    <div className="max-w-[1400px] mx-auto w-full flex-1 flex flex-col pt-2">
+                        <div className="flex justify-between items-end mb-8 bg-white p-6 rounded-2xl shadow-soft border">
                             <div>
-                                <h2 className="text-3xl font-bold">🏷️ Codebook Manager</h2>
+                                <h2 className="text-3xl font-display">Codebook Manager</h2>
                                 <p className="text-slate-500 mt-2">{tags.length} highlights across {new Set(tags.map(t => t.tagName)).size} unique codes.</p>
                             </div>
-                            <button onClick={handleExportCSV} disabled={tags.length === 0} className="bg-green-600 hover:bg-green-700 disabled:bg-slate-300 text-white px-6 py-3 rounded-xl flex items-center gap-2 font-bold shadow-sm transition">⬇️ Export to Excel/CSV</button>
                         </div>
-                        <input type="text" placeholder="🔍 Search categories, codes, memos, or quotes..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full max-w-lg p-3 mb-6 border rounded-xl shadow-sm outline-none focus:ring-2 focus:ring-blue-500" />
-                        
+                        <input type="text" placeholder="Search categories, codes, memos, or quotes..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full max-w-lg p-3 mb-6 border rounded-xl shadow-sm outline-none focus:ring-2 focus:ring-tide" />
+
                         <div className="bg-white border rounded-2xl shadow-sm overflow-hidden flex-1 flex flex-col">
                             <div className="overflow-x-auto flex-1">
                                 <table className="w-full text-left border-collapse">
-                                    <thead><tr className="bg-slate-50 border-b text-slate-600 uppercase text-xs tracking-wider">
-                                        <th className="p-4 font-bold w-32">Category</th>
-                                        <th className="p-4 font-bold w-40">Code / Tag</th>
-                                        <th className="p-4 font-bold w-48">Transcript</th>
-                                        <th className="p-4 font-bold">Highlighted Quote & Memo</th>
-                                    </tr></thead>
+                                    <thead>
+                                        <tr className="bg-slate-50 border-b text-slate-600 uppercase text-xs tracking-wider">
+                                            <th className="p-4 font-bold w-32">Category</th>
+                                            <th className="p-4 font-bold w-40">Code</th>
+                                            <th className="p-4 font-bold w-48">Transcript</th>
+                                            <th className="p-4 font-bold">Quote & Memo</th>
+                                        </tr>
+                                    </thead>
                                     <tbody className="divide-y text-sm">
                                         {tableData.length === 0 ? <tr><td colSpan="4" className="p-12 text-center text-slate-400 italic">No codes match your search.</td></tr> : tableData.map((row, idx) => (
                                             <tr key={idx} className="hover:bg-slate-50 align-top">
                                                 <td className="p-4 text-slate-500 font-bold uppercase text-[10px]">{row.category}</td>
-                                                <td className="p-4"><span className="bg-blue-100 border border-blue-200 text-blue-800 px-3 py-1 rounded-full text-xs font-bold shadow-sm">{row.tagName}</span></td>
+                                                <td className="p-4"><span className="bg-teal-100 border border-teal-200 text-teal-800 px-3 py-1 rounded-full text-xs font-bold">{row.tagName}</span></td>
                                                 <td className="p-4 text-slate-700">
                                                     <span className="font-bold block">{row.transcriptTitle}</span>
-                                                    <span className="text-xs text-slate-400 mt-1 block">📁 {row.folder}</span>
+                                                    <span className="text-xs text-slate-400 mt-1 block">{row.folder} / {row.subfolder}</span>
                                                 </td>
                                                 <td className="p-4">
                                                     <p className="italic text-slate-700 mb-2 leading-relaxed">"{row.textSnippet}"</p>
-                                                    {row.memo && (
-                                                        <div className="bg-purple-50 p-3 rounded-lg border border-purple-100 mt-2">
-                                                            <span className="text-[10px] uppercase font-bold text-purple-400 block mb-1">Code Memo</span>
-                                                            <p className="text-sm text-purple-900">{row.memo}</p>
-                                                        </div>
-                                                    )}
+                                                    {row.memo && <p className="text-sm text-slate-600">{row.memo}</p>}
                                                 </td>
                                             </tr>
                                         ))}
