@@ -443,6 +443,23 @@
                 }
             };
 
+            const handleDownloadApp = async () => {
+                try {
+                    const appUrl = new URL('./index.html', window.location.href).toString();
+                    const res = await fetch(appUrl, { cache: 'no-store' });
+                    if (!res.ok) throw new Error('Failed to fetch app file');
+                    const html = await res.text();
+                    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+                    const a = document.createElement('a');
+                    a.href = URL.createObjectURL(blob);
+                    a.download = 'QualiApp.html';
+                    a.click();
+                    URL.revokeObjectURL(a.href);
+                } catch (err) {
+                    alert('Unable to download app file from this location. If opened via file://, use your file manager to copy index.html directly.');
+                }
+            };
+
             if (isLocked) return <LockScreen onUnlock={() => setIsLocked(false)} />;
             if (!isReady) return <div className="flex h-screen items-center justify-center">Loading...</div>;
 
@@ -471,6 +488,7 @@
                             <Dashboard
                                 transcripts={transcripts}
                                 folders={folders}
+                                onDownloadApp={handleDownloadApp}
                                 onCreate={handleCreateTranscript}
                                 onCreateFolder={handleCreateFolder}
                                 onRenameFolder={handleRenameFolder}
@@ -602,7 +620,7 @@
             );
         }
 
-        function Dashboard({ transcripts, folders, onCreate, onCreateFolder, onRenameFolder, onDeleteFolder, onMoveTranscript, onRenameTranscript, onOpen, onDelete, participants }) {
+        function Dashboard({ transcripts, folders, onDownloadApp, onCreate, onCreateFolder, onRenameFolder, onDeleteFolder, onMoveTranscript, onRenameTranscript, onOpen, onDelete, participants }) {
             const [showModal, setShowModal] = useState(false);
             const [title, setTitle] = useState('');
             const [folder, setFolder] = useState('');
@@ -709,7 +727,10 @@
                                     <h2 className="text-4xl font-display">Transcript Workspace</h2>
                                     <p className="text-slate-500 mt-1">Drag transcript cards into the folder sidebar. Rename titles and manage folders inline.</p>
                                 </div>
-                                <button onClick={() => setShowModal(true)} className="bg-tide hover:bg-teal-600 text-white px-5 py-3 rounded-xl shadow font-semibold">New Transcript</button>
+                                <div className="flex gap-3">
+                                    <button onClick={onDownloadApp} className="bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 px-5 py-3 rounded-xl shadow font-semibold">Download App</button>
+                                    <button onClick={() => setShowModal(true)} className="bg-tide hover:bg-teal-600 text-white px-5 py-3 rounded-xl shadow font-semibold">New Transcript</button>
+                                </div>
                             </div>
                         </section>
 
@@ -1401,6 +1422,15 @@
             }, [transcript.id]);
 
             useEffect(() => {
+                if (!editableRef.current) return;
+                if (mode !== 'edit') return;
+                const expectedHtml = contentHtml || plainToHtml(content);
+                if (editableRef.current.innerHTML !== expectedHtml) {
+                    editableRef.current.innerHTML = expectedHtml;
+                }
+            }, [transcript.id, mode]);
+
+            useEffect(() => {
                 if (transcript.hasAudio) dbGet('files', `audio_${transcript.id}`).then(b => { if (b) setAudioUrl(URL.createObjectURL(b)); });
                 return () => { if (audioUrl) URL.revokeObjectURL(audioUrl); };
             }, [transcript.id]);
@@ -1684,7 +1714,6 @@
                                             onInput={handleEditableInput}
                                             onBlur={handleSave}
                                             className="w-full h-full min-h-[500px] outline-none text-lg leading-relaxed text-slate-800 p-3 border-dashed border-2 border-slate-200 rounded-xl bg-slate-50 focus-within:bg-white focus-within:border-amber-400 transition whitespace-pre-wrap"
-                                            dangerouslySetInnerHTML={{ __html: contentHtml || plainToHtml(content) }}
                                         />
                                     </div>
                                 )}
