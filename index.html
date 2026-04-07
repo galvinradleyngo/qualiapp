@@ -424,7 +424,7 @@
                         )}
                         {view === 'artifacts' && <ArtifactDashboard artifacts={globalArtifacts} onUpdate={setGlobalArtifacts} />}
                         {view === 'participants' && <ParticipantVault participants={participants} onUpdate={setParticipants} />}
-                        {view === 'analysis' && <AnalysisBoard tags={tags} canvases={analysisCanvases} onUpdate={setAnalysisCanvases} artifacts={globalArtifacts} />}
+                        {view === 'analysis' && <AnalysisBoard tags={tags} canvases={analysisCanvases} onUpdate={setAnalysisCanvases} artifacts={globalArtifacts} transcripts={transcripts} />}
                         {view === 'backup' && <BackupDashboard onBackup={handleBackupDownload} onRestore={handleRestoreUpload} />}
                         {view === 'editor' && activeTranscript && (
                             <Editor
@@ -1395,48 +1395,100 @@
             );
         }
 
-        function AnalysisBoard({ tags, canvases, onUpdate, artifacts }) {
+        function AnalysisBoard({ tags, canvases, onUpdate, artifacts, transcripts }) {
             const [newCanvasName, setNewCanvasName] = useState('');
             const [activeCanvasId, setActiveCanvasId] = useState(canvases[0]?.id || null);
             const [newThemeName, setNewThemeName] = useState('');
             const [editingThemeId, setEditingThemeId] = useState(null);
             const [editThemeName, setEditThemeName] = useState('');
+            const [selectedFolders, setSelectedFolders] = useState([]);
 
             useEffect(() => {
                 if (!activeCanvasId && canvases[0]) setActiveCanvasId(canvases[0].id);
             }, [canvases, activeCanvasId]);
 
-            const codeStats = useMemo(() => {
+            const transcriptById = useMemo(() => {
+                const out = {};
+                transcripts.forEach(t => { out[t.id] = t; });
+                return out;
+            }, [transcripts]);
+
+            const availableFolders = useMemo(() => {
+                const set = new Set();
+                transcripts.forEach(t => set.add(t.folder || 'Uncategorized'));
+                (artifacts || []).forEach(a => set.add(a.folder || 'Uncategorized'));
+                return Array.from(set).sort((a, b) => a.localeCompare(b));
+            }, [transcripts, artifacts]);
+
+            useEffect(() => {
+                if (selectedFolders.length === 0 && availableFolders.length > 0) {
+                    setSelectedFolders(availableFolders);
+                }
+            }, [availableFolders, selectedFolders.length]);
+
+            const selectedFolderSet = useMemo(() => new Set(selectedFolders), [selectedFolders]);
+
+            const codeDetails = useMemo(() => {
                 const map = {};
-                
-                // Codes from transcripts
                 tags.forEach(t => {
-                    if (!map[t.tagName]) map[t.tagName] = { count: 0, categories: new Set(), source: 'transcript' };
+                    const parent = transcriptById[t.transcriptId];
+                    const folder = parent?.folder || 'Uncategorized';
+                    if (!selectedFolderSet.has(folder)) return;
+                    if (!map[t.tagName]) {
+                        map[t.tagName] = {
+                            name: t.tagName,
+                            category: t.category || 'Uncategorized',
+                            count: 0,
+                            sourceSet: new Set(),
+                            quotes: [],
+                            folders: new Set()
+                        };
+                    }
                     map[t.tagName].count += 1;
-                    map[t.tagName].categories.add(t.category || 'Uncategorized');
+                    map[t.tagName].sourceSet.add('transcript');
+                    map[t.tagName].folders.add(folder);
+                    map[t.tagName].quotes.push({
+                        source: 'Transcript',
+                        folder,
+                        ref: parent?.title || 'Unknown transcript',
+                        text: t.textSnippet || ''
+                    });
                 });
-                
-                // Codes from artifacts
-                if (artifacts && artifacts.length > 0) {
-                    artifacts.forEach(art => {
-                        if (art.codes && art.codes.length > 0) {
-                            art.codes.forEach(codeName => {
-                                if (!map[codeName]) map[codeName] = { count: 0, categories: new Set(), source: 'artifact' };
-                                map[codeName].source = 'both';
+
+                (artifacts || []).forEach(art => {
+                    const folder = art.folder || 'Uncategorized';
+                    if (!selectedFolderSet.has(folder)) return;
+                    (art.codes || []).forEach(codeName => {
+                        if (!map[codeName]) {
+                            map[codeName] = {
+                                name: codeName,
+                                category: 'Artifact',
+                                count: 0,
+                                sourceSet: new Set(),
+                                quotes: [],
+                                folders: new Set()
+                            };
+                        }
+                        map[codeName].sourceSet.add('artifact');
+                        map[codeName].folders.add(folder);
+                        if (art.notes && art.notes.trim()) {
+                            map[codeName].quotes.push({
+                                source: 'Artifact',
+                                folder,
+                                ref: art.name,
+                                text: art.notes
                             });
                         }
                     });
-                }
-                
-                return Object.entries(map)
-                    .map(([name, val]) => ({
-                        name,
-                        count: val.count,
-                        category: [...val.categories][0] || 'Uncategorized',
-                        source: val.source
+                });
+
+                return Object.values(map)
+                    .map((c) => ({
+                        ...c,
+                        source: c.sourceSet.size > 1 ? 'both' : (c.sourceSet.has('artifact') ? 'artifact' : 'transcript')
                     }))
                     .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
-            }, [tags, artifacts]);
+            }, [tags, artifacts, transcriptById, selectedFolderSet]);
 
             const activeCanvas = canvases.find(c => c.id === activeCanvasId) || null;
 
@@ -1510,14 +1562,63 @@
             };
 
             const assignedCodes = new Set((activeCanvas?.themes || []).flatMap(t => t.codes));
-            const unassigned = codeStats.filter(c => !assignedCodes.has(c.name));
+            const unassigned = codeDetails.filter(c => !assignedCodes.has(c.name));
+
+            const tableRows = useMemo(() => {
+                if (!activeCanvas) return [];
+                const detailByCode = {};
+                codeDetails.forEach(c => { detailByCode[c.name] = c; });
+                const rows = [];
+                activeCanvas.themes.forEach(theme => {
+                    theme.codes.forEach(codeName => {
+                        const d = detailByCode[codeName] || { count: 0, quotes: [], category: 'Uncategorized' };
+                        rows.push({
+                            theme: theme.name,
+                            code: codeName,
+                            category: d.category,
+                            quoteCount: d.count,
+                            quotes: d.quotes
+                        });
+                    });
+                });
+                return rows;
+            }, [activeCanvas, codeDetails]);
+
+            const exportCanvasCsv = () => {
+                if (!activeCanvas) return;
+                const escape = (v) => {
+                    const s = String(v ?? '');
+                    return `"${s.replace(/"/g, '""')}"`;
+                };
+                const lines = ['Theme,Code,Category,Quote Count,Quotes'];
+                tableRows.forEach((r) => {
+                    const quotes = r.quotes.map(q => `[${q.source}] ${q.ref}: ${q.text}`).join(' || ');
+                    lines.push([
+                        escape(r.theme),
+                        escape(r.code),
+                        escape(r.category),
+                        escape(r.quoteCount),
+                        escape(quotes)
+                    ].join(','));
+                });
+                const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = `${activeCanvas.name.replace(/\s+/g, '_')}_analysis_table.csv`;
+                a.click();
+                URL.revokeObjectURL(a.href);
+            };
+
+            const toggleFolder = (folder) => {
+                setSelectedFolders((prev) => prev.includes(folder) ? prev.filter(f => f !== folder) : [...prev, folder]);
+            };
 
             return (
                 <div className="p-8 h-full overflow-y-auto">
                     <div className="max-w-7xl mx-auto space-y-6">
                         <div className="bg-white border rounded-2xl p-6 shadow-soft">
                             <h2 className="text-3xl font-display">Analysis Canvases</h2>
-                            <p className="text-slate-500 mt-1">Create theme buckets and drag/drop codes from transcripts and artifacts into themes. Edit or delete canvases.</p>
+                            <p className="text-slate-500 mt-1">Create theme buckets, filter by folder, review theme tables, and export to Excel-ready CSV.</p>
                         </div>
 
                         <div className="bg-white border rounded-2xl p-5 shadow-soft grid md:grid-cols-3 gap-4">
@@ -1529,6 +1630,21 @@
                                 <option value="">Select canvas</option>
                                 {canvases.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                             </select>
+                        </div>
+
+                        <div className="bg-white border rounded-2xl p-5 shadow-soft">
+                            <div className="flex items-center justify-between mb-3">
+                                <h3 className="font-bold">Folder Filter</h3>
+                                <button onClick={() => setSelectedFolders(availableFolders)} className="text-xs font-semibold text-tide">Select All</button>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                                {availableFolders.map(folder => (
+                                    <label key={folder} className={`px-3 py-1.5 rounded-full border text-xs cursor-pointer ${selectedFolderSet.has(folder) ? 'bg-teal-100 border-teal-300 text-teal-800' : 'bg-white text-slate-600'}`}>
+                                        <input type="checkbox" className="hidden" checked={selectedFolderSet.has(folder)} onChange={() => toggleFolder(folder)} />
+                                        {folder}
+                                    </label>
+                                ))}
+                            </div>
                         </div>
 
                         {!activeCanvas ? (
@@ -1545,10 +1661,10 @@
 
                                 <div className="grid lg:grid-cols-3 gap-5">
                                     <div className="bg-white border rounded-2xl p-4 shadow-soft lg:col-span-1">
-                                        <h3 className="font-bold mb-3">Code Bank (with quote counts)</h3>
-                                        <p className="text-xs text-slate-500 mb-3">From transcripts & artifacts. Drag into themes.</p>
+                                        <h3 className="font-bold mb-3">Code Bank (filtered)</h3>
+                                        <p className="text-xs text-slate-500 mb-3">Drag codes into theme buckets. Quote counts reflect selected folders.</p>
                                         <div className="space-y-2 max-h-[520px] overflow-y-auto pr-1">
-                                            {codeStats.map(code => (
+                                            {codeDetails.map(code => (
                                                 <div
                                                     key={code.name}
                                                     draggable
@@ -1561,7 +1677,7 @@
                                                     {code.source === 'artifact' && <span className="text-[10px] bg-amber-100 px-1 rounded">Artifact</span>}
                                                 </div>
                                             ))}
-                                            {codeStats.length === 0 && <p className="text-sm text-slate-400">No codes available yet.</p>}
+                                            {codeDetails.length === 0 && <p className="text-sm text-slate-400">No codes available for selected folders.</p>}
                                         </div>
                                     </div>
 
@@ -1575,7 +1691,16 @@
 
                                         <div className="space-y-3">
                                             {activeCanvas.themes.map(theme => (
-                                                <div key={theme.id} className="border-2 border-dashed rounded-xl p-4 bg-slate-50 group">
+                                                <div
+                                                    key={theme.id}
+                                                    onDragOver={(e) => e.preventDefault()}
+                                                    onDrop={(e) => {
+                                                        e.preventDefault();
+                                                        const codeName = e.dataTransfer.getData('text/plain');
+                                                        moveCodeToTheme(theme.id, codeName);
+                                                    }}
+                                                    className="border-2 border-dashed rounded-xl p-4 bg-slate-50 group"
+                                                >
                                                     <div className="flex justify-between items-center mb-3">
                                                         {editingThemeId === theme.id ? (
                                                             <div className="flex gap-2 flex-1">
@@ -1595,7 +1720,7 @@
                                                     </div>
                                                     <div className="flex flex-wrap gap-2">
                                                         {theme.codes.map(codeName => {
-                                                            const found = codeStats.find(c => c.name === codeName);
+                                                            const found = codeDetails.find(c => c.name === codeName);
                                                             return (
                                                                 <span key={codeName} className="inline-flex items-center gap-2 text-xs bg-teal-100 text-teal-900 px-3 py-1 rounded-full border border-teal-200">
                                                                     {codeName} ({found?.count || 0})
@@ -1609,17 +1734,6 @@
                                             ))}
                                         </div>
 
-                                        <div
-                                            onDragOver={(e) => e.preventDefault()}
-                                            onDrop={(e) => {
-                                                e.preventDefault();
-                                                const codeName = e.dataTransfer.getData('text/plain');
-                                                if (codeName && activeCanvas && activeCanvas.themes.length > 0) {
-                                                    alert('Drop the code directly into a theme bucket.');
-                                                }
-                                            }}
-                                        ></div>
-
                                         {unassigned.length > 0 && (
                                             <div className="mt-5 pt-4 border-t">
                                                 <p className="text-xs uppercase text-slate-500 font-bold mb-2">Unassigned in this canvas</p>
@@ -1627,6 +1741,54 @@
                                             </div>
                                         )}
                                     </div>
+                                </div>
+
+                                <div className="bg-white border rounded-2xl p-5 shadow-soft mt-6">
+                                    <div className="flex items-center justify-between mb-3">
+                                        <h3 className="font-bold">Canvas Table (Themes, Codes, Quotes)</h3>
+                                        <button onClick={exportCanvasCsv} className="px-3 py-1.5 rounded-lg bg-ink text-white text-sm font-semibold hover:bg-slate-800">Export CSV (Excel)</button>
+                                    </div>
+                                    {tableRows.length === 0 ? (
+                                        <p className="text-sm text-slate-500">No rows yet. Assign codes to themes first.</p>
+                                    ) : (
+                                        <div className="overflow-x-auto">
+                                            <table className="w-full text-sm border-collapse">
+                                                <thead>
+                                                    <tr className="text-left border-b bg-slate-50">
+                                                        <th className="p-3">Theme</th>
+                                                        <th className="p-3">Code</th>
+                                                        <th className="p-3">Category</th>
+                                                        <th className="p-3">Quotes</th>
+                                                        <th className="p-3">Details</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {tableRows.map((row, idx) => (
+                                                        <tr key={`${row.theme}_${row.code}_${idx}`} className="border-b align-top">
+                                                            <td className="p-3 font-semibold">{row.theme}</td>
+                                                            <td className="p-3">{row.code}</td>
+                                                            <td className="p-3">{row.category}</td>
+                                                            <td className="p-3">{row.quoteCount}</td>
+                                                            <td className="p-3">
+                                                                <details>
+                                                                    <summary className="cursor-pointer text-tide">Show quotes</summary>
+                                                                    <div className="mt-2 space-y-2 max-h-48 overflow-y-auto">
+                                                                        {row.quotes.length === 0 && <p className="text-xs text-slate-400">No quote text available.</p>}
+                                                                        {row.quotes.map((q, qIdx) => (
+                                                                            <div key={`${row.code}_${qIdx}`} className="text-xs bg-slate-50 border rounded p-2">
+                                                                                <p className="font-semibold text-slate-600">[{q.source}] {q.ref} • {q.folder}</p>
+                                                                                <p className="text-slate-700 italic">"{q.text}"</p>
+                                                                            </div>
+                                                                        ))}
+                                                                    </div>
+                                                                </details>
+                                                            </td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         )}
