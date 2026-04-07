@@ -990,6 +990,7 @@
             const [content, setContent] = useState(transcript.content || '');
             const [notes, setNotes] = useState(transcript.notes || '');
             const [audioUrl, setAudioUrl] = useState(null);
+            const [uploadingAudio, setUploadingAudio] = useState(false);
 
             const [pendingSelection, setPendingSelection] = useState(null);
             const [editingTagId, setEditingTagId] = useState(null);
@@ -1010,6 +1011,30 @@
             }, [transcript.id]);
 
             const handleSave = () => onUpdateTranscript({ ...transcript, content, notes });
+
+            const handleAudioUpload = async (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                setUploadingAudio(true);
+                try {
+                    await dbSet('files', `audio_${transcript.id}`, file);
+                    const newUrl = URL.createObjectURL(file);
+                    setAudioUrl(newUrl);
+                    onUpdateTranscript({ ...transcript, content, notes, hasAudio: true });
+                } catch (err) {
+                    alert('Failed to upload audio file.');
+                } finally {
+                    setUploadingAudio(false);
+                }
+            };
+
+            const handleRemoveAudio = async () => {
+                if (!confirm('Remove audio file from this transcript?')) return;
+                await dbDelete('files', `audio_${transcript.id}`);
+                if (audioUrl) URL.revokeObjectURL(audioUrl);
+                setAudioUrl(null);
+                onUpdateTranscript({ ...transcript, content, notes, hasAudio: false });
+            };
 
             const submitActivityLog = (e) => {
                 e.preventDefault();
@@ -1145,9 +1170,25 @@
 
                     <div className="flex-1 flex overflow-hidden">
                         <div className="flex-1 flex flex-col border-r relative bg-white">
-                            {audioUrl && mode !== 'log' && (
-                                <div className="p-4 border-b bg-slate-50 z-10 flex gap-4 items-center">
-                                    <audio src={audioUrl} controls className="w-full h-10 outline-none" />
+                            {audioUrl ? (
+                                <div className="p-4 border-b bg-slate-50 z-10 space-y-3">
+                                    <div className="flex gap-4 items-center">
+                                        <audio src={audioUrl} controls className="flex-1 h-10 outline-none" />
+                                        <button onClick={handleRemoveAudio} className="px-3 py-1 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg text-sm font-semibold">Remove</button>
+                                        <label className="px-3 py-1 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-lg text-sm font-semibold cursor-pointer">
+                                            Replace
+                                            <input type="file" accept="audio/*" onChange={handleAudioUpload} className="hidden" disabled={uploadingAudio} />
+                                        </label>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="p-4 border-b bg-slate-50 z-10">
+                                    <label className="flex gap-4 items-center cursor-pointer hover:bg-slate-100 p-3 rounded-lg transition">
+                                        <span className="text-sm font-semibold text-slate-700">
+                                            {uploadingAudio ? 'Uploading audio...' : 'Click to attach audio file'}
+                                        </span>
+                                        <input type="file" accept="audio/*" onChange={handleAudioUpload} className="hidden" disabled={uploadingAudio} />
+                                    </label>
                                 </div>
                             )}
 
