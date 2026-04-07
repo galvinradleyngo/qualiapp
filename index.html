@@ -645,7 +645,7 @@
                                     <select value={selectedParticipantId} onChange={e => setSelectedParticipantId(e.target.value)} className="w-full text-sm border rounded-lg p-2.5 focus:outline-none focus:ring-2 focus:ring-tide">
                                         <option value="">Select a participant or leave blank</option>
                                         {participants.map(p => (
-                                            <option key={p.id} value={p.id}>{p.pseudonym} {p.actualName ? `(${p.actualName})` : ''}</option>
+                                            <option key={p.id} value={p.id}>{p.pseudonym}</option>
                                         ))}
                                     </select>
                                     {selectedParticipantId && (
@@ -687,6 +687,7 @@
             const [editNotes, setEditNotes] = useState('');
             const [editCodes, setEditCodes] = useState([]);
             const [newCodeInput, setNewCodeInput] = useState('');
+            const [editingArtifactFolder, setEditingArtifactFolder] = useState('');
 
             const handleFileUpload = async (e) => {
                 const file = e.target.files[0];
@@ -720,15 +721,17 @@
                 setEditingId(art.id);
                 setEditNotes(art.notes || '');
                 setEditCodes(art.codes || []);
+                setEditingArtifactFolder(art.folder || '');
                 setNewCodeInput('');
             };
 
             const saveArtifactEdit = () => {
                 if (!editingId) return;
-                onUpdate(artifacts.map(a => a.id === editingId ? { ...a, notes: editNotes, codes: editCodes } : a));
+                onUpdate(artifacts.map(a => a.id === editingId ? { ...a, folder: editingArtifactFolder, notes: editNotes, codes: editCodes } : a));
                 setEditingId(null);
                 setEditNotes('');
                 setEditCodes([]);
+                setEditingArtifactFolder('');
             };
 
             const addCodeToArtifact = () => {
@@ -742,12 +745,24 @@
                 setEditCodes(editCodes.filter(c => c !== code));
             };
 
+            const setArtifactFolder = (artId, folder) => {
+                onUpdate(artifacts.map(a => a.id === artId ? { ...a, folder: folder || '' } : a));
+            };
+
+            const folders = [...new Set(artifacts.map(a => a.folder).filter(Boolean))];
+            const artifactsByFolder = artifacts.reduce((acc, art) => {
+                const folder = art.folder || 'Uncategorized';
+                if (!acc[folder]) acc[folder] = [];
+                acc[folder].push(art);
+                return acc;
+            }, {});
+
             return (
                 <div className="p-8 h-full overflow-y-auto w-full max-w-6xl mx-auto">
                     <div className="flex justify-between items-center mb-8">
                         <div>
                             <h2 className="text-3xl font-display text-ink">Project Artifacts</h2>
-                            <p className="text-slate-500 mt-1">Store literature, IRB docs, or non-transcript materials. Add notes and codes for analysis reference.</p>
+                            <p className="text-slate-500 mt-1">Store literature, IRB docs, or non-transcript materials organized by folders. Add notes and codes for analysis reference.</p>
                         </div>
                         <label className="bg-ink hover:bg-slate-800 text-white px-5 py-2.5 rounded-lg shadow-sm cursor-pointer transition">
                             Upload Document
@@ -755,15 +770,32 @@
                         </label>
                     </div>
 
+                    <div className="bg-white border rounded-2xl p-4 shadow-soft mb-6">
+                        <h3 className="font-bold text-sm mb-2">Existing Folders</h3>
+                        {folders.length > 0 ? (
+                            <p className="text-sm text-slate-600">{folders.join(', ')}</p>
+                        ) : (
+                            <p className="text-sm text-slate-400">No folders yet. Assign artifacts to folders in edit mode.</p>
+                        )}
+                    </div>
+
                     {artifacts.length === 0 ? (
                         <div className="text-center py-20 bg-white rounded-xl border border-dashed text-slate-500">No project artifacts uploaded yet.</div>
                     ) : (
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {artifacts.map(art => (
+                        Object.keys(artifactsByFolder).sort().map(folderName => (
+                            <div key={folderName} className="mb-8">
+                                <h3 className="text-xl font-bold text-ink mb-4 pb-2 border-b">📁 {folderName}</h3>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {artifactsByFolder[folderName].map(art => (
                                 <div key={art.id} className={`bg-white rounded-xl border shadow-sm transition ${editingId === art.id ? 'ring-2 ring-tide' : ''}`}>
                                     {editingId === art.id ? (
                                         <div className="p-5 space-y-4">
                                             <h4 className="font-semibold text-sm">{art.name}</h4>
+                                            <div>
+                                                <label className="block text-xs font-bold text-slate-600 mb-1">Folder</label>
+                                                <input type="text" list="folder_list" value={editingArtifactFolder} onChange={e => setEditingArtifactFolder(e.target.value)} placeholder="Create or select folder" className="w-full border rounded-lg p-2 text-sm focus:ring-2 focus:ring-tide outline-none" />
+                                                <datalist id="folder_list">{folders.map(f => <option key={f} value={f} />)}</datalist>
+                                            </div>
                                             <div>
                                                 <label className="block text-xs font-bold text-slate-600 mb-1">Notes</label>
                                                 <textarea value={editNotes} onChange={e => setEditNotes(e.target.value)} className="w-full border rounded-lg p-2 text-sm resize-none focus:ring-2 focus:ring-tide outline-none" rows="3" placeholder="Add notes about this artifact..." />
@@ -813,6 +845,8 @@
                                 </div>
                             ))}
                         </div>
+                            </div>
+                        ))
                     )}
                 </div>
             );
@@ -895,6 +929,38 @@
             const removeParticipant = (id) => {
                 if (confirm('Delete participant record?')) onUpdate(participants.filter(p => p.id !== id));
             };
+                const handleConsentFormUpload = async (participantId, e) => {
+                    const file = e.target.files[0];
+                    if (!file) return;
+                    const consentId = `consent_${participantId}_${Date.now()}`;
+                    await dbSet('files', consentId, file);
+                    onUpdate(participants.map(p => p.id === participantId ? { ...p, consentFormId: consentId, consentFileName: file.name } : p));
+                    alert('Informed consent form uploaded successfully.');
+                };
+
+                const downloadConsentForm = async (participantId, fileName) => {
+                    const participant = participants.find(p => p.id === participantId);
+                    if (!participant || !participant.consentFormId) return;
+                    const file = await dbGet('files', participant.consentFormId);
+                    if (file) {
+                        const url = URL.createObjectURL(file);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = fileName || 'consent_form.pdf';
+                        a.click();
+                        URL.revokeObjectURL(url);
+                    }
+                };
+
+                const removeConsentForm = async (participantId) => {
+                    const participant = participants.find(p => p.id === participantId);
+                    if (participant && participant.consentFormId) {
+                        if (confirm('Remove informed consent form?')) {
+                            await dbDelete('files', participant.consentFormId);
+                            onUpdate(participants.map(p => p.id === participantId ? { ...p, consentFormId: null, consentFileName: null } : p));
+                        }
+                    }
+                };
 
             if (!isUnlocked) {
                 return (
@@ -955,19 +1021,33 @@
                                         <th className="p-3">Pseudonym</th>
                                         <th className="p-3">Actual Name</th>
                                         <th className="p-3">Interview Date</th>
+                                            <th className="p-3">Consent Form</th>
                                         <th className="p-3">Notes</th>
                                         <th className="p-3">Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {participants.length === 0 && (
-                                        <tr><td colSpan="5" className="p-8 text-center text-slate-400">No participants recorded yet.</td></tr>
+                                            <tr><td colSpan="6" className="p-8 text-center text-slate-400">No participants recorded yet.</td></tr>
                                     )}
                                     {participants.map(p => (
                                         <tr key={p.id} className="border-b last:border-0 hover:bg-slate-50">
                                             <td className="p-3 font-semibold">{p.pseudonym}</td>
                                             <td className="p-3">{p.actualName || '-'}</td>
                                             <td className="p-3">{p.interviewDate || '-'}</td>
+                                                <td className="p-3">
+                                                    {p.consentFormId ? (
+                                                        <div className="flex gap-2 text-xs">
+                                                            <button onClick={() => downloadConsentForm(p.id, p.consentFileName)} className="text-blue-600 hover:text-blue-700 font-semibold">Download</button>
+                                                            <button onClick={() => removeConsentForm(p.id)} className="text-red-600 hover:text-red-700 font-semibold">Remove</button>
+                                                        </div>
+                                                    ) : (
+                                                        <label className="text-blue-600 hover:text-blue-700 font-semibold cursor-pointer text-xs">
+                                                            Upload
+                                                            <input type="file" accept=".pdf,.doc,.docx" onChange={e => handleConsentFormUpload(p.id, e)} className="hidden" />
+                                                        </label>
+                                                    )}
+                                                </td>
                                             <td className="p-3 max-w-xs truncate" title={p.notes}>{p.notes || '-'}</td>
                                             <td className="p-3">
                                                 <div className="flex gap-2">
