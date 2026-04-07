@@ -35,6 +35,21 @@
             }
         };
     </script>
+    <style>
+        .qa-interviewer {
+            background: #fef3c7;
+            color: #7c2d12;
+            border-radius: 0.25rem;
+            padding: 0 0.15rem;
+            font-weight: 600;
+        }
+
+        .code-surface .qa-interviewer {
+            background: #fde68a;
+            color: #92400e;
+            opacity: 0.65;
+        }
+    </style>
 </head>
 <body class="bg-mist text-ink font-sans">
     <div id="root"></div>
@@ -266,6 +281,8 @@
             const [activityTypes, setActivityTypes] = useState(['Edited', 'First Review', 'Coded', 'Member Checked']);
             const [participants, setParticipants] = useState([]);
             const [analysisCanvases, setAnalysisCanvases] = useState([]);
+            const [triangulationSessions, setTriangulationSessions] = useState([]);
+            const [triangulationAssignmentMeta, setTriangulationAssignmentMeta] = useState(null);
             const [activeId, setActiveId] = useState(null);
             const [isReady, setIsReady] = useState(false);
 
@@ -319,6 +336,8 @@
                     setGlobalArtifacts(await dbGet('data', 'global_artifacts') || []);
                     setParticipants(await dbGet('data', 'participants') || []);
                     setAnalysisCanvases(await dbGet('data', 'analysis_canvases') || []);
+                    setTriangulationSessions(await dbGet('data', 'triangulation_sessions') || []);
+                    setTriangulationAssignmentMeta(await dbGet('data', 'triangulation_assignment_meta') || null);
                     const savedActivityTypes = await dbGet('data', 'activityTypes');
                     if (savedActivityTypes) setActivityTypes(savedActivityTypes);
                     setIsReady(true);
@@ -335,8 +354,10 @@
                     dbSet('data', 'activityTypes', activityTypes);
                     dbSet('data', 'participants', participants);
                     dbSet('data', 'analysis_canvases', analysisCanvases);
+                    dbSet('data', 'triangulation_sessions', triangulationSessions);
+                    dbSet('data', 'triangulation_assignment_meta', triangulationAssignmentMeta);
                 }
-            }, [transcripts, transcriptFolders, tags, globalArtifacts, activityTypes, participants, analysisCanvases, isReady, startupState]);
+            }, [transcripts, transcriptFolders, tags, globalArtifacts, activityTypes, participants, analysisCanvases, triangulationSessions, triangulationAssignmentMeta, isReady, startupState]);
 
             const activeTranscript = transcripts.find(t => t.id === activeId);
             const folders = [...new Set([...transcriptFolders, ...transcripts.map(t => t.folder).filter(Boolean)])].sort((a, b) => a.localeCompare(b));
@@ -351,6 +372,7 @@
                     subfolder: '',
                     content: '',
                     contentHtml: '',
+                    speakerSegments: [],
                     notes: '',
                     artifacts: [],
                     hasAudio: !!data.audioFile,
@@ -457,7 +479,9 @@
                         globalArtifacts,
                         activityTypes,
                         participants,
-                        analysisCanvases
+                        analysisCanvases,
+                        triangulationSessions,
+                        triangulationAssignmentMeta
                     },
                     files: serializedFiles,
                     security: {
@@ -488,6 +512,8 @@
                 setActivityTypes(d.activityTypes || ['Edited', 'First Review', 'Coded', 'Member Checked']);
                 setParticipants(d.participants || []);
                 setAnalysisCanvases(d.analysisCanvases || []);
+                setTriangulationSessions(d.triangulationSessions || []);
+                setTriangulationAssignmentMeta(d.triangulationAssignmentMeta || null);
                 setActiveId(null);
                 setView('dashboard');
                 setStartupState('open');
@@ -512,6 +538,155 @@
                 localStorage.setItem('quali_pin', btoa(password));
                 setHasAppPassword(true);
                 alert('App password saved.');
+            };
+
+            const computeProjectFingerprint = async () => {
+                const stable = {
+                    transcripts: transcripts.map(t => ({ id: t.id, title: t.title, folder: t.folder, content: t.content || '' })),
+                    artifacts: globalArtifacts.map(a => ({ id: a.id, name: a.name, folder: a.folder || '', notes: a.notes || '' })),
+                    participants: participants.map(p => ({ id: p.id, pseudonym: p.pseudonym || '' }))
+                };
+                return stringHash(JSON.stringify(stable));
+            };
+
+            const handleExportTriangulationAssignment = async () => {
+                try {
+                    const fileEntries = await dbGetAllEntries('files');
+                    const serializedFiles = [];
+                    for (const entry of fileEntries) {
+                        const value = entry.value;
+                        if (!(value instanceof Blob)) continue;
+                        serializedFiles.push({
+                            key: String(entry.key),
+                            type: value.type || 'application/octet-stream',
+                            name: value.name || null,
+                            lastModified: value.lastModified || null,
+                            bytes: await blobToBase64(value)
+                        });
+                    }
+
+                    const packageId = `tri_${Date.now()}`;
+                    const fingerprint = await computeProjectFingerprint();
+                    const sanitizedParticipants = participants.map(p => ({ id: p.id, pseudonym: p.pseudonym || `P-${String(p.id).slice(-4)}` }));
+                    const sanitizedArtifacts = globalArtifacts.map(a => ({ ...a, codes: [] }));
+                    const payload = {
+                        type: 'triangulation-assignment',
+                        version: 1,
+                        packageId,
+                        createdAt: new Date().toISOString(),
+                        projectFingerprint: fingerprint,
+                        data: {
+                            transcripts,
+                            transcriptFolders,
+                            tags: [],
+                            globalArtifacts: sanitizedArtifacts,
+                            activityTypes,
+                            participants: sanitizedParticipants,
+                            analysisCanvases: []
+                        },
+                        files: serializedFiles
+                    };
+
+                    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+                    const a = document.createElement('a');
+                    a.href = URL.createObjectURL(blob);
+                    a.download = `QualiApp_Triangulation_Assignment_${new Date().toISOString().slice(0, 10)}.qtri`;
+                    a.click();
+                    URL.revokeObjectURL(a.href);
+                } catch (err) {
+                    alert('Failed to export triangulation assignment package.');
+                }
+            };
+
+            const handleImportTriangulationAssignment = async (file) => {
+                const text = await file.text();
+                const payload = JSON.parse(text);
+                if (payload.type !== 'triangulation-assignment') throw new Error('Invalid assignment package');
+
+                const d = payload.data || {};
+                setTranscripts(d.transcripts || []);
+                setTranscriptFolders(d.transcriptFolders || []);
+                setTags(d.tags || []);
+                setGlobalArtifacts(d.globalArtifacts || []);
+                setActivityTypes(d.activityTypes || ['Edited', 'First Review', 'Coded', 'Member Checked']);
+                setParticipants(d.participants || []);
+                setAnalysisCanvases(d.analysisCanvases || []);
+                setTriangulationSessions([]);
+                setTriangulationAssignmentMeta({
+                    packageId: payload.packageId,
+                    projectFingerprint: payload.projectFingerprint,
+                    importedAt: new Date().toISOString()
+                });
+                setActiveId(null);
+                setView('dashboard');
+                setStartupState('open');
+
+                await dbClear('files');
+                for (const f of (payload.files || [])) {
+                    const bytes = fromBase64(f.bytes);
+                    const blob = f.name
+                        ? new File([bytes], f.name, { type: f.type || 'application/octet-stream', lastModified: f.lastModified || Date.now() })
+                        : new Blob([bytes], { type: f.type || 'application/octet-stream' });
+                    await dbSet('files', f.key, blob);
+                }
+            };
+
+            const handleExportTriangulationReturn = async (coderId) => {
+                if (!triangulationAssignmentMeta?.packageId) {
+                    alert('Import a triangulation assignment package first.');
+                    return;
+                }
+
+                const artifactCodes = globalArtifacts.map(a => ({ artifactId: a.id, artifactName: a.name, codes: a.codes || [] }));
+                const payload = {
+                    type: 'triangulation-return',
+                    version: 1,
+                    packageId: triangulationAssignmentMeta.packageId,
+                    projectFingerprint: triangulationAssignmentMeta.projectFingerprint,
+                    coderId: coderId.trim(),
+                    createdAt: new Date().toISOString(),
+                    tags,
+                    artifactCodes,
+                    analysisCanvases
+                };
+
+                const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = `QualiApp_Triangulation_Return_${coderId.trim().replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.qtrr`;
+                a.click();
+                URL.revokeObjectURL(a.href);
+            };
+
+            const handleImportTriangulationReturn = async (file) => {
+                const text = await file.text();
+                const payload = JSON.parse(text);
+                if (payload.type !== 'triangulation-return') throw new Error('Invalid co-rater return package');
+                if (!payload.coderId) throw new Error('Missing coder id');
+
+                const currentFingerprint = await computeProjectFingerprint();
+                if (payload.projectFingerprint && payload.projectFingerprint !== currentFingerprint) {
+                    const proceed = confirm('Project fingerprint differs from this workspace. Import anyway?');
+                    if (!proceed) return;
+                }
+
+                const duplicate = triangulationSessions.some(s => s.packageId === payload.packageId && s.coderId === payload.coderId);
+                if (duplicate) {
+                    alert('This co-rater submission is already imported.');
+                    return;
+                }
+
+                const session = {
+                    id: `session_${Date.now()}`,
+                    coderId: payload.coderId,
+                    packageId: payload.packageId || null,
+                    projectFingerprint: payload.projectFingerprint || null,
+                    importedAt: new Date().toISOString(),
+                    tags: payload.tags || [],
+                    artifactCodes: payload.artifactCodes || [],
+                    analysisCanvases: payload.analysisCanvases || []
+                };
+                setTriangulationSessions([session, ...triangulationSessions]);
             };
 
             const handleDownloadApp = async () => {
@@ -549,6 +724,7 @@
                             <NavButton active={view === 'participants'} label="Participant Coding" onClick={() => setView('participants')} />
                             <NavButton active={view === 'analysis'} label="Analysis Canvas" onClick={() => setView('analysis')} />
                             <NavButton active={view === 'codebook'} label="Codebook" onClick={() => setView('codebook')} />
+                            <NavButton active={view === 'triangulation'} label="Triangulation" onClick={() => setView('triangulation')} />
                             <NavButton active={view === 'backup'} label="Backup & Restore" onClick={() => setView('backup')} />
                         </nav>
                         <div className="p-4 border-t border-slate-700/60 space-y-2">
@@ -583,6 +759,20 @@
                         {view === 'artifacts' && <ArtifactDashboard artifacts={globalArtifacts} onUpdate={setGlobalArtifacts} />}
                         {view === 'participants' && <ParticipantVault participants={participants} onUpdate={setParticipants} />}
                         {view === 'analysis' && <AnalysisBoard tags={tags} canvases={analysisCanvases} onUpdate={setAnalysisCanvases} artifacts={globalArtifacts} transcripts={transcripts} participants={participants} />}
+                        {view === 'triangulation' && (
+                            <TriangulationDashboard
+                                transcripts={transcripts}
+                                tags={tags}
+                                artifacts={globalArtifacts}
+                                analysisCanvases={analysisCanvases}
+                                sessions={triangulationSessions}
+                                assignmentMeta={triangulationAssignmentMeta}
+                                onExportAssignment={handleExportTriangulationAssignment}
+                                onImportAssignment={handleImportTriangulationAssignment}
+                                onExportReturn={handleExportTriangulationReturn}
+                                onImportReturn={handleImportTriangulationReturn}
+                            />
+                        )}
                         {view === 'backup' && <BackupDashboard onBackup={handleBackupDownload} onRestore={handleRestoreUpload} />}
                         {view === 'editor' && activeTranscript && (
                             <Editor
@@ -1542,23 +1732,65 @@
                 handleEditableInput();
             };
 
-            useEffect(() => {
-                const onBoldShortcut = (e) => {
-                    const isBoldShortcut = (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'b';
-                    if (!isBoldShortcut || mode !== 'edit' || !editableRef.current) return;
+            const applyInterviewerTag = () => {
+                if (!editableRef.current) return;
+                editableRef.current.focus();
 
+                const sel = window.getSelection();
+                if (!sel || !sel.rangeCount) return;
+                const range = sel.getRangeAt(0);
+                if (range.collapsed) return;
+                if (!editableRef.current.contains(range.commonAncestorContainer)) return;
+
+                try {
+                    const span = document.createElement('span');
+                    span.className = 'qa-interviewer';
+                    span.setAttribute('data-speaker-role', 'interviewer');
+                    span.setAttribute('title', 'Interviewer question/comment');
+
+                    const fragment = range.extractContents();
+                    span.appendChild(fragment);
+                    range.insertNode(span);
+
+                    sel.removeAllRanges();
+                    const after = document.createRange();
+                    after.setStartAfter(span);
+                    after.collapse(true);
+                    sel.addRange(after);
+                    handleEditableInput();
+                } catch (_err) {
+                    // If selection cannot be wrapped as a single fragment, leave text unchanged.
+                }
+            };
+
+            useEffect(() => {
+                const isSelectionOrFocusInsideEditor = () => {
                     const sel = window.getSelection();
                     const anchorNode = sel && sel.anchorNode;
                     const selectionInsideEditor = !!anchorNode && editableRef.current.contains(anchorNode);
                     const focusInsideEditor = editableRef.current.contains(document.activeElement);
-                    if (!selectionInsideEditor && !focusInsideEditor) return;
-
-                    e.preventDefault();
-                    applyBold();
+                    return selectionInsideEditor || focusInsideEditor;
                 };
 
-                window.addEventListener('keydown', onBoldShortcut);
-                return () => window.removeEventListener('keydown', onBoldShortcut);
+                const onEditorShortcut = (e) => {
+                    if (mode !== 'edit' || !editableRef.current) return;
+                    if (!isSelectionOrFocusInsideEditor()) return;
+
+                    const isBoldShortcut = (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'b';
+                    const isQuestionShortcut = (e.metaKey || e.ctrlKey) && (e.key === ';' || e.code === 'Semicolon');
+                    if (isBoldShortcut) {
+                        e.preventDefault();
+                        applyBold();
+                        return;
+                    }
+                    if (isQuestionShortcut) {
+                        e.preventDefault();
+                        applyInterviewerTag();
+                    }
+                };
+
+                window.addEventListener('keydown', onEditorShortcut);
+                return () => window.removeEventListener('keydown', onEditorShortcut);
             }, [mode]);
 
             const handleAudioUpload = async (e) => {
@@ -1785,7 +2017,15 @@
                                             >
                                                 Bold
                                             </button>
-                                            <span className="text-xs text-slate-500">Select text and click Bold. This formatting is independent of coding highlights.</span>
+                                            <button
+                                                type="button"
+                                                onClick={applyInterviewerTag}
+                                                className="px-3 py-1.5 rounded bg-amber-100 border border-amber-300 text-amber-900 text-sm font-semibold hover:bg-amber-200"
+                                                title="Tag selected text as interviewer question/comment"
+                                            >
+                                                Tag Interviewer (;)
+                                            </button>
+                                            <span className="text-xs text-slate-500">Use Bold or tag interviewer questions/comments. Shortcut: Cmd/Ctrl + ; for interviewer tag.</span>
                                         </div>
                                         <div
                                             ref={editableRef}
@@ -1798,7 +2038,7 @@
                                     </div>
                                 )}
                                 {mode === 'code' && (
-                                    <div ref={textRef} onMouseUp={handleMouseUp} onClick={handleCodeClick} className="text-lg leading-relaxed whitespace-pre-wrap outline-none pb-32 text-slate-800 p-2">
+                                    <div ref={textRef} onMouseUp={handleMouseUp} onClick={handleCodeClick} className="code-surface text-lg leading-relaxed whitespace-pre-wrap outline-none pb-32 text-slate-800 p-2">
                                         {content ? (
                                             <div dangerouslySetInnerHTML={{ __html: renderHighlightedHtml() }} />
                                         ) : <span className="text-slate-400 italic">No text found. Switch to Edit mode to paste your transcript.</span>}
@@ -2322,6 +2562,199 @@
                                 </div>
                             </div>
                         )}
+                    </div>
+                </div>
+            );
+        }
+
+        function TriangulationDashboard({ transcripts, tags, artifacts, analysisCanvases, sessions, assignmentMeta, onExportAssignment, onImportAssignment, onExportReturn, onImportReturn }) {
+            const [coderId, setCoderId] = useState('');
+            const [threshold, setThreshold] = useState(0.5);
+            const [importing, setImporting] = useState(false);
+
+            const primaryThemeSet = useMemo(() => {
+                const out = new Set();
+                (analysisCanvases || []).forEach(c => (c.themes || []).forEach(t => out.add((t.name || '').trim().toLowerCase())));
+                return out;
+            }, [analysisCanvases]);
+
+            const primaryArtifactCodeSet = useMemo(() => {
+                const out = new Set();
+                (artifacts || []).forEach(a => (a.codes || []).forEach(code => out.add(`${a.id}::${code}`)));
+                return out;
+            }, [artifacts]);
+
+            const overlapRatio = (a, b) => {
+                const start = Math.max(a.start, b.start);
+                const end = Math.min(a.end, b.end);
+                const intersection = Math.max(0, end - start);
+                const union = Math.max(a.end, b.end) - Math.min(a.start, b.start);
+                return union > 0 ? (intersection / union) : 0;
+            };
+
+            const sessionStats = useMemo(() => {
+                return (sessions || []).map(session => {
+                    const coTags = session.tags || [];
+                    const usedCo = new Set();
+                    let matched = 0;
+
+                    (tags || []).forEach((pTag) => {
+                        let bestIdx = -1;
+                        let bestOverlap = 0;
+                        coTags.forEach((cTag, idx) => {
+                            if (usedCo.has(idx)) return;
+                            if (pTag.transcriptId !== cTag.transcriptId) return;
+                            if ((pTag.tagName || '') !== (cTag.tagName || '')) return;
+                            if (!Number.isFinite(pTag.start) || !Number.isFinite(pTag.end) || !Number.isFinite(cTag.start) || !Number.isFinite(cTag.end)) return;
+                            const ov = overlapRatio(pTag, cTag);
+                            if (ov >= threshold && ov > bestOverlap) {
+                                bestOverlap = ov;
+                                bestIdx = idx;
+                            }
+                        });
+                        if (bestIdx >= 0) {
+                            usedCo.add(bestIdx);
+                            matched += 1;
+                        }
+                    });
+
+                    const primaryOnly = (tags || []).length - matched;
+                    const coOnly = coTags.length - usedCo.size;
+                    const agreementBase = Math.max((tags || []).length, coTags.length, 1);
+                    const agreementPct = Math.round((matched / agreementBase) * 1000) / 10;
+
+                    const coThemeSet = new Set();
+                    (session.analysisCanvases || []).forEach(c => (c.themes || []).forEach(t => coThemeSet.add((t.name || '').trim().toLowerCase())));
+                    let sharedThemes = 0;
+                    primaryThemeSet.forEach(name => { if (coThemeSet.has(name)) sharedThemes += 1; });
+
+                    const coArtifactSet = new Set();
+                    (session.artifactCodes || []).forEach(a => (a.codes || []).forEach(code => coArtifactSet.add(`${a.artifactId}::${code}`)));
+                    let sharedArtifactCodes = 0;
+                    primaryArtifactCodeSet.forEach(key => { if (coArtifactSet.has(key)) sharedArtifactCodes += 1; });
+
+                    return {
+                        id: session.id,
+                        coderId: session.coderId,
+                        importedAt: session.importedAt,
+                        matched,
+                        primaryOnly,
+                        coOnly,
+                        agreementPct,
+                        sharedThemes,
+                        primaryThemes: primaryThemeSet.size,
+                        coThemes: coThemeSet.size,
+                        sharedArtifactCodes,
+                        primaryArtifactCodes: primaryArtifactCodeSet.size,
+                        coArtifactCodes: coArtifactSet.size,
+                        coTagCount: coTags.length
+                    };
+                });
+            }, [sessions, tags, threshold, primaryThemeSet, primaryArtifactCodeSet]);
+
+            const importAssignmentFile = async (e) => {
+                const file = e.target.files && e.target.files[0];
+                if (!file) return;
+                setImporting(true);
+                try {
+                    await onImportAssignment(file);
+                    alert('Triangulation assignment imported. You can now code independently.');
+                } catch (err) {
+                    alert('Failed to import assignment package.');
+                } finally {
+                    setImporting(false);
+                    e.target.value = '';
+                }
+            };
+
+            const importReturnFile = async (e) => {
+                const file = e.target.files && e.target.files[0];
+                if (!file) return;
+                setImporting(true);
+                try {
+                    await onImportReturn(file);
+                    alert('Co-rater return imported.');
+                } catch (err) {
+                    alert('Failed to import co-rater return package.');
+                } finally {
+                    setImporting(false);
+                    e.target.value = '';
+                }
+            };
+
+            const exportReturn = () => {
+                if (!coderId.trim()) {
+                    alert('Enter a coder ID first.');
+                    return;
+                }
+                onExportReturn(coderId.trim());
+            };
+
+            return (
+                <div className="p-8 h-full overflow-y-auto">
+                    <div className="max-w-7xl mx-auto space-y-6">
+                        <div className="bg-white border rounded-2xl p-6 shadow-soft">
+                            <h2 className="text-3xl font-display">Triangulation</h2>
+                            <p className="text-slate-500 mt-2">Export a blind co-rater package, import co-rater returns, and review overlap-based agreement and theme convergence.</p>
+                        </div>
+
+                        <div className="grid lg:grid-cols-2 gap-6">
+                            <section className="bg-white border rounded-2xl p-5 shadow-soft space-y-4">
+                                <h3 className="text-lg font-bold">Main Researcher</h3>
+                                <button onClick={onExportAssignment} className="w-full bg-tide hover:bg-teal-600 text-white px-4 py-3 rounded-lg font-semibold">Export Co-rater Assignment (No Codes)</button>
+                                <label className="block w-full text-center bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 px-4 py-3 rounded-lg font-semibold cursor-pointer">
+                                    Import Co-rater Return
+                                    <input type="file" accept=".qtrr,.json" className="hidden" onChange={importReturnFile} disabled={importing} />
+                                </label>
+                                <p className="text-xs text-slate-500">Supports multiple co-raters. Duplicate submissions are blocked per coder + package id.</p>
+                            </section>
+
+                            <section className="bg-white border rounded-2xl p-5 shadow-soft space-y-4">
+                                <h3 className="text-lg font-bold">Co-rater Workflow</h3>
+                                <label className="block w-full text-center bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 px-4 py-3 rounded-lg font-semibold cursor-pointer">
+                                    Import Assignment Package
+                                    <input type="file" accept=".qtri,.json" className="hidden" onChange={importAssignmentFile} disabled={importing} />
+                                </label>
+                                <input value={coderId} onChange={(e) => setCoderId(e.target.value)} placeholder="Your coder ID (e.g., Coder_B)" className="w-full border rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-ink" />
+                                <button onClick={exportReturn} className="w-full bg-ink hover:bg-slate-800 text-white px-4 py-3 rounded-lg font-semibold">Export My Return Package</button>
+                                <p className="text-xs text-slate-500">Current assignment: {assignmentMeta?.packageId || 'None imported in this workspace'}</p>
+                            </section>
+                        </div>
+
+                        <section className="bg-white border rounded-2xl p-5 shadow-soft space-y-4">
+                            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                                <h3 className="text-lg font-bold">Agreement Analysis</h3>
+                                <label className="text-sm text-slate-600 flex items-center gap-2">
+                                    Overlap threshold
+                                    <input type="number" min="0.1" max="1" step="0.05" value={threshold} onChange={(e) => setThreshold(Math.min(1, Math.max(0.1, Number(e.target.value) || 0.5)))} className="w-20 border rounded p-1.5" />
+                                </label>
+                            </div>
+
+                            {sessionStats.length === 0 ? (
+                                <p className="text-slate-500 text-sm">No co-rater returns imported yet.</p>
+                            ) : (
+                                <div className="grid md:grid-cols-2 gap-4">
+                                    {sessionStats.map(s => (
+                                        <article key={s.id} className="border rounded-xl p-4 bg-slate-50">
+                                            <div className="flex items-center justify-between mb-2">
+                                                <h4 className="font-bold text-ink">{s.coderId}</h4>
+                                                <span className="text-xs text-slate-500">{new Date(s.importedAt).toLocaleString()}</span>
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-2 text-sm">
+                                                <p><span className="font-semibold">Agreement:</span> {s.agreementPct}%</p>
+                                                <p><span className="font-semibold">Co-rater tags:</span> {s.coTagCount}</p>
+                                                <p><span className="font-semibold">Matched tags:</span> {s.matched}</p>
+                                                <p><span className="font-semibold">Primary only:</span> {s.primaryOnly}</p>
+                                                <p><span className="font-semibold">Co-rater only:</span> {s.coOnly}</p>
+                                                <p><span className="font-semibold">Shared themes:</span> {s.sharedThemes}</p>
+                                                <p><span className="font-semibold">Theme sets:</span> {s.primaryThemes} / {s.coThemes}</p>
+                                                <p><span className="font-semibold">Shared artifact codes:</span> {s.sharedArtifactCodes}</p>
+                                            </div>
+                                        </article>
+                                    ))}
+                                </div>
+                            )}
+                        </section>
                     </div>
                 </div>
             );
