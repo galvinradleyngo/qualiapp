@@ -277,9 +277,6 @@
                 }
             }, [transcripts, transcriptFolders, tags, globalArtifacts, activityTypes, participants, analysisCanvases, isReady, isLocked]);
 
-            if (isLocked) return <LockScreen onUnlock={() => setIsLocked(false)} />;
-            if (!isReady) return <div className="flex h-screen items-center justify-center">Loading...</div>;
-
             const activeTranscript = transcripts.find(t => t.id === activeId);
             const folders = [...new Set([...transcriptFolders, ...transcripts.map(t => t.folder).filter(Boolean)])].sort((a, b) => a.localeCompare(b));
 
@@ -445,40 +442,8 @@
                 }
             };
 
-            useEffect(() => {
-                const onSaveShortcut = async (e) => {
-                    const isSaveShortcut = (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's';
-                    if (!isSaveShortcut) return;
-
-                    e.preventDefault();
-                    if (isLocked || !isReady) return;
-
-                    const quickBackup = confirm('Backup shortcut: OK to enter a password and download backup now. Cancel to open Backup & Restore.');
-                    if (!quickBackup) {
-                        setView('backup');
-                        return;
-                    }
-
-                    const password = prompt('Enter backup password (minimum 6 characters):', '');
-                    if (password === null) return;
-                    if (password.length < 6) {
-                        alert('Backup password must be at least 6 characters. Opening Backup & Restore.');
-                        setView('backup');
-                        return;
-                    }
-
-                    try {
-                        await handleBackupDownload(password);
-                        alert('Encrypted backup downloaded.');
-                    } catch (err) {
-                        alert('Backup failed. Opening Backup & Restore.');
-                        setView('backup');
-                    }
-                };
-
-                window.addEventListener('keydown', onSaveShortcut);
-                return () => window.removeEventListener('keydown', onSaveShortcut);
-            }, [isLocked, isReady, handleBackupDownload]);
+            if (isLocked) return <LockScreen onUnlock={() => setIsLocked(false)} />;
+            if (!isReady) return <div className="flex h-screen items-center justify-center">Loading...</div>;
 
             return (
                 <div className="flex h-screen bg-hero relative">
