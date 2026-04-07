@@ -1563,30 +1563,62 @@
                 setTagFormMemo('');
             };
 
-            const renderHighlighted = () => {
-                if (!tags.length) return content;
-                const sorted = [...tags].sort((a, b) => a.start - b.start);
-                const nodes = [];
-                let last = 0;
-                sorted.forEach((tag, i) => {
-                    if (tag.start >= last) {
-                        nodes.push(<span key={`t-${i}`}>{content.slice(last, tag.start)}</span>);
+            const renderHighlightedHtml = () => {
+                const baseHtml = contentHtml || plainToHtml(content);
+                if (!baseHtml) return '';
+                if (!tags.length) return baseHtml;
+
+                const container = document.createElement('div');
+                container.innerHTML = baseHtml;
+                const sorted = [...tags]
+                    .filter(t => Number.isFinite(t.start) && Number.isFinite(t.end) && t.end > t.start)
+                    .sort((a, b) => a.start - b.start);
+
+                const locateTextOffset = (target) => {
+                    let seen = 0;
+                    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+                    let node;
+                    while ((node = walker.nextNode())) {
+                        const len = node.textContent.length;
+                        if (target <= seen + len) return { node, offset: Math.max(0, target - seen) };
+                        seen += len;
+                    }
+                    return null;
+                };
+
+                sorted.forEach((tag) => {
+                    const startPos = locateTextOffset(tag.start);
+                    const endPos = locateTextOffset(tag.end);
+                    if (!startPos || !endPos) return;
+
+                    try {
+                        const range = document.createRange();
+                        range.setStart(startPos.node, startPos.offset);
+                        range.setEnd(endPos.node, endPos.offset);
+                        if (range.collapsed) return;
+
+                        const mark = document.createElement('mark');
                         const isEditingThis = editingTagId === tag.id;
-                        nodes.push(
-                            <mark
-                                key={`m-${tag.id}`}
-                                onClick={() => openEditTag(tag)}
-                                className={`px-1 rounded cursor-pointer transition ${isEditingThis ? 'bg-orange-400 text-white shadow-md' : 'bg-teal-200 hover:bg-teal-300'}`}
-                                title={`${tag.category} > ${tag.tagName}`}
-                            >
-                                {content.slice(tag.start, tag.end)}
-                            </mark>
-                        );
-                        last = tag.end;
+                        mark.setAttribute('data-tag-id', tag.id);
+                        mark.setAttribute('title', `${tag.category} > ${tag.tagName}`);
+                        mark.className = `px-1 rounded cursor-pointer transition ${isEditingThis ? 'bg-orange-400 text-white shadow-md' : 'bg-teal-200 hover:bg-teal-300'}`;
+                        const fragment = range.extractContents();
+                        mark.appendChild(fragment);
+                        range.insertNode(mark);
+                    } catch (_err) {
+                        // Ignore malformed ranges; transcript text and highlights can be edited independently.
                     }
                 });
-                nodes.push(<span key="t-end">{content.slice(last)}</span>);
-                return nodes;
+
+                return container.innerHTML;
+            };
+
+            const handleCodeClick = (e) => {
+                const target = e.target.closest('mark[data-tag-id]');
+                if (!target) return;
+                const tagId = target.getAttribute('data-tag-id');
+                const tag = tags.find(t => t.id === tagId);
+                if (tag) openEditTag(tag);
             };
 
             const existingCategories = [...new Set(allTags.map(t => t.category).filter(Boolean))];
@@ -1657,8 +1689,10 @@
                                     </div>
                                 )}
                                 {mode === 'code' && (
-                                    <div ref={textRef} onMouseUp={handleMouseUp} className="text-lg leading-relaxed whitespace-pre-wrap outline-none pb-32 text-slate-800 p-2">
-                                        {content ? renderHighlighted() : <span className="text-slate-400 italic">No text found. Switch to Edit mode to paste your transcript.</span>}
+                                    <div ref={textRef} onMouseUp={handleMouseUp} onClick={handleCodeClick} className="text-lg leading-relaxed whitespace-pre-wrap outline-none pb-32 text-slate-800 p-2">
+                                        {content ? (
+                                            <div dangerouslySetInnerHTML={{ __html: renderHighlightedHtml() }} />
+                                        ) : <span className="text-slate-400 italic">No text found. Switch to Edit mode to paste your transcript.</span>}
                                     </div>
                                 )}
                                 {mode === 'notes' && (
