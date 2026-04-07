@@ -177,25 +177,13 @@
 
         function LockScreen({ onUnlock }) {
             const [password, setPassword] = useState('');
-            const [isSettingUp, setIsSettingUp] = useState(false);
             const [error, setError] = useState('');
-
-            useEffect(() => {
-                const saved = localStorage.getItem('quali_pin');
-                if (!saved) setIsSettingUp(true);
-            }, []);
 
             const handleSubmit = (e) => {
                 e.preventDefault();
                 const saved = localStorage.getItem('quali_pin');
-                if (isSettingUp) {
-                    if (password.length < 4) return setError('Password must be at least 4 characters.');
-                    localStorage.setItem('quali_pin', btoa(password));
-                    onUnlock();
-                } else {
-                    if (btoa(password) === saved) onUnlock();
-                    else setError('Incorrect password.');
-                }
+                if (saved && btoa(password) === saved) onUnlock();
+                else setError('Incorrect password.');
             };
 
             return (
@@ -213,15 +201,63 @@
                         />
                         {error && <p className="text-red-300 text-sm mb-4">{error}</p>}
                         <button type="submit" className="w-full bg-tide hover:bg-teal-600 text-white font-bold py-3 rounded-lg transition">
-                            {isSettingUp ? 'Save & Enter' : 'Unlock'}
+                            Unlock
                         </button>
                     </form>
                 </div>
             );
         }
 
+        function WelcomeScreen({ hasPassword, onStartNew, onRestoreExisting, onSetPassword }) {
+            const [passwordInput, setPasswordInput] = useState('');
+
+            const saveOptionalPassword = () => {
+                if (!passwordInput.trim()) return;
+                if (passwordInput.length < 4) {
+                    alert('Password must be at least 4 characters.');
+                    return;
+                }
+                onSetPassword(passwordInput);
+                setPasswordInput('');
+            };
+
+            return (
+                <div className="h-screen w-screen bg-hero text-ink p-6 md:p-10 overflow-y-auto">
+                    <div className="max-w-5xl mx-auto grid lg:grid-cols-[1.2fr,1fr] gap-6 pt-8">
+                        <section className="bg-white border rounded-2xl p-8 shadow-soft">
+                            <h1 className="text-4xl font-display">Welcome to QualiApp</h1>
+                            <p className="text-slate-500 mt-3">Start a new project right away or restore an existing backup. Password protection is optional and can be enabled anytime.</p>
+
+                            <div className="mt-8 flex flex-col sm:flex-row gap-3">
+                                <button onClick={onStartNew} className="bg-tide hover:bg-teal-600 text-white px-5 py-3 rounded-xl font-semibold">Start New Project</button>
+                                <button onClick={onRestoreExisting} className="bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 px-5 py-3 rounded-xl font-semibold">Open Existing Project</button>
+                            </div>
+
+                            <div className="mt-8 p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-sm">
+                                Private/incognito sessions may clear data when the browser closes. Use Backup regularly.
+                            </div>
+                        </section>
+
+                        <section className="bg-white border rounded-2xl p-6 shadow-soft space-y-4">
+                            <h2 className="text-2xl font-display">Optional Security</h2>
+                            <p className="text-sm text-slate-500">Set an app password if this device is shared. Not required to begin coding.</p>
+                            <input
+                                type="password"
+                                value={passwordInput}
+                                onChange={(e) => setPasswordInput(e.target.value)}
+                                placeholder={hasPassword ? 'Update app password' : 'Set app password (optional)'}
+                                className="w-full border rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-ink"
+                            />
+                            <button onClick={saveOptionalPassword} className="w-full bg-ink hover:bg-slate-800 text-white py-3 rounded-lg font-semibold">{hasPassword ? 'Update Password' : 'Set Password'}</button>
+                        </section>
+                    </div>
+                </div>
+            );
+        }
+
         function App() {
-            const [isLocked, setIsLocked] = useState(true);
+            const [startupState, setStartupState] = useState('checking');
+            const [hasAppPassword, setHasAppPassword] = useState(false);
             const [view, setView] = useState('dashboard');
             const [transcripts, setTranscripts] = useState([]);
             const [transcriptFolders, setTranscriptFolders] = useState([]);
@@ -234,11 +270,36 @@
             const [isReady, setIsReady] = useState(false);
 
             useEffect(() => {
+                const detectStartupState = async () => {
+                    const savedPin = localStorage.getItem('quali_pin');
+                    const existingTranscripts = await dbGet('data', 'transcripts') || [];
+                    const existingTags = await dbGet('data', 'tags') || [];
+                    const existingArtifacts = await dbGet('data', 'global_artifacts') || [];
+                    const existingParticipants = await dbGet('data', 'participants') || [];
+                    const existingCanvases = await dbGet('data', 'analysis_canvases') || [];
+                    const hasProjectData = existingTranscripts.length > 0 || existingTags.length > 0 || existingArtifacts.length > 0 || existingParticipants.length > 0 || existingCanvases.length > 0;
+
+                    setHasAppPassword(!!savedPin);
+                    if (hasProjectData && savedPin) {
+                        setStartupState('locked');
+                        return;
+                    }
+                    if (hasProjectData) {
+                        setStartupState('open');
+                        return;
+                    }
+                    setStartupState('welcome');
+                };
+
+                detectStartupState();
+            }, []);
+
+            useEffect(() => {
                 let timeout;
                 const IDLE_TIME = 20 * 60 * 1000;
                 const resetTimer = () => {
                     clearTimeout(timeout);
-                    if (!isLocked) timeout = setTimeout(() => setIsLocked(true), IDLE_TIME);
+                    if (startupState === 'open' && hasAppPassword) timeout = setTimeout(() => setStartupState('locked'), IDLE_TIME);
                 };
                 window.addEventListener('mousemove', resetTimer);
                 window.addEventListener('keydown', resetTimer);
@@ -248,7 +309,7 @@
                     window.removeEventListener('mousemove', resetTimer);
                     window.removeEventListener('keydown', resetTimer);
                 };
-            }, [isLocked]);
+            }, [startupState, hasAppPassword]);
 
             useEffect(() => {
                 const loadData = async () => {
@@ -262,11 +323,11 @@
                     if (savedActivityTypes) setActivityTypes(savedActivityTypes);
                     setIsReady(true);
                 };
-                if (!isLocked) loadData();
-            }, [isLocked]);
+                if (startupState === 'open') loadData();
+            }, [startupState]);
 
             useEffect(() => {
-                if (isReady && !isLocked) {
+                if (isReady && startupState === 'open') {
                     dbSet('data', 'transcripts', transcripts);
                     dbSet('data', 'transcript_folders', transcriptFolders);
                     dbSet('data', 'tags', tags);
@@ -275,7 +336,7 @@
                     dbSet('data', 'participants', participants);
                     dbSet('data', 'analysis_canvases', analysisCanvases);
                 }
-            }, [transcripts, transcriptFolders, tags, globalArtifacts, activityTypes, participants, analysisCanvases, isReady, isLocked]);
+            }, [transcripts, transcriptFolders, tags, globalArtifacts, activityTypes, participants, analysisCanvases, isReady, startupState]);
 
             const activeTranscript = transcripts.find(t => t.id === activeId);
             const folders = [...new Set([...transcriptFolders, ...transcripts.map(t => t.folder).filter(Boolean)])].sort((a, b) => a.localeCompare(b));
@@ -391,6 +452,7 @@
                     exportedAt: new Date().toISOString(),
                     data: {
                         transcripts,
+                        transcriptFolders,
                         tags,
                         globalArtifacts,
                         activityTypes,
@@ -420,6 +482,7 @@
 
                 const d = payload.data || {};
                 setTranscripts(d.transcripts || []);
+                setTranscriptFolders(d.transcriptFolders || []);
                 setTags(d.tags || []);
                 setGlobalArtifacts(d.globalArtifacts || []);
                 setActivityTypes(d.activityTypes || ['Edited', 'First Review', 'Coded', 'Member Checked']);
@@ -427,6 +490,7 @@
                 setAnalysisCanvases(d.analysisCanvases || []);
                 setActiveId(null);
                 setView('dashboard');
+                setStartupState('open');
 
                 await dbClear('files');
                 for (const f of (payload.files || [])) {
@@ -440,7 +504,14 @@
                 if (payload.security) {
                     if (payload.security.appPin) localStorage.setItem('quali_pin', payload.security.appPin);
                     if (payload.security.participantPinHash) localStorage.setItem(participantPinKey, payload.security.participantPinHash);
+                    setHasAppPassword(!!localStorage.getItem('quali_pin'));
                 }
+            };
+
+            const handleSetAppPassword = (password) => {
+                localStorage.setItem('quali_pin', btoa(password));
+                setHasAppPassword(true);
+                alert('App password saved.');
             };
 
             const handleDownloadApp = async () => {
@@ -460,7 +531,9 @@
                 }
             };
 
-            if (isLocked) return <LockScreen onUnlock={() => setIsLocked(false)} />;
+            if (startupState === 'checking') return <div className="flex h-screen items-center justify-center">Loading...</div>;
+            if (startupState === 'welcome') return <WelcomeScreen hasPassword={hasAppPassword} onSetPassword={handleSetAppPassword} onStartNew={() => setStartupState('open')} onRestoreExisting={() => { setStartupState('open'); setView('backup'); }} />;
+            if (startupState === 'locked') return <LockScreen onUnlock={() => setStartupState('open')} />;
             if (!isReady) return <div className="flex h-screen items-center justify-center">Loading...</div>;
 
             return (
@@ -479,7 +552,14 @@
                             <NavButton active={view === 'backup'} label="Backup & Restore" onClick={() => setView('backup')} />
                         </nav>
                         <div className="p-4 border-t border-slate-700/60 space-y-2">
-                            <button onClick={() => setIsLocked(true)} className="w-full bg-slate-800 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition">Lock App</button>
+                            {hasAppPassword ? (
+                                <button onClick={() => setStartupState('locked')} className="w-full bg-slate-800 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition">Lock App</button>
+                            ) : (
+                                <button onClick={() => {
+                                    const p = prompt('Set an app password (min 4 chars):', '');
+                                    if (p && p.length >= 4) handleSetAppPassword(p);
+                                }} className="w-full bg-slate-800 hover:bg-slate-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition">Set App Password</button>
+                            )}
                         </div>
                     </aside>
 
