@@ -424,7 +424,7 @@
                         )}
                         {view === 'artifacts' && <ArtifactDashboard artifacts={globalArtifacts} onUpdate={setGlobalArtifacts} />}
                         {view === 'participants' && <ParticipantVault participants={participants} onUpdate={setParticipants} />}
-                        {view === 'analysis' && <AnalysisBoard tags={tags} canvases={analysisCanvases} onUpdate={setAnalysisCanvases} artifacts={globalArtifacts} transcripts={transcripts} />}
+                        {view === 'analysis' && <AnalysisBoard tags={tags} canvases={analysisCanvases} onUpdate={setAnalysisCanvases} artifacts={globalArtifacts} transcripts={transcripts} participants={participants} />}
                         {view === 'backup' && <BackupDashboard onBackup={handleBackupDownload} onRestore={handleRestoreUpload} />}
                         {view === 'editor' && activeTranscript && (
                             <Editor
@@ -440,7 +440,7 @@
                                 onRemoveTag={(tagId) => setTags(tags.filter(t => t.id !== tagId))}
                             />
                         )}
-                        {view === 'codebook' && <Codebook tags={tags} transcripts={transcripts} />}
+                        {view === 'codebook' && <Codebook tags={tags} transcripts={transcripts} participants={participants} />}
                     </main>
                 </div>
             );
@@ -1395,7 +1395,7 @@
             );
         }
 
-        function AnalysisBoard({ tags, canvases, onUpdate, artifacts, transcripts }) {
+        function AnalysisBoard({ tags, canvases, onUpdate, artifacts, transcripts, participants }) {
             const [newCanvasName, setNewCanvasName] = useState('');
             const [activeCanvasId, setActiveCanvasId] = useState(canvases[0]?.id || null);
             const [newThemeName, setNewThemeName] = useState('');
@@ -1412,6 +1412,12 @@
                 transcripts.forEach(t => { out[t.id] = t; });
                 return out;
             }, [transcripts]);
+
+            const participantCodeById = useMemo(() => {
+                const out = {};
+                (participants || []).forEach(p => { out[p.id] = p.pseudonym || p.id; });
+                return out;
+            }, [participants]);
 
             const availableFolders = useMemo(() => {
                 const set = new Set();
@@ -1447,10 +1453,11 @@
                     map[t.tagName].count += 1;
                     map[t.tagName].sourceSet.add('transcript');
                     map[t.tagName].folders.add(folder);
+                    const participantCode = parent?.participantId ? (participantCodeById[parent.participantId] || parent.participantId) : null;
                     map[t.tagName].quotes.push({
                         source: 'Transcript',
                         folder,
-                        ref: parent?.title || 'Unknown transcript',
+                        ref: participantCode || `Transcript ${String(t.transcriptId).slice(-4)}`,
                         text: t.textSnippet || ''
                     });
                 });
@@ -1488,7 +1495,7 @@
                         source: c.sourceSet.size > 1 ? 'both' : (c.sourceSet.has('artifact') ? 'artifact' : 'transcript')
                     }))
                     .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
-            }, [tags, artifacts, transcriptById, selectedFolderSet]);
+            }, [tags, artifacts, transcriptById, selectedFolderSet, participantCodeById]);
 
             const activeCanvas = canvases.find(c => c.id === activeCanvasId) || null;
 
@@ -1797,14 +1804,16 @@
             );
         }
 
-        function Codebook({ tags, transcripts }) {
+        function Codebook({ tags, transcripts, participants }) {
             const [searchTerm, setSearchTerm] = useState('');
             const tableData = useMemo(() => {
+                const participantCodeById = {};
+                (participants || []).forEach(p => { participantCodeById[p.id] = p.pseudonym || p.id; });
                 return tags.map(tag => {
                     const parent = transcripts.find(t => t.id === tag.transcriptId);
                     return {
                         ...tag,
-                        transcriptTitle: parent?.title || 'Unknown',
+                        transcriptLabel: parent?.participantId ? (participantCodeById[parent.participantId] || parent.participantId) : `Transcript ${String(tag.transcriptId).slice(-4)}`,
                         folder: parent?.folder || 'Uncategorized',
                         subfolder: parent?.subfolder || 'General',
                         category: tag.category || 'Uncategorized'
@@ -1815,7 +1824,7 @@
                     item.textSnippet.toLowerCase().includes(searchTerm.toLowerCase()) ||
                     (item.memo && item.memo.toLowerCase().includes(searchTerm.toLowerCase()))
                 ).sort((a, b) => a.category.localeCompare(b.category) || a.tagName.localeCompare(b.tagName));
-            }, [tags, transcripts, searchTerm]);
+            }, [tags, transcripts, participants, searchTerm]);
 
             return (
                 <div className="p-8 h-full overflow-y-auto flex flex-col">
@@ -1835,7 +1844,7 @@
                                         <tr className="bg-slate-50 border-b text-slate-600 uppercase text-xs tracking-wider">
                                             <th className="p-4 font-bold w-32">Category</th>
                                             <th className="p-4 font-bold w-40">Code</th>
-                                            <th className="p-4 font-bold w-48">Transcript</th>
+                                            <th className="p-4 font-bold w-48">Participant Code</th>
                                             <th className="p-4 font-bold">Quote & Memo</th>
                                         </tr>
                                     </thead>
@@ -1845,7 +1854,7 @@
                                                 <td className="p-4 text-slate-500 font-bold uppercase text-[10px]">{row.category}</td>
                                                 <td className="p-4"><span className="bg-teal-100 border border-teal-200 text-teal-800 px-3 py-1 rounded-full text-xs font-bold">{row.tagName}</span></td>
                                                 <td className="p-4 text-slate-700">
-                                                    <span className="font-bold block">{row.transcriptTitle}</span>
+                                                    <span className="font-bold block">{row.transcriptLabel}</span>
                                                     <span className="text-xs text-slate-400 mt-1 block">{row.folder} / {row.subfolder}</span>
                                                 </td>
                                                 <td className="p-4">
