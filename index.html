@@ -289,6 +289,7 @@
                     folder: targetFolder,
                     subfolder: '',
                     content: '',
+                    contentHtml: '',
                     notes: '',
                     artifacts: [],
                     hasAudio: !!data.audioFile,
@@ -499,7 +500,7 @@
                                 onRemoveTag={(tagId) => setTags(tags.filter(t => t.id !== tagId))}
                             />
                         )}
-                        {view === 'codebook' && <Codebook tags={tags} transcripts={transcripts} participants={participants} />}
+                        {view === 'codebook' && <Codebook tags={tags} transcripts={transcripts} participants={participants} artifacts={globalArtifacts} />}
                     </main>
                 </div>
             );
@@ -1358,6 +1359,7 @@
         function Editor({ transcript, tags, allTags, activityTypes, onAddActivityType, onBack, onUpdateTranscript, onAddTag, onUpdateTag, onRemoveTag }) {
             const [mode, setMode] = useState('edit');
             const [content, setContent] = useState(transcript.content || '');
+            const [contentHtml, setContentHtml] = useState(transcript.contentHtml || '');
             const [notes, setNotes] = useState(transcript.notes || '');
             const [audioUrl, setAudioUrl] = useState(null);
             const [uploadingAudio, setUploadingAudio] = useState(false);
@@ -1374,13 +1376,80 @@
             const activityLog = transcript.activityLog || [];
 
             const textRef = useRef(null);
+            const editableRef = useRef(null);
+
+            const escapeHtml = (value) => String(value || '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+
+            const plainToHtml = (value) => escapeHtml(value).replace(/\n/g, '<br>');
+
+            const htmlToPlain = (value) => {
+                const tmp = document.createElement('div');
+                tmp.innerHTML = value || '';
+                return (tmp.innerText || '').replace(/\r/g, '');
+            };
+
+            useEffect(() => {
+                const nextContent = transcript.content || '';
+                setContent(nextContent);
+                setContentHtml(transcript.contentHtml || plainToHtml(nextContent));
+                setNotes(transcript.notes || '');
+            }, [transcript.id]);
 
             useEffect(() => {
                 if (transcript.hasAudio) dbGet('files', `audio_${transcript.id}`).then(b => { if (b) setAudioUrl(URL.createObjectURL(b)); });
                 return () => { if (audioUrl) URL.revokeObjectURL(audioUrl); };
             }, [transcript.id]);
 
-            const handleSave = () => onUpdateTranscript({ ...transcript, content, notes });
+            const handleEditableInput = () => {
+                if (!editableRef.current) return;
+                const html = editableRef.current.innerHTML;
+                setContentHtml(html);
+                setContent(htmlToPlain(html));
+            };
+
+            const handleSave = () => {
+                const latestHtml = editableRef.current ? editableRef.current.innerHTML : contentHtml;
+                const latestPlain = htmlToPlain(latestHtml);
+                setContentHtml(latestHtml);
+                setContent(latestPlain);
+                onUpdateTranscript({
+                    ...transcript,
+                    content: latestPlain,
+                    contentHtml: latestHtml,
+                    notes
+                });
+            };
+
+            const applyBold = () => {
+                if (!editableRef.current) return;
+                editableRef.current.focus();
+                document.execCommand('bold', false, null);
+                handleEditableInput();
+            };
+
+            useEffect(() => {
+                const onBoldShortcut = (e) => {
+                    const isBoldShortcut = (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'b';
+                    if (!isBoldShortcut || mode !== 'edit' || !editableRef.current) return;
+
+                    const sel = window.getSelection();
+                    const anchorNode = sel && sel.anchorNode;
+                    const selectionInsideEditor = !!anchorNode && editableRef.current.contains(anchorNode);
+                    const focusInsideEditor = editableRef.current.contains(document.activeElement);
+                    if (!selectionInsideEditor && !focusInsideEditor) return;
+
+                    e.preventDefault();
+                    applyBold();
+                };
+
+                window.addEventListener('keydown', onBoldShortcut);
+                return () => window.removeEventListener('keydown', onBoldShortcut);
+            }, [mode]);
 
             const handleAudioUpload = async (e) => {
                 const file = e.target.files[0];
@@ -1390,7 +1459,7 @@
                     await dbSet('files', `audio_${transcript.id}`, file);
                     const newUrl = URL.createObjectURL(file);
                     setAudioUrl(newUrl);
-                    onUpdateTranscript({ ...transcript, content, notes, hasAudio: true });
+                    onUpdateTranscript({ ...transcript, content, contentHtml, notes, hasAudio: true });
                 } catch (err) {
                     alert('Failed to upload audio file.');
                 } finally {
@@ -1403,7 +1472,7 @@
                 await dbDelete('files', `audio_${transcript.id}`);
                 if (audioUrl) URL.revokeObjectURL(audioUrl);
                 setAudioUrl(null);
-                onUpdateTranscript({ ...transcript, content, notes, hasAudio: false });
+                onUpdateTranscript({ ...transcript, content, contentHtml, notes, hasAudio: false });
             };
 
             const submitActivityLog = (e) => {
@@ -1416,7 +1485,7 @@
                     note: logNote.trim(),
                     timestamp: new Date().toISOString()
                 };
-                onUpdateTranscript({ ...transcript, content, notes, activityLog: [newLog, ...activityLog] });
+                onUpdateTranscript({ ...transcript, content, contentHtml, notes, activityLog: [newLog, ...activityLog] });
                 setLogType('');
                 setLogNote('');
             };
@@ -1564,7 +1633,28 @@
 
                             <div className="flex-1 overflow-y-auto p-8 pt-4">
                                 {mode === 'edit' && (
-                                    <textarea value={content} onChange={e => setContent(e.target.value)} onBlur={handleSave} placeholder="Paste transcript text here..." className="w-full h-full min-h-[500px] resize-none outline-none text-lg leading-relaxed text-slate-800 p-3 border-dashed border-2 border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:border-amber-400 transition" />
+                                    <div className="space-y-3">
+                                        <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg p-2">
+                                            <button
+                                                type="button"
+                                                onClick={applyBold}
+                                                className="px-3 py-1.5 rounded bg-white border border-slate-300 text-slate-700 text-sm font-semibold hover:bg-slate-100"
+                                                title="Bold selected text"
+                                            >
+                                                Bold
+                                            </button>
+                                            <span className="text-xs text-slate-500">Select text and click Bold. This formatting is independent of coding highlights.</span>
+                                        </div>
+                                        <div
+                                            ref={editableRef}
+                                            contentEditable
+                                            suppressContentEditableWarning
+                                            onInput={handleEditableInput}
+                                            onBlur={handleSave}
+                                            className="w-full h-full min-h-[500px] outline-none text-lg leading-relaxed text-slate-800 p-3 border-dashed border-2 border-slate-200 rounded-xl bg-slate-50 focus-within:bg-white focus-within:border-amber-400 transition whitespace-pre-wrap"
+                                            dangerouslySetInnerHTML={{ __html: contentHtml || plainToHtml(content) }}
+                                        />
+                                    </div>
                                 )}
                                 {mode === 'code' && (
                                     <div ref={textRef} onMouseUp={handleMouseUp} className="text-lg leading-relaxed whitespace-pre-wrap outline-none pb-32 text-slate-800 p-2">
@@ -2094,27 +2184,44 @@
             );
         }
 
-        function Codebook({ tags, transcripts, participants }) {
+        function Codebook({ tags, transcripts, participants, artifacts }) {
             const [searchTerm, setSearchTerm] = useState('');
             const tableData = useMemo(() => {
                 const participantCodeById = {};
                 (participants || []).forEach(p => { participantCodeById[p.id] = p.pseudonym || p.id; });
-                return tags.map(tag => {
+                const transcriptRows = tags.map(tag => {
                     const parent = transcripts.find(t => t.id === tag.transcriptId);
                     return {
                         ...tag,
+                        sourceType: 'Transcript',
                         transcriptLabel: parent?.participantId ? (participantCodeById[parent.participantId] || parent.participantId) : `Transcript ${String(tag.transcriptId).slice(-4)}`,
                         folder: parent?.folder || 'Uncategorized',
                         subfolder: parent?.subfolder || 'General',
                         category: tag.category || 'Uncategorized'
                     };
-                }).filter(item =>
+                });
+
+                const artifactRows = (artifacts || []).flatMap(art => (art.codes || []).map(codeName => ({
+                    id: `${art.id}_${codeName}`,
+                    sourceType: 'Artifact',
+                    tagName: codeName,
+                    category: art.folder || 'Artifact',
+                    transcriptLabel: art.name,
+                    folder: art.folder || 'Uncategorized',
+                    subfolder: 'Project Artifact',
+                    textSnippet: art.notes || 'No artifact note provided.',
+                    memo: ''
+                })));
+
+                return [...transcriptRows, ...artifactRows].filter(item =>
                     item.tagName.toLowerCase().includes(searchTerm.toLowerCase()) ||
                     item.category.toLowerCase().includes(searchTerm.toLowerCase()) ||
                     item.textSnippet.toLowerCase().includes(searchTerm.toLowerCase()) ||
                     (item.memo && item.memo.toLowerCase().includes(searchTerm.toLowerCase()))
                 ).sort((a, b) => a.category.localeCompare(b.category) || a.tagName.localeCompare(b.tagName));
-            }, [tags, transcripts, participants, searchTerm]);
+            }, [tags, transcripts, participants, artifacts, searchTerm]);
+
+            const uniqueCodeCount = useMemo(() => new Set(tableData.map(t => t.tagName)).size, [tableData]);
 
             return (
                 <div className="p-8 h-full overflow-y-auto flex flex-col">
@@ -2122,7 +2229,7 @@
                         <div className="flex justify-between items-end mb-8 bg-white p-6 rounded-2xl shadow-soft border">
                             <div>
                                 <h2 className="text-3xl font-display">Codebook Manager</h2>
-                                <p className="text-slate-500 mt-2">{tags.length} highlights across {new Set(tags.map(t => t.tagName)).size} unique codes.</p>
+                                <p className="text-slate-500 mt-2">{tableData.length} code entries across {uniqueCodeCount} unique codes (transcripts + artifacts).</p>
                             </div>
                         </div>
                         <input type="text" placeholder="Search categories, codes, memos, or quotes..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full max-w-lg p-3 mb-6 border rounded-xl shadow-sm outline-none focus:ring-2 focus:ring-tide" />
@@ -2134,7 +2241,7 @@
                                         <tr className="bg-slate-50 border-b text-slate-600 uppercase text-xs tracking-wider">
                                             <th className="p-4 font-bold w-32">Category</th>
                                             <th className="p-4 font-bold w-40">Code</th>
-                                            <th className="p-4 font-bold w-48">Participant Code</th>
+                                            <th className="p-4 font-bold w-48">Source</th>
                                             <th className="p-4 font-bold">Quote & Memo</th>
                                         </tr>
                                     </thead>
@@ -2145,6 +2252,7 @@
                                                 <td className="p-4"><span className="bg-teal-100 border border-teal-200 text-teal-800 px-3 py-1 rounded-full text-xs font-bold">{row.tagName}</span></td>
                                                 <td className="p-4 text-slate-700">
                                                     <span className="font-bold block">{row.transcriptLabel}</span>
+                                                    <span className={`text-[10px] mt-1 inline-block px-2 py-0.5 rounded-full ${row.sourceType === 'Artifact' ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-700'}`}>{row.sourceType}</span>
                                                     <span className="text-xs text-slate-400 mt-1 block">{row.folder} / {row.subfolder}</span>
                                                 </td>
                                                 <td className="p-4">
