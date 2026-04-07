@@ -297,6 +297,7 @@
                     notes: '',
                     artifacts: [],
                     hasAudio: !!data.audioFile,
+                    participantId: data.participantId || null,
                     createdAt: new Date().toISOString(),
                     activityLog: [{ id: now + '_created', type: 'Created', note: 'Transcript initialized', timestamp: new Date().toISOString() }]
                 };
@@ -402,6 +403,7 @@
                             <NavButton active={view === 'participants'} label="Participant Coding" onClick={() => setView('participants')} />
                             <NavButton active={view === 'analysis'} label="Analysis Canvas" onClick={() => setView('analysis')} />
                             <NavButton active={view === 'codebook'} label="Codebook" onClick={() => setView('codebook')} />
+                            <NavButton active={view === 'backup'} label="Backup & Restore" onClick={() => setView('backup')} />
                         </nav>
                         <div className="p-4 border-t border-slate-700/60 space-y-2">
                             <button onClick={() => setIsLocked(true)} className="w-full bg-slate-800 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition">Lock App</button>
@@ -417,13 +419,13 @@
                                 onCreate={handleCreateTranscript}
                                 onOpen={(id) => { setActiveId(id); setView('editor'); }}
                                 onDelete={handleDeleteTranscript}
-                                onBackup={handleBackupDownload}
-                                onRestore={handleRestoreUpload}
+                                participants={participants}
                             />
                         )}
                         {view === 'artifacts' && <ArtifactDashboard artifacts={globalArtifacts} onUpdate={setGlobalArtifacts} />}
                         {view === 'participants' && <ParticipantVault participants={participants} onUpdate={setParticipants} />}
-                        {view === 'analysis' && <AnalysisBoard tags={tags} canvases={analysisCanvases} onUpdate={setAnalysisCanvases} />}
+                        {view === 'analysis' && <AnalysisBoard tags={tags} canvases={analysisCanvases} onUpdate={setAnalysisCanvases} artifacts={globalArtifacts} />}
+                        {view === 'backup' && <BackupDashboard onBackup={handleBackupDownload} onRestore={handleRestoreUpload} />}
                         {view === 'editor' && activeTranscript && (
                             <Editor
                                 transcript={activeTranscript}
@@ -455,7 +457,7 @@
             );
         }
 
-        function BackupPanel({ onBackup, onRestore }) {
+        function BackupDashboard({ onBackup, onRestore }) {
             const [backupPassword, setBackupPassword] = useState('');
             const [restorePassword, setRestorePassword] = useState('');
             const [restoreFile, setRestoreFile] = useState(null);
@@ -482,47 +484,85 @@
             };
 
             return (
-                <div className="bg-white border rounded-2xl p-5 shadow-soft space-y-4">
-                    <h3 className="text-lg font-bold">Backup & Restore</h3>
-                    <p className="text-sm text-slate-500">Create a password-protected encrypted backup file and restore complete app state, including media files.</p>
-
-                    <div className="grid md:grid-cols-2 gap-4">
-                        <div className="border rounded-xl p-4 space-y-3">
-                            <p className="text-xs uppercase font-semibold tracking-wide text-slate-500">Download Encrypted Backup</p>
-                            <input type="password" value={backupPassword} onChange={e => setBackupPassword(e.target.value)} placeholder="Backup password" className="w-full border rounded-lg p-2.5 focus:outline-none focus:ring-2 focus:ring-tide" />
-                            <button onClick={backupNow} className="w-full bg-tide hover:bg-teal-600 text-white px-4 py-2.5 rounded-lg font-semibold">Download .qbk</button>
+                <div className="p-8 h-full overflow-y-auto">
+                    <div className="max-w-4xl mx-auto space-y-6 pt-2">
+                        <div className="bg-white border rounded-2xl p-7 shadow-soft">
+                            <h2 className="text-4xl font-display">Backup & Restore</h2>
+                            <p className="text-slate-500 mt-2">Create encrypted password-protected backups of your entire QualiApp instance, including all transcripts, codes, participants, artifacts, and media files.</p>
                         </div>
-                        <div className="border rounded-xl p-4 space-y-3">
-                            <p className="text-xs uppercase font-semibold tracking-wide text-slate-500">Restore Backup</p>
-                            <input type="file" accept=".qbk,.json" onChange={e => setRestoreFile(e.target.files[0] || null)} className="w-full text-sm" />
-                            <input type="password" value={restorePassword} onChange={e => setRestorePassword(e.target.value)} placeholder="Backup password" className="w-full border rounded-lg p-2.5 focus:outline-none focus:ring-2 focus:ring-ember" />
-                            <button onClick={restoreNow} className="w-full bg-ember hover:bg-orange-700 text-white px-4 py-2.5 rounded-lg font-semibold">Restore Instance</button>
+
+                        <div className="grid md:grid-cols-2 gap-6">
+                            <div className="bg-white border rounded-2xl p-6 shadow-soft space-y-4">
+                                <div>
+                                    <h3 className="text-xl font-bold text-ink mb-2">Download Encrypted Backup</h3>
+                                    <p className="text-sm text-slate-500 mb-4">Creates a .qbk file with all your data encrypted with AES-256-GCM. Store securely.</p>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-semibold text-slate-600 mb-2">Backup Password (min 6 chars)</label>
+                                    <input type="password" value={backupPassword} onChange={e => setBackupPassword(e.target.value)} placeholder="Enter a strong backup password" className="w-full border rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-tide" />
+                                </div>
+                                <button onClick={backupNow} className="w-full bg-tide hover:bg-teal-600 text-white px-4 py-3 rounded-lg font-bold transition">Download .qbk Backup</button>
+                            </div>
+
+                            <div className="bg-white border rounded-2xl p-6 shadow-soft space-y-4">
+                                <div>
+                                    <h3 className="text-xl font-bold text-ink mb-2">Restore from Backup</h3>
+                                    <p className="text-sm text-slate-500 mb-4">Upload a previously downloaded .qbk file to restore a complete instance snapshot with all data and passwords.</p>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-semibold text-slate-600 mb-2">Select Backup File</label>
+                                    <input type="file" accept=".qbk,.json" onChange={e => setRestoreFile(e.target.files[0] || null)} className="w-full text-sm border rounded-lg p-3" />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-semibold text-slate-600 mb-2">Backup Password</label>
+                                    <input type="password" value={restorePassword} onChange={e => setRestorePassword(e.target.value)} placeholder="Enter the backup password" className="w-full border rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-ember" />
+                                </div>
+                                <button onClick={restoreNow} className="w-full bg-ember hover:bg-orange-700 text-white px-4 py-3 rounded-lg font-bold transition">Restore Instance</button>
+                            </div>
+                        </div>
+
+                        {message && (
+                            <div className={`p-4 rounded-2xl border ${message.includes('failed') || message.includes('Wrong') ? 'bg-red-50 border-red-200 text-red-700' : 'bg-green-50 border-green-200 text-green-700'}`}>
+                                <p className="font-semibold">{message}</p>
+                            </div>
+                        )}
+
+                        <div className="bg-blue-50 border border-blue-200 rounded-2xl p-6">
+                            <h4 className="font-bold text-blue-900 mb-2">Security & Privacy</h4>
+                            <ul className="text-sm text-blue-800 space-y-1 list-disc list-inside">
+                                <li>All backups are encrypted locally in your browser using AES-256-GCM</li>
+                                <li>Backup passwords are never sent to any server</li>
+                                <li>You control the backup password completely</li>
+                                <li>Restore works without any network connection</li>
+                                <li>Application and participant passwords are included in encrypted form</li>
+                            </ul>
                         </div>
                     </div>
-
-                    {message && <p className="text-sm text-slate-600 bg-slate-50 border rounded-lg px-3 py-2">{message}</p>}
                 </div>
             );
         }
 
-        function Dashboard({ transcripts, folders, subfolderMap, onCreate, onOpen, onDelete, onBackup, onRestore }) {
+        function Dashboard({ transcripts, folders, subfolderMap, onCreate, onOpen, onDelete, participants }) {
             const [showModal, setShowModal] = useState(false);
             const [title, setTitle] = useState('');
             const [folder, setFolder] = useState('');
             const [subfolder, setSubfolder] = useState('');
             const [audioFile, setAudioFile] = useState(null);
+            const [selectedParticipantId, setSelectedParticipantId] = useState('');
+            const [showParticipantInfo, setShowParticipantInfo] = useState(false);
 
             const existingSubfolders = (subfolderMap[folder] ? [...subfolderMap[folder]] : []);
 
             const handleSubmit = async (e) => {
                 e.preventDefault();
                 if (!title.trim()) return;
-                onCreate({ title, folder, subfolder, audioFile });
+                onCreate({ title, folder, subfolder, audioFile, participantId: selectedParticipantId || null });
                 setShowModal(false);
                 setTitle('');
                 setFolder('');
                 setSubfolder('');
                 setAudioFile(null);
+                setSelectedParticipantId('');
             };
 
             const grouped = transcripts.reduce((acc, curr) => {
@@ -546,8 +586,6 @@
                                 <button onClick={() => setShowModal(true)} className="bg-tide hover:bg-teal-600 text-white px-5 py-3 rounded-xl shadow font-semibold">New Transcript</button>
                             </div>
                         </section>
-
-                        <BackupPanel onBackup={onBackup} onRestore={onRestore} />
 
                         {Object.keys(grouped).length === 0 ? (
                             <div className="text-center py-20 bg-white rounded-2xl border border-dashed text-slate-500">No transcripts yet.</div>
@@ -581,7 +619,7 @@
 
                     {showModal && (
                         <div className="fixed inset-0 bg-slate-900/65 flex items-center justify-center z-50 backdrop-blur-sm p-4">
-                            <form onSubmit={handleSubmit} className="bg-white rounded-2xl p-8 w-full max-w-lg space-y-5 shadow-soft">
+                            <form onSubmit={handleSubmit} className="bg-white rounded-2xl p-8 w-full max-w-lg space-y-5 shadow-soft max-h-[90vh] overflow-y-auto">
                                 <h3 className="text-3xl font-display">Add Transcript</h3>
 
                                 <div>
@@ -603,6 +641,32 @@
                                 </div>
 
                                 <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg">
+                                    <label className="block text-xs font-semibold text-slate-500 mb-1">Link Participant (Optional)</label>
+                                    <select value={selectedParticipantId} onChange={e => setSelectedParticipantId(e.target.value)} className="w-full text-sm border rounded-lg p-2.5 focus:outline-none focus:ring-2 focus:ring-tide">
+                                        <option value="">Select a participant or leave blank</option>
+                                        {participants.map(p => (
+                                            <option key={p.id} value={p.id}>{p.pseudonym} {p.actualName ? `(${p.actualName})` : ''}</option>
+                                        ))}
+                                    </select>
+                                    {selectedParticipantId && (
+                                        <button type="button" onClick={() => setShowParticipantInfo(!showParticipantInfo)} className="text-xs text-tide hover:text-teal-700 mt-2 font-semibold">
+                                            {showParticipantInfo ? '▼ Hide Info' : '▶ Show Info'}
+                                        </button>
+                                    )}
+                                    {showParticipantInfo && selectedParticipantId && (() => {
+                                        const p = participants.find(x => x.id === selectedParticipantId);
+                                        return p ? (
+                                            <div className="mt-3 p-3 bg-white border border-slate-200 rounded text-sm space-y-1">
+                                                <p><span className="font-semibold">Code:</span> {p.pseudonym}</p>
+                                                <p><span className="font-semibold">Name:</span> {p.actualName || 'Not provided'}</p>
+                                                <p><span className="font-semibold">Interview Date:</span> {p.interviewDate || 'Not set'}</p>
+                                                <p><span className="font-semibold">Notes:</span> {p.notes || 'None'}</p>
+                                            </div>
+                                        ) : null;
+                                    })()}
+                                </div>
+
+                                <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg">
                                     <label className="block text-xs font-semibold text-slate-500 mb-1">Attach Original Audio (Optional)</label>
                                     <input type="file" accept="audio/*" onChange={e => setAudioFile(e.target.files[0])} className="w-full text-sm text-slate-600" />
                                 </div>
@@ -619,12 +683,17 @@
         }
 
         function ArtifactDashboard({ artifacts, onUpdate }) {
+            const [editingId, setEditingId] = useState(null);
+            const [editNotes, setEditNotes] = useState('');
+            const [editCodes, setEditCodes] = useState([]);
+            const [newCodeInput, setNewCodeInput] = useState('');
+
             const handleFileUpload = async (e) => {
                 const file = e.target.files[0];
                 if (!file) return;
                 const fileId = Date.now().toString();
                 await dbSet('files', `global_art_${fileId}`, file);
-                const newArtifact = { id: fileId, name: file.name, type: file.type, date: new Date().toLocaleDateString() };
+                const newArtifact = { id: fileId, name: file.name, type: file.type, date: new Date().toLocaleDateString(), notes: '', codes: [] };
                 onUpdate([newArtifact, ...artifacts]);
             };
 
@@ -647,12 +716,38 @@
                 }
             };
 
+            const openEditArtifact = (art) => {
+                setEditingId(art.id);
+                setEditNotes(art.notes || '');
+                setEditCodes(art.codes || []);
+                setNewCodeInput('');
+            };
+
+            const saveArtifactEdit = () => {
+                if (!editingId) return;
+                onUpdate(artifacts.map(a => a.id === editingId ? { ...a, notes: editNotes, codes: editCodes } : a));
+                setEditingId(null);
+                setEditNotes('');
+                setEditCodes([]);
+            };
+
+            const addCodeToArtifact = () => {
+                if (newCodeInput.trim() && !editCodes.includes(newCodeInput.trim())) {
+                    setEditCodes([...editCodes, newCodeInput.trim()]);
+                    setNewCodeInput('');
+                }
+            };
+
+            const removeCodeFromArtifact = (code) => {
+                setEditCodes(editCodes.filter(c => c !== code));
+            };
+
             return (
                 <div className="p-8 h-full overflow-y-auto w-full max-w-6xl mx-auto">
                     <div className="flex justify-between items-center mb-8">
                         <div>
                             <h2 className="text-3xl font-display text-ink">Project Artifacts</h2>
-                            <p className="text-slate-500 mt-1">Store literature, IRB docs, or non-transcript materials here.</p>
+                            <p className="text-slate-500 mt-1">Store literature, IRB docs, or non-transcript materials. Add notes and codes for analysis reference.</p>
                         </div>
                         <label className="bg-ink hover:bg-slate-800 text-white px-5 py-2.5 rounded-lg shadow-sm cursor-pointer transition">
                             Upload Document
@@ -663,16 +758,58 @@
                     {artifacts.length === 0 ? (
                         <div className="text-center py-20 bg-white rounded-xl border border-dashed text-slate-500">No project artifacts uploaded yet.</div>
                     ) : (
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             {artifacts.map(art => (
-                                <div key={art.id} className="bg-white p-5 rounded-xl border shadow-sm group">
-                                    <div className="flex justify-between items-start">
-                                        <div className="overflow-hidden cursor-pointer hover:text-tide" onClick={() => downloadArtifact(art)}>
-                                            <h4 className="font-semibold text-sm truncate w-44" title={art.name}>{art.name}</h4>
-                                            <p className="text-xs text-slate-400">{art.date}</p>
+                                <div key={art.id} className={`bg-white rounded-xl border shadow-sm transition ${editingId === art.id ? 'ring-2 ring-tide' : ''}`}>
+                                    {editingId === art.id ? (
+                                        <div className="p-5 space-y-4">
+                                            <h4 className="font-semibold text-sm">{art.name}</h4>
+                                            <div>
+                                                <label className="block text-xs font-bold text-slate-600 mb-1">Notes</label>
+                                                <textarea value={editNotes} onChange={e => setEditNotes(e.target.value)} className="w-full border rounded-lg p-2 text-sm resize-none focus:ring-2 focus:ring-tide outline-none" rows="3" placeholder="Add notes about this artifact..." />
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs font-bold text-slate-600 mb-1">Codes</label>
+                                                <div className="flex gap-2 mb-2">
+                                                    <input type="text" value={newCodeInput} onChange={e => setNewCodeInput(e.target.value)} onKeyPress={e => e.key === 'Enter' && addCodeToArtifact()} placeholder="Type code name..." className="flex-1 border rounded p-1.5 text-sm focus:ring-2 focus:ring-tide outline-none" />
+                                                    <button onClick={addCodeToArtifact} className="bg-tide hover:bg-teal-600 text-white px-3 rounded text-sm font-semibold">Add</button>
+                                                </div>
+                                                <div className="flex flex-wrap gap-2">
+                                                    {editCodes.map(code => (
+                                                        <span key={code} className="inline-flex items-center gap-1 bg-teal-100 text-teal-900 px-2 py-1 rounded text-xs">
+                                                            {code}
+                                                            <button onClick={() => removeCodeFromArtifact(code)} className="text-teal-700 hover:text-red-600">×</button>
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                            <div className="flex gap-2 justify-end pt-2">
+                                                <button onClick={() => setEditingId(null)} className="px-3 py-1.5 bg-slate-100 text-slate-600 rounded text-sm font-semibold hover:bg-slate-200">Cancel</button>
+                                                <button onClick={saveArtifactEdit} className="px-3 py-1.5 bg-tide hover:bg-teal-600 text-white rounded text-sm font-semibold">Save</button>
+                                            </div>
                                         </div>
-                                        <button onClick={() => deleteArtifact(art.id)} className="opacity-0 group-hover:opacity-100 text-slate-300 hover:text-red-500 transition p-1">Delete</button>
-                                    </div>
+                                    ) : (
+                                        <div className="p-5 group">
+                                            <div className="flex justify-between items-start mb-3">
+                                                <div className="overflow-hidden cursor-pointer hover:text-tide flex-1" onClick={() => downloadArtifact(art)}>
+                                                    <h4 className="font-semibold text-sm truncate" title={art.name}>{art.name}</h4>
+                                                    <p className="text-xs text-slate-400">{art.date}</p>
+                                                </div>
+                                                <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition">
+                                                    <button onClick={() => openEditArtifact(art)} className="text-slate-400 hover:text-tide p-1" title="Edit">✎</button>
+                                                    <button onClick={() => deleteArtifact(art.id)} className="text-slate-400 hover:text-red-500 p-1" title="Delete">✕</button>
+                                                </div>
+                                            </div>
+                                            {art.notes && <p className="text-xs text-slate-600 mb-2 line-clamp-2">{art.notes}</p>}
+                                            {art.codes && art.codes.length > 0 && (
+                                                <div className="flex flex-wrap gap-1 mt-2">
+                                                    {art.codes.map(code => (
+                                                        <span key={code} className="inline-block bg-teal-100 text-teal-900 px-2 py-0.5 rounded text-xs font-semibold">{code}</span>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
                                 </div>
                             ))}
                         </div>
@@ -691,6 +828,7 @@
             const [realName, setRealName] = useState('');
             const [interviewDate, setInterviewDate] = useState('');
             const [notes, setNotes] = useState('');
+            const [editingId, setEditingId] = useState(null);
 
             useEffect(() => {
                 const saved = localStorage.getItem(participantPinKey);
@@ -713,20 +851,41 @@
                 else setError('Incorrect participant password.');
             };
 
-            const addParticipant = (e) => {
+            const startEdit = (p) => {
+                setEditingId(p.id);
+                setPseudo(p.pseudonym);
+                setRealName(p.actualName);
+                setInterviewDate(p.interviewDate);
+                setNotes(p.notes);
+            };
+
+            const addOrUpdateParticipant = (e) => {
                 e.preventDefault();
                 if (!pseudo.trim()) return;
-                onUpdate([
-                    {
-                        id: Date.now().toString(),
+                
+                if (editingId) {
+                    onUpdate(participants.map(p => p.id === editingId ? {
+                        id: editingId,
                         pseudonym: pseudo.trim(),
                         actualName: realName.trim(),
                         interviewDate,
                         notes,
-                        createdAt: new Date().toISOString()
-                    },
-                    ...participants
-                ]);
+                        createdAt: p.createdAt
+                    } : p));
+                    setEditingId(null);
+                } else {
+                    onUpdate([
+                        {
+                            id: Date.now().toString(),
+                            pseudonym: pseudo.trim(),
+                            actualName: realName.trim(),
+                            interviewDate,
+                            notes,
+                            createdAt: new Date().toISOString()
+                        },
+                        ...participants
+                    ]);
+                }
                 setPseudo('');
                 setRealName('');
                 setInterviewDate('');
@@ -756,13 +915,14 @@
                     <div className="max-w-6xl mx-auto space-y-6">
                         <div className="bg-white border rounded-2xl p-6 shadow-soft">
                             <h2 className="text-3xl font-display">Participant Coding</h2>
-                            <p className="text-slate-500 mt-1">Store pseudonym, real participant name, interview date, and sensitive notes.</p>
+                            <p className="text-slate-500 mt-1">Store pseudonym, real participant name, interview date, and sensitive notes. Edit or delete records.</p>
                         </div>
 
-                        <form onSubmit={addParticipant} className="bg-white border rounded-2xl p-6 shadow-soft space-y-4">
+                        <form onSubmit={addOrUpdateParticipant} className="bg-white border rounded-2xl p-6 shadow-soft space-y-4">
+                            <h3 className="font-bold text-lg">{editingId ? 'Edit Participant' : 'Add New Participant'}</h3>
                             <div className="grid md:grid-cols-2 gap-4">
                                 <div>
-                                    <label className="text-sm font-semibold text-slate-600">Participant Code Name / Pseudonym</label>
+                                    <label className="text-sm font-semibold text-slate-600">Participant Code Name / Pseudonym *</label>
                                     <input value={pseudo} onChange={e => setPseudo(e.target.value)} required className="w-full border rounded-lg p-2.5 mt-1 focus:outline-none focus:ring-2 focus:ring-tide" placeholder="P-001" />
                                 </div>
                                 <div>
@@ -780,8 +940,11 @@
                                     <input value={notes} onChange={e => setNotes(e.target.value)} className="w-full border rounded-lg p-2.5 mt-1 focus:outline-none focus:ring-2 focus:ring-tide" placeholder="Context, demographics, special considerations" />
                                 </div>
                             </div>
-                            <div className="flex justify-end">
-                                <button type="submit" className="bg-tide hover:bg-teal-600 text-white px-5 py-2.5 rounded-lg font-semibold">Add Participant</button>
+                            <div className="flex justify-end gap-3 pt-2">
+                                {editingId && (
+                                    <button type="button" onClick={() => { setEditingId(null); setPseudo(''); setRealName(''); setInterviewDate(''); setNotes(''); }} className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg font-semibold">Cancel</button>
+                                )}
+                                <button type="submit" className="bg-tide hover:bg-teal-600 text-white px-5 py-2.5 rounded-lg font-semibold">{editingId ? 'Update Participant' : 'Add Participant'}</button>
                             </div>
                         </form>
 
@@ -793,7 +956,7 @@
                                         <th className="p-3">Actual Name</th>
                                         <th className="p-3">Interview Date</th>
                                         <th className="p-3">Notes</th>
-                                        <th className="p-3">Action</th>
+                                        <th className="p-3">Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -801,12 +964,17 @@
                                         <tr><td colSpan="5" className="p-8 text-center text-slate-400">No participants recorded yet.</td></tr>
                                     )}
                                     {participants.map(p => (
-                                        <tr key={p.id} className="border-b last:border-0">
+                                        <tr key={p.id} className="border-b last:border-0 hover:bg-slate-50">
                                             <td className="p-3 font-semibold">{p.pseudonym}</td>
                                             <td className="p-3">{p.actualName || '-'}</td>
                                             <td className="p-3">{p.interviewDate || '-'}</td>
-                                            <td className="p-3">{p.notes || '-'}</td>
-                                            <td className="p-3"><button onClick={() => removeParticipant(p.id)} className="text-red-600 hover:text-red-700">Delete</button></td>
+                                            <td className="p-3 max-w-xs truncate" title={p.notes}>{p.notes || '-'}</td>
+                                            <td className="p-3">
+                                                <div className="flex gap-2">
+                                                    <button onClick={() => startEdit(p)} className="text-blue-600 hover:text-blue-700 font-semibold text-sm">Edit</button>
+                                                    <button onClick={() => removeParticipant(p.id)} className="text-red-600 hover:text-red-700 font-semibold text-sm">Delete</button>
+                                                </div>
+                                            </td>
                                         </tr>
                                     ))}
                                 </tbody>
@@ -1106,10 +1274,12 @@
             );
         }
 
-        function AnalysisBoard({ tags, canvases, onUpdate }) {
+        function AnalysisBoard({ tags, canvases, onUpdate, artifacts }) {
             const [newCanvasName, setNewCanvasName] = useState('');
             const [activeCanvasId, setActiveCanvasId] = useState(canvases[0]?.id || null);
             const [newThemeName, setNewThemeName] = useState('');
+            const [editingThemeId, setEditingThemeId] = useState(null);
+            const [editThemeName, setEditThemeName] = useState('');
 
             useEffect(() => {
                 if (!activeCanvasId && canvases[0]) setActiveCanvasId(canvases[0].id);
@@ -1117,19 +1287,35 @@
 
             const codeStats = useMemo(() => {
                 const map = {};
+                
+                // Codes from transcripts
                 tags.forEach(t => {
-                    if (!map[t.tagName]) map[t.tagName] = { count: 0, categories: new Set() };
+                    if (!map[t.tagName]) map[t.tagName] = { count: 0, categories: new Set(), source: 'transcript' };
                     map[t.tagName].count += 1;
                     map[t.tagName].categories.add(t.category || 'Uncategorized');
                 });
+                
+                // Codes from artifacts
+                if (artifacts && artifacts.length > 0) {
+                    artifacts.forEach(art => {
+                        if (art.codes && art.codes.length > 0) {
+                            art.codes.forEach(codeName => {
+                                if (!map[codeName]) map[codeName] = { count: 0, categories: new Set(), source: 'artifact' };
+                                map[codeName].source = 'both';
+                            });
+                        }
+                    });
+                }
+                
                 return Object.entries(map)
                     .map(([name, val]) => ({
                         name,
                         count: val.count,
-                        category: [...val.categories][0] || 'Uncategorized'
+                        category: [...val.categories][0] || 'Uncategorized',
+                        source: val.source
                     }))
                     .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
-            }, [tags]);
+            }, [tags, artifacts]);
 
             const activeCanvas = canvases.find(c => c.id === activeCanvasId) || null;
 
@@ -1141,11 +1327,47 @@
                 setNewCanvasName('');
             };
 
+            const deleteCanvas = (canvasId) => {
+                if (confirm('Delete this canvas and all its themes?')) {
+                    const updated = canvases.filter(c => c.id !== canvasId);
+                    onUpdate(updated);
+                    if (activeCanvasId === canvasId) setActiveCanvasId(updated[0]?.id || null);
+                }
+            };
+
+            const renameCanvas = (canvasId) => {
+                const newName = prompt('Enter new canvas name:');
+                if (newName && newName.trim()) {
+                    onUpdate(canvases.map(c => c.id === canvasId ? { ...c, name: newName.trim() } : c));
+                }
+            };
+
             const addTheme = () => {
                 if (!activeCanvas || !newThemeName.trim()) return;
                 const updated = { ...activeCanvas, themes: [...activeCanvas.themes, { id: Date.now().toString(), name: newThemeName.trim(), codes: [] }] };
                 onUpdate(canvases.map(c => c.id === updated.id ? updated : c));
                 setNewThemeName('');
+            };
+
+            const deleteTheme = (themeId) => {
+                if (!activeCanvas) return;
+                if (confirm('Delete this theme?')) {
+                    const updated = { ...activeCanvas, themes: activeCanvas.themes.filter(t => t.id !== themeId) };
+                    onUpdate(canvases.map(c => c.id === updated.id ? updated : c));
+                }
+            };
+
+            const startEditTheme = (theme) => {
+                setEditingThemeId(theme.id);
+                setEditThemeName(theme.name);
+            };
+
+            const saveEditTheme = () => {
+                if (!activeCanvas || !editingThemeId) return;
+                const updated = { ...activeCanvas, themes: activeCanvas.themes.map(t => t.id === editingThemeId ? { ...t, name: editThemeName.trim() } : t) };
+                onUpdate(canvases.map(c => c.id === updated.id ? updated : c));
+                setEditingThemeId(null);
+                setEditThemeName('');
             };
 
             const moveCodeToTheme = (themeId, codeName) => {
@@ -1174,7 +1396,7 @@
                     <div className="max-w-7xl mx-auto space-y-6">
                         <div className="bg-white border rounded-2xl p-6 shadow-soft">
                             <h2 className="text-3xl font-display">Analysis Canvases</h2>
-                            <p className="text-slate-500 mt-1">Create theme buckets and drag/drop existing codes into themes.</p>
+                            <p className="text-slate-500 mt-1">Create theme buckets and drag/drop codes from transcripts and artifacts into themes. Edit or delete canvases.</p>
                         </div>
 
                         <div className="bg-white border rounded-2xl p-5 shadow-soft grid md:grid-cols-3 gap-4">
@@ -1191,69 +1413,99 @@
                         {!activeCanvas ? (
                             <div className="text-center py-16 bg-white border rounded-2xl text-slate-500">Create or select a canvas to begin analysis.</div>
                         ) : (
-                            <div className="grid lg:grid-cols-3 gap-5">
-                                <div className="bg-white border rounded-2xl p-4 shadow-soft lg:col-span-1">
-                                    <h3 className="font-bold mb-3">Code Bank (with quote counts)</h3>
-                                    <p className="text-xs text-slate-500 mb-3">Drag a code card into a theme bucket.</p>
-                                    <div className="space-y-2 max-h-[520px] overflow-y-auto pr-1">
-                                        {codeStats.map(code => (
-                                            <div
-                                                key={code.name}
-                                                draggable
-                                                onDragStart={(e) => e.dataTransfer.setData('text/plain', code.name)}
-                                                className={`border rounded-lg p-2 cursor-grab bg-white hover:border-tide ${assignedCodes.has(code.name) ? 'opacity-60' : ''}`}
-                                            >
-                                                <div className="font-semibold text-sm">{code.name}</div>
-                                                <div className="text-xs text-slate-500">{code.count} quotes • {code.category}</div>
-                                            </div>
-                                        ))}
-                                        {codeStats.length === 0 && <p className="text-sm text-slate-400">No codes available yet.</p>}
+                            <div>
+                                <div className="flex justify-between items-center mb-4 bg-white border rounded-2xl p-4 shadow-soft">
+                                    <h3 className="text-lg font-bold text-ink">{activeCanvas.name}</h3>
+                                    <div className="flex gap-2">
+                                        <button onClick={() => renameCanvas(activeCanvasId)} className="px-3 py-1 text-sm bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 font-semibold">Rename</button>
+                                        <button onClick={() => deleteCanvas(activeCanvasId)} className="px-3 py-1 text-sm bg-red-100 text-red-700 rounded-lg hover:bg-red-200 font-semibold">Delete Canvas</button>
                                     </div>
                                 </div>
 
-                                <div className="bg-white border rounded-2xl p-4 shadow-soft lg:col-span-2">
-                                    <div className="flex gap-2 mb-4">
-                                        <input value={newThemeName} onChange={e => setNewThemeName(e.target.value)} placeholder="New theme bucket" className="flex-1 border rounded-lg p-2.5 focus:outline-none focus:ring-2 focus:ring-ember" />
-                                        <button onClick={addTheme} className="bg-ember hover:bg-orange-700 text-white px-4 rounded-lg font-semibold">Add Theme</button>
-                                    </div>
-
-                                    {activeCanvas.themes.length === 0 && <p className="text-slate-400 text-sm">No themes yet in this canvas.</p>}
-
-                                    <div className="space-y-3">
-                                        {activeCanvas.themes.map(theme => (
-                                            <div
-                                                key={theme.id}
-                                                onDragOver={(e) => e.preventDefault()}
-                                                onDrop={(e) => {
-                                                    e.preventDefault();
-                                                    const codeName = e.dataTransfer.getData('text/plain');
-                                                    moveCodeToTheme(theme.id, codeName);
-                                                }}
-                                                className="border-2 border-dashed rounded-xl p-4 bg-slate-50"
-                                            >
-                                                <h4 className="font-bold text-ink mb-2">{theme.name}</h4>
-                                                <div className="flex flex-wrap gap-2">
-                                                    {theme.codes.map(codeName => {
-                                                        const found = codeStats.find(c => c.name === codeName);
-                                                        return (
-                                                            <span key={codeName} className="inline-flex items-center gap-2 text-xs bg-teal-100 text-teal-900 px-3 py-1 rounded-full border border-teal-200">
-                                                                {codeName} ({found?.count || 0})
-                                                                <button onClick={() => removeCodeFromTheme(theme.id, codeName)} className="text-teal-700 hover:text-red-600">x</button>
-                                                            </span>
-                                                        );
-                                                    })}
-                                                    {theme.codes.length === 0 && <span className="text-xs text-slate-400">Drop codes here</span>}
+                                <div className="grid lg:grid-cols-3 gap-5">
+                                    <div className="bg-white border rounded-2xl p-4 shadow-soft lg:col-span-1">
+                                        <h3 className="font-bold mb-3">Code Bank (with quote counts)</h3>
+                                        <p className="text-xs text-slate-500 mb-3">From transcripts & artifacts. Drag into themes.</p>
+                                        <div className="space-y-2 max-h-[520px] overflow-y-auto pr-1">
+                                            {codeStats.map(code => (
+                                                <div
+                                                    key={code.name}
+                                                    draggable
+                                                    onDragStart={(e) => e.dataTransfer.setData('text/plain', code.name)}
+                                                    className={`border rounded-lg p-2 cursor-grab bg-white hover:border-tide transition ${assignedCodes.has(code.name) ? 'opacity-60' : ''}`}
+                                                >
+                                                    <div className="font-semibold text-sm">{code.name}</div>
+                                                    <div className="text-xs text-slate-500">{code.count} quotes • {code.category}</div>
+                                                    {code.source === 'both' && <span className="text-[10px] bg-slate-100 px-1 rounded">Transcript + Artifact</span>}
+                                                    {code.source === 'artifact' && <span className="text-[10px] bg-amber-100 px-1 rounded">Artifact</span>}
                                                 </div>
-                                            </div>
-                                        ))}
+                                            ))}
+                                            {codeStats.length === 0 && <p className="text-sm text-slate-400">No codes available yet.</p>}
+                                        </div>
                                     </div>
 
-                                    {unassigned.length > 0 && (
-                                        <div className="mt-5 pt-4 border-t">
-                                            <p className="text-xs uppercase text-slate-500 font-bold mb-2">Unassigned in this canvas</p>
-                                            <p className="text-sm text-slate-600">{unassigned.map(c => `${c.name} (${c.count})`).join(', ')}</p>
+                                    <div className="bg-white border rounded-2xl p-4 shadow-soft lg:col-span-2">
+                                        <div className="flex gap-2 mb-4">
+                                            <input value={newThemeName} onChange={e => setNewThemeName(e.target.value)} placeholder="New theme bucket" className="flex-1 border rounded-lg p-2.5 focus:outline-none focus:ring-2 focus:ring-ember" />
+                                            <button onClick={addTheme} className="bg-ember hover:bg-orange-700 text-white px-4 rounded-lg font-semibold">Add Theme</button>
                                         </div>
-                                    )}
+
+                                        {activeCanvas.themes.length === 0 && <p className="text-slate-400 text-sm">No themes yet in this canvas.</p>}
+
+                                        <div className="space-y-3">
+                                            {activeCanvas.themes.map(theme => (
+                                                <div key={theme.id} className="border-2 border-dashed rounded-xl p-4 bg-slate-50 group">
+                                                    <div className="flex justify-between items-center mb-3">
+                                                        {editingThemeId === theme.id ? (
+                                                            <div className="flex gap-2 flex-1">
+                                                                <input autoFocus value={editThemeName} onChange={e => setEditThemeName(e.target.value)} className="flex-1 border rounded p-1.5 text-sm focus:ring-2 focus:ring-tide outline-none" />
+                                                                <button onClick={saveEditTheme} className="bg-tide text-white px-2 rounded text-sm font-semibold">Save</button>
+                                                                <button onClick={() => setEditingThemeId(null)} className="bg-slate-300 text-slate-700 px-2 rounded text-sm font-semibold">Cancel</button>
+                                                            </div>
+                                                        ) : (
+                                                            <>
+                                                                <h4 className="font-bold text-ink">{theme.name}</h4>
+                                                                <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition">
+                                                                    <button onClick={() => startEditTheme(theme)} className="text-slate-400 hover:text-blue-600 text-sm">✎</button>
+                                                                    <button onClick={() => deleteTheme(theme.id)} className="text-slate-400 hover:text-red-600 text-sm">✕</button>
+                                                                </div>
+                                                            </>
+                                                        )}
+                                                    </div>
+                                                    <div className="flex flex-wrap gap-2">
+                                                        {theme.codes.map(codeName => {
+                                                            const found = codeStats.find(c => c.name === codeName);
+                                                            return (
+                                                                <span key={codeName} className="inline-flex items-center gap-2 text-xs bg-teal-100 text-teal-900 px-3 py-1 rounded-full border border-teal-200">
+                                                                    {codeName} ({found?.count || 0})
+                                                                    <button onClick={() => removeCodeFromTheme(theme.id, codeName)} className="text-teal-700 hover:text-red-600">x</button>
+                                                                </span>
+                                                            );
+                                                        })}
+                                                        {theme.codes.length === 0 && <span className="text-xs text-slate-400">Drop codes here</span>}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+
+                                        <div
+                                            onDragOver={(e) => e.preventDefault()}
+                                            onDrop={(e) => {
+                                                e.preventDefault();
+                                                const codeName = e.dataTransfer.getData('text/plain');
+                                                if (codeName && activeCanvas && activeCanvas.themes.length > 0) {
+                                                    alert('Drop the code directly into a theme bucket.');
+                                                }
+                                            }}
+                                        ></div>
+
+                                        {unassigned.length > 0 && (
+                                            <div className="mt-5 pt-4 border-t">
+                                                <p className="text-xs uppercase text-slate-500 font-bold mb-2">Unassigned in this canvas</p>
+                                                <p className="text-sm text-slate-600">{unassigned.map(c => `${c.name} (${c.count})`).join(', ')}</p>
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
                             </div>
                         )}
