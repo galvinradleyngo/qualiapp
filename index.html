@@ -1761,6 +1761,56 @@
                 }
             };
 
+            const removeInterviewerTag = () => {
+                if (!editableRef.current) return false;
+                const sel = window.getSelection();
+                if (!sel || !sel.rangeCount) return false;
+                const range = sel.getRangeAt(0);
+
+                const editor = editableRef.current;
+                const collectCandidates = () => {
+                    const set = new Set();
+                    if (range.collapsed) {
+                        const node = sel.anchorNode;
+                        const el = node && node.nodeType === 1 ? node : node?.parentElement;
+                        const tagged = el && el.closest ? el.closest('span.qa-interviewer') : null;
+                        if (tagged && editor.contains(tagged)) set.add(tagged);
+                        return Array.from(set);
+                    }
+
+                    const walker = document.createTreeWalker(editor, NodeFilter.SHOW_ELEMENT);
+                    let node;
+                    while ((node = walker.nextNode())) {
+                        if (!node.classList || !node.classList.contains('qa-interviewer')) continue;
+                        try {
+                            if (range.intersectsNode(node)) set.add(node);
+                        } catch (_err) {
+                            // ignore nodes that cannot be intersected in this browser state
+                        }
+                    }
+                    return Array.from(set);
+                };
+
+                const taggedNodes = collectCandidates();
+                if (!taggedNodes.length) return false;
+
+                taggedNodes.forEach((el) => {
+                    const parent = el.parentNode;
+                    if (!parent) return;
+                    while (el.firstChild) parent.insertBefore(el.firstChild, el);
+                    parent.removeChild(el);
+                });
+
+                editor.normalize();
+                handleEditableInput();
+                return true;
+            };
+
+            const toggleInterviewerTag = () => {
+                const removed = removeInterviewerTag();
+                if (!removed) applyInterviewerTag();
+            };
+
             useEffect(() => {
                 const isSelectionOrFocusInsideEditor = () => {
                     const sel = window.getSelection();
@@ -1783,7 +1833,7 @@
                     }
                     if (isQuestionShortcut) {
                         e.preventDefault();
-                        applyInterviewerTag();
+                        toggleInterviewerTag();
                     }
                 };
 
@@ -2017,7 +2067,7 @@
                                             </button>
                                             <button
                                                 type="button"
-                                                onClick={applyInterviewerTag}
+                                                onClick={toggleInterviewerTag}
                                                 className="px-3 py-1.5 rounded bg-amber-100 border border-amber-300 text-amber-900 text-sm font-semibold hover:bg-amber-200"
                                                 title="Tag selected text as interviewer question/comment"
                                             >
