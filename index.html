@@ -2041,11 +2041,23 @@
                 setNewCategoryInput('');
             };
 
+            const addCategoryFromFormField = () => {
+                const next = tagFormCategory.trim();
+                if (!next) return;
+                setCategoryLibrary((prev) => [...new Set([...prev, next])].sort((a, b) => a.localeCompare(b)));
+            };
+
             const createCodeOption = () => {
                 const next = newCodeInput.trim();
                 if (!next) return;
                 setCodeLibrary((prev) => [...new Set([...prev, next])].sort((a, b) => a.localeCompare(b)));
                 setNewCodeInput('');
+            };
+
+            const addCodeFromFormField = () => {
+                const next = tagFormName.trim();
+                if (!next) return;
+                setCodeLibrary((prev) => [...new Set([...prev, next])].sort((a, b) => a.localeCompare(b)));
             };
 
             const renderHighlightedHtml = () => {
@@ -2234,8 +2246,8 @@
                         </div>
 
                         {mode === 'code' && (
-                            <div className="w-96 bg-slate-50 flex flex-col border-l border-slate-200 z-20">
-                                <div className="p-5 border-b bg-white">
+                            <div className="w-96 bg-slate-50 flex flex-col border-l border-slate-200 z-20 overflow-y-auto">
+                                <div className="p-5 border-b bg-white shrink-0">
                                     <h3 className="font-bold text-lg text-slate-800 mb-2">{editingTagId ? 'Edit Code' : (pendingSelection ? 'Save New Code' : 'Document Codes')}</h3>
                                     {(pendingSelection || editingTagId) ? (
                                         <form onSubmit={submitTagForm} className={`p-4 rounded-xl border-2 ${editingTagId ? 'bg-orange-50 border-orange-300' : 'bg-teal-50 border-teal-300'}`}>
@@ -2246,9 +2258,9 @@
                                                 <input type="text" list="categories" value={tagFormCategory} onChange={e=>setTagFormCategory(e.target.value)} placeholder="e.g. Coping" className="flex-1 border border-slate-300 rounded p-2 text-sm focus:ring-2 focus:ring-tide outline-none" />
                                                 <button
                                                     type="button"
-                                                    onClick={createCategoryOption}
+                                                    onClick={addCategoryFromFormField}
                                                     className="px-3 bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 rounded text-sm font-semibold"
-                                                    title="Create a new category"
+                                                    title="Add current category text as an option"
                                                 >
                                                     +
                                                 </button>
@@ -2293,9 +2305,9 @@
                                                 <input type="text" autoFocus list="tags" value={tagFormName} onChange={e=>setTagFormName(e.target.value)} placeholder="e.g. Humor" className="flex-1 border border-slate-300 rounded p-2 text-sm focus:ring-2 focus:ring-tide outline-none" />
                                                 <button
                                                     type="button"
-                                                    onClick={createCodeOption}
+                                                    onClick={addCodeFromFormField}
                                                     className="px-3 bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 rounded text-sm font-semibold"
-                                                    title="Create a new code"
+                                                    title="Add current code text as an option"
                                                 >
                                                     +
                                                 </button>
