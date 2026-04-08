@@ -840,7 +840,7 @@
                                 />
                             )}
                             {view === 'participants' && <ParticipantVault participants={participants} onUpdate={setParticipants} />}
-                            {view === 'analysis' && <AnalysisBoard tags={tags} canvases={analysisCanvases} onUpdate={setAnalysisCanvases} artifacts={globalArtifacts} transcripts={transcripts} participants={participants} />}
+                            {view === 'analysis' && <AnalysisBoard tags={tags} canvases={analysisCanvases} onUpdate={setAnalysisCanvases} artifacts={globalArtifacts} transcripts={transcripts} participants={participants} observations={observations} observationTags={observationTags} />}
                             {view === 'triangulation' && (
                                 <TriangulationDashboard
                                     transcripts={transcripts}
@@ -1514,10 +1514,10 @@
                                                             <button
                                                                 key={`artifact_code_${code}`}
                                                                 type="button"
-                                                                onClick={() => setNewCodeInput(code)}
-                                                                className="px-2 py-1 rounded-full text-[11px] border border-teal-200 bg-teal-50 hover:bg-teal-100 text-teal-800"
+                                                                onClick={() => { if (!editCodes.includes(code)) setEditCodes(prev => [...prev, code]); }}
+                                                                className={`px-2 py-1 rounded-full text-[11px] border transition ${editCodes.includes(code) ? 'border-teal-400 bg-teal-200 text-teal-900 font-bold' : 'border-teal-200 bg-teal-50 hover:bg-teal-100 text-teal-800'}`}
                                                             >
-                                                                {code}
+                                                                {editCodes.includes(code) ? '✓ ' : ''}{code}
                                                             </button>
                                                         ))}
                                                     </div>
@@ -1538,7 +1538,7 @@
                                         </div>
                                     ) : (
                                         <div className="p-5 group">
-                                            <div className="flex justify-between items-start mb-3">
+                                            <div className="flex justify-between items-start mb-2">
                                                 <div className="overflow-hidden cursor-pointer hover:text-tide flex-1" onClick={() => downloadArtifact(art)}>
                                                     <h4 className="font-semibold text-sm truncate" title={art.name}>{art.name}</h4>
                                                     <p className="text-xs text-slate-400">{art.date}</p>
@@ -1548,11 +1548,16 @@
                                                     <button onClick={() => deleteArtifact(art.id)} className="text-slate-400 hover:text-red-500 p-1" title="Delete">✕</button>
                                                 </div>
                                             </div>
+                                            {art.folder && (
+                                                <div className="mb-2">
+                                                    <span className="text-[10px] uppercase font-bold text-slate-400">{art.folder}</span>
+                                                </div>
+                                            )}
                                             {art.notes && <p className="text-xs text-slate-600 mb-2 line-clamp-2">{art.notes}</p>}
                                             {art.codes && art.codes.length > 0 && (
-                                                <div className="flex flex-wrap gap-1 mt-2">
+                                                <div className="flex flex-wrap gap-1.5 mt-2">
                                                     {art.codes.map(code => (
-                                                        <span key={code} className="inline-block bg-teal-100 text-teal-900 px-2 py-0.5 rounded text-xs font-semibold">{code}</span>
+                                                        <span key={code} className="inline-block bg-teal-100 border border-teal-200 text-teal-800 px-2.5 py-1 rounded-xl text-xs font-bold">{code}</span>
                                                     ))}
                                                 </div>
                                             )}
@@ -2432,7 +2437,7 @@
             );
         }
 
-        function AnalysisBoard({ tags, canvases, onUpdate, artifacts, transcripts, participants }) {
+        function AnalysisBoard({ tags, canvases, onUpdate, artifacts, transcripts, participants, observations, observationTags }) {
             const [newCanvasName, setNewCanvasName] = useState('');
             const [activeCanvasId, setActiveCanvasId] = useState(canvases[0]?.id || null);
             const [newThemeName, setNewThemeName] = useState('');
@@ -2460,8 +2465,9 @@
                 const set = new Set();
                 transcripts.forEach(t => set.add(t.folder || 'Uncategorized'));
                 (artifacts || []).forEach(a => set.add(a.folder || 'Uncategorized'));
+                (observations || []).forEach(o => set.add(o.location || 'Onsite Observation'));
                 return Array.from(set).sort((a, b) => a.localeCompare(b));
-            }, [transcripts, artifacts]);
+            }, [transcripts, artifacts, observations]);
 
             useEffect(() => {
                 if (selectedFolders.length === 0 && availableFolders.length > 0) {
@@ -2526,13 +2532,45 @@
                     });
                 });
 
+                (observationTags || []).forEach(t => {
+                    const parent = (observations || []).find(o => o.id === t.observationId);
+                    const folder = parent?.location || 'Onsite Observation';
+                    if (!selectedFolderSet.has(folder)) return;
+                    if (!map[t.tagName]) {
+                        map[t.tagName] = {
+                            name: t.tagName,
+                            category: t.category || 'Uncategorized',
+                            count: 0,
+                            sourceSet: new Set(),
+                            quotes: [],
+                            folders: new Set()
+                        };
+                    }
+                    map[t.tagName].count += 1;
+                    map[t.tagName].sourceSet.add('observation');
+                    map[t.tagName].folders.add(folder);
+                    map[t.tagName].quotes.push({
+                        source: 'Observation',
+                        folder,
+                        ref: parent ? parent.title : `Observation ${String(t.observationId).slice(-4)}`,
+                        text: t.textSnippet || ''
+                    });
+                });
+
                 return Object.values(map)
                     .map((c) => ({
                         ...c,
-                        source: c.sourceSet.size > 1 ? 'both' : (c.sourceSet.has('artifact') ? 'artifact' : 'transcript')
+                        source: (() => {
+                            const s = c.sourceSet;
+                            const count = [s.has('transcript'), s.has('artifact'), s.has('observation')].filter(Boolean).length;
+                            if (count > 1) return 'multiple';
+                            if (s.has('artifact')) return 'artifact';
+                            if (s.has('observation')) return 'observation';
+                            return 'transcript';
+                        })()
                     }))
                     .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
-            }, [tags, artifacts, transcriptById, selectedFolderSet, participantCodeById]);
+            }, [tags, artifacts, observationTags, observations, transcriptById, selectedFolderSet, participantCodeById]);
 
             const activeCanvas = canvases.find(c => c.id === activeCanvasId) || null;
 
@@ -2716,9 +2754,10 @@
                                                     className={`border rounded-lg p-2 cursor-grab bg-white hover:border-tide transition ${assignedCodes.has(code.name) ? 'opacity-60' : ''}`}
                                                 >
                                                     <div className="font-semibold text-sm">{code.name}</div>
-                                                    <div className="text-xs text-slate-500">{code.count} quotes • {code.category}</div>
-                                                    {code.source === 'both' && <span className="text-[10px] bg-slate-100 px-1 rounded">Transcript + Artifact</span>}
-                                                    {code.source === 'artifact' && <span className="text-[10px] bg-amber-100 px-1 rounded">Artifact</span>}
+                                                    <div className="text-xs text-slate-500">{code.count} quotes • <span className="text-[10px] uppercase font-bold text-slate-400">{code.category}</span></div>
+                                                    {code.source === 'multiple' && <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-full">Multiple sources</span>}
+                                                    {code.source === 'artifact' && <span className="text-[10px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded-full">Artifact</span>}
+                                                    {code.source === 'observation' && <span className="text-[10px] bg-violet-100 text-violet-800 px-1.5 py-0.5 rounded-full">Observation</span>}
                                                 </div>
                                             ))}
                                             {codeDetails.length === 0 && <p className="text-sm text-slate-400">No codes available for selected folders.</p>}
@@ -3487,7 +3526,19 @@
             const [sortBy, setSortBy] = useState('category');
             const [sortDirection, setSortDirection] = useState('asc');
             const [showExportMenu, setShowExportMenu] = useState(false);
-            const [definitionsEditMode, setDefinitionsEditMode] = useState(false);
+            const [editingRows, setEditingRows] = useState(new Set());
+            const toggleRow = (name) => setEditingRows(prev => {
+                const next = new Set(prev);
+                if (next.has(name)) next.delete(name); else next.add(name);
+                return next;
+            });
+            const toggleAllRows = (rows) => setEditingRows(prev => {
+                const names = rows.map(r => r.name);
+                const anyEditing = names.some(n => prev.has(n));
+                const next = new Set(prev);
+                if (anyEditing) { names.forEach(n => next.delete(n)); } else { names.forEach(n => next.add(n)); }
+                return next;
+            });
 
             const csvEscape = (value) => {
                 const text = String(value ?? '');
@@ -3858,13 +3909,6 @@
                                 </div>
                             </div>
                             <div className="flex items-center gap-2">
-                                <button
-                                    type="button"
-                                    onClick={() => setDefinitionsEditMode(prev => !prev)}
-                                    className={`px-4 py-2 rounded-lg text-sm font-semibold border ${definitionsEditMode ? 'bg-amber-100 border-amber-300 text-amber-900 hover:bg-amber-200' : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-100'}`}
-                                >
-                                    {definitionsEditMode ? 'Exit Edit Mode' : 'Edit Mode'}
-                                </button>
                                 <div className="relative">
                                     <button
                                         type="button"
@@ -3960,9 +4004,23 @@
 
                         <div className="mt-6 pb-6 space-y-6">
                             <section className="w-full bg-white border rounded-2xl shadow-sm overflow-hidden">
-                                <div className="p-4 border-b bg-slate-50">
-                                    <h3 className="text-lg font-bold text-ink">Code Definitions</h3>
-                                    <p className="text-xs text-slate-500 mt-1">{definitionsEditMode ? 'Edit mode is on. Click any cell to fill in definition fields.' : 'Read-only view. Turn on Edit Mode to fill in definition fields.'}</p>
+                                <div className="p-4 border-b bg-slate-50 flex items-center justify-between">
+                                    <div>
+                                        <h3 className="text-lg font-bold text-ink">Code Definitions</h3>
+                                        <p className="text-xs text-slate-500 mt-0.5">{codeRows.some(r => editingRows.has(r.name)) ? 'Some rows in edit mode — click ✓ on a row when done.' : 'Click the pencil on any row to edit it, or use the button to edit all.'}</p>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        title={codeRows.some(r => editingRows.has(r.name)) ? 'Close all edits' : 'Edit all rows'}
+                                        onClick={() => toggleAllRows(codeRows)}
+                                        className={`p-2 rounded-lg border transition ${codeRows.some(r => editingRows.has(r.name)) ? 'bg-amber-100 border-amber-300 text-amber-700 hover:bg-amber-200' : 'bg-white border-slate-300 text-slate-500 hover:bg-slate-100 hover:text-slate-700'}`}
+                                    >
+                                        {codeRows.some(r => editingRows.has(r.name)) ? (
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                                        ) : (
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                                        )}
+                                    </button>
                                 </div>
                                 <div className="overflow-x-auto">
                                     <table className="w-full text-left border-collapse">
@@ -3979,14 +4037,28 @@
                                             {codeRows.length === 0 ? (
                                                 <tr><td colSpan="5" className="p-8 text-center text-slate-400 italic">No codes available yet.</td></tr>
                                             ) : codeRows.map((row) => (
-                                                <tr key={`code_row_${row.name}`} className="align-top hover:bg-slate-50">
+                                                <tr key={`code_row_${row.name}`} className={`align-top hover:bg-slate-50 ${editingRows.has(row.name) ? 'bg-amber-50/30' : ''}`}>
                                                     <td className="p-3">
-                                                        <span className="inline-block max-w-[180px] whitespace-normal break-words leading-tight bg-teal-100 border border-teal-200 text-teal-800 px-3 py-1.5 rounded-xl text-xs font-bold">
-                                                            {row.name}
-                                                        </span>
+                                                        <div className="flex items-start gap-1.5">
+                                                            <span className="inline-block max-w-[180px] whitespace-normal break-words leading-tight bg-teal-100 border border-teal-200 text-teal-800 px-3 py-1.5 rounded-xl text-xs font-bold">
+                                                                {row.name}
+                                                            </span>
+                                                            <button
+                                                                type="button"
+                                                                title={editingRows.has(row.name) ? 'Done editing' : 'Edit this row'}
+                                                                onClick={() => toggleRow(row.name)}
+                                                                className={`mt-1 p-1 rounded border transition flex-shrink-0 ${editingRows.has(row.name) ? 'bg-amber-100 border-amber-300 text-amber-700 hover:bg-amber-200' : 'bg-white border-slate-200 text-slate-400 hover:text-slate-600 hover:border-slate-300'}`}
+                                                            >
+                                                                {editingRows.has(row.name) ? (
+                                                                    <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+                                                                ) : (
+                                                                    <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                                                                )}
+                                                            </button>
+                                                        </div>
                                                     </td>
                                                     <td className="p-3">
-                                                        {definitionsEditMode ? (
+                                                        {editingRows.has(row.name) ? (
                                                             <textarea
                                                                 value={row.definition}
                                                                 onChange={(e) => updateDefinitionMap(codeDefinitions, onUpdateCodeDefinitions, row.name, 'definition', e.target.value)}
@@ -3998,7 +4070,7 @@
                                                         )}
                                                     </td>
                                                     <td className="p-3">
-                                                        {definitionsEditMode ? (
+                                                        {editingRows.has(row.name) ? (
                                                             <textarea
                                                                 value={row.inclusion}
                                                                 onChange={(e) => updateDefinitionMap(codeDefinitions, onUpdateCodeDefinitions, row.name, 'inclusion', e.target.value)}
@@ -4010,7 +4082,7 @@
                                                         )}
                                                     </td>
                                                     <td className="p-3">
-                                                        {definitionsEditMode ? (
+                                                        {editingRows.has(row.name) ? (
                                                             <textarea
                                                                 value={row.exclusion}
                                                                 onChange={(e) => updateDefinitionMap(codeDefinitions, onUpdateCodeDefinitions, row.name, 'exclusion', e.target.value)}
@@ -4036,9 +4108,23 @@
                             </section>
 
                             <section className="w-full bg-white border rounded-2xl shadow-sm overflow-hidden">
-                                <div className="p-4 border-b bg-slate-50">
-                                    <h3 className="text-lg font-bold text-ink">Category Definitions</h3>
-                                    <p className="text-xs text-slate-500 mt-1">{definitionsEditMode ? 'Edit mode is on. Click any cell to fill in definition fields.' : 'Read-only view. Turn on Edit Mode to fill in definition fields.'}</p>
+                                <div className="p-4 border-b bg-slate-50 flex items-center justify-between">
+                                    <div>
+                                        <h3 className="text-lg font-bold text-ink">Category Definitions</h3>
+                                        <p className="text-xs text-slate-500 mt-0.5">{categoryRows.some(r => editingRows.has(r.name)) ? 'Some rows in edit mode — click ✓ on a row when done.' : 'Click the pencil on any row to edit it, or use the button to edit all.'}</p>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        title={categoryRows.some(r => editingRows.has(r.name)) ? 'Close all edits' : 'Edit all rows'}
+                                        onClick={() => toggleAllRows(categoryRows)}
+                                        className={`p-2 rounded-lg border transition ${categoryRows.some(r => editingRows.has(r.name)) ? 'bg-amber-100 border-amber-300 text-amber-700 hover:bg-amber-200' : 'bg-white border-slate-300 text-slate-500 hover:bg-slate-100 hover:text-slate-700'}`}
+                                    >
+                                        {categoryRows.some(r => editingRows.has(r.name)) ? (
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                                        ) : (
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                                        )}
+                                    </button>
                                 </div>
                                 <div className="overflow-x-auto">
                                     <table className="w-full text-left border-collapse">
@@ -4055,10 +4141,26 @@
                                             {categoryRows.length === 0 ? (
                                                 <tr><td colSpan="5" className="p-8 text-center text-slate-400 italic">No categories available yet.</td></tr>
                                             ) : categoryRows.map((row) => (
-                                                <tr key={`category_row_${row.name}`} className="align-top hover:bg-slate-50">
-                                                    <td className="p-3"><span className="text-[10px] uppercase font-bold text-slate-400 block">{row.name}</span></td>
+                                                <tr key={`category_row_${row.name}`} className={`align-top hover:bg-slate-50 ${editingRows.has(row.name) ? 'bg-amber-50/30' : ''}`}>
                                                     <td className="p-3">
-                                                        {definitionsEditMode ? (
+                                                        <div className="flex items-start gap-1.5">
+                                                            <span className="text-[10px] uppercase font-bold text-slate-400 block">{row.name}</span>
+                                                            <button
+                                                                type="button"
+                                                                title={editingRows.has(row.name) ? 'Done editing' : 'Edit this row'}
+                                                                onClick={() => toggleRow(row.name)}
+                                                                className={`p-1 rounded border transition flex-shrink-0 ${editingRows.has(row.name) ? 'bg-amber-100 border-amber-300 text-amber-700 hover:bg-amber-200' : 'bg-white border-slate-200 text-slate-400 hover:text-slate-600 hover:border-slate-300'}`}
+                                                            >
+                                                                {editingRows.has(row.name) ? (
+                                                                    <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+                                                                ) : (
+                                                                    <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                                                                )}
+                                                            </button>
+                                                        </div>
+                                                    </td>
+                                                    <td className="p-3">
+                                                        {editingRows.has(row.name) ? (
                                                             <textarea
                                                                 value={row.definition}
                                                                 onChange={(e) => updateDefinitionMap(categoryDefinitions, onUpdateCategoryDefinitions, row.name, 'definition', e.target.value)}
@@ -4070,7 +4172,7 @@
                                                         )}
                                                     </td>
                                                     <td className="p-3">
-                                                        {definitionsEditMode ? (
+                                                        {editingRows.has(row.name) ? (
                                                             <textarea
                                                                 value={row.inclusion}
                                                                 onChange={(e) => updateDefinitionMap(categoryDefinitions, onUpdateCategoryDefinitions, row.name, 'inclusion', e.target.value)}
@@ -4082,7 +4184,7 @@
                                                         )}
                                                     </td>
                                                     <td className="p-3">
-                                                        {definitionsEditMode ? (
+                                                        {editingRows.has(row.name) ? (
                                                             <textarea
                                                                 value={row.exclusion}
                                                                 onChange={(e) => updateDefinitionMap(categoryDefinitions, onUpdateCategoryDefinitions, row.name, 'exclusion', e.target.value)}
