@@ -3565,7 +3565,7 @@
             };
 
             const exportAgreementCsv = () => {
-                const lines = ['Coder ID,Imported At,Agreement %,Matched Tags,Primary Only,Co-rater Only,Co-rater Tags,Shared Themes,Primary Theme Count,Co-rater Theme Count,Shared Artifact Codes'];
+                const lines = ['Coder ID,Imported At,Overlap Agreement % (heuristic),Matched Tags,Primary Only,Co-rater Only,Co-rater Tags,Shared Themes,Primary Theme Count,Co-rater Theme Count,Shared Artifact Codes'];
                 sessionStats.forEach((s) => {
                     lines.push([
                         csvEscape(s.coderId),
@@ -3587,8 +3587,8 @@
             const exportAgreementApaDoc = () => {
                 const html = buildApaTableHtml(
                     1,
-                    'Agreement Analysis Summary',
-                    ['Coder ID', 'Imported At', 'Agreement %', 'Matched', 'Primary only', 'Co-rater only', 'Shared themes', 'Shared artifact codes'],
+                    'Overlap Agreement (Heuristic) Summary',
+                    ['Coder ID', 'Imported At', 'Overlap Agreement % (heuristic)', 'Matched', 'Primary only', 'Co-rater only', 'Shared themes', 'Shared artifact codes'],
                     sessionStats.map((s) => [
                         s.coderId,
                         new Date(s.importedAt).toLocaleString(),
@@ -3599,7 +3599,7 @@
                         String(s.sharedThemes),
                         String(s.sharedArtifactCodes)
                     ]),
-                    `Computed using overlap threshold = ${threshold}.`
+                    `Computed using overlap threshold = ${threshold}; this is a heuristic overlap metric and not a chance-corrected reliability statistic.`
                 );
                 downloadWordDoc(`QualiApp_APA7_Agreement_Analysis_${new Date().toISOString().slice(0, 10)}.doc`, html);
             };
@@ -3665,6 +3665,7 @@
                                     )}
                                 </div>
                             </div>
+                            <p className="text-xs text-slate-500">Heuristic metric for calibration only; not a formal chance-corrected inter-rater reliability statistic.</p>
 
                             {sessionStats.length === 0 ? (
                                 <p className="text-slate-500 text-sm">No co-rater returns imported yet.</p>
@@ -3677,7 +3678,7 @@
                                                 <span className="text-xs text-slate-500">{new Date(s.importedAt).toLocaleString()}</span>
                                             </div>
                                             <div className="grid grid-cols-2 gap-2 text-sm">
-                                                <p><span className="font-semibold">Agreement:</span> {s.agreementPct}%</p>
+                                                <p><span className="font-semibold">Overlap agreement (heuristic):</span> {s.agreementPct}%</p>
                                                 <p><span className="font-semibold">Co-rater tags:</span> {s.coTagCount}</p>
                                                 <p><span className="font-semibold">Matched tags:</span> {s.matched}</p>
                                                 <p><span className="font-semibold">Primary only:</span> {s.primaryOnly}</p>
