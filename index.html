@@ -2025,19 +2025,17 @@
             };
 
             const createCategoryOption = () => {
-                const input = prompt('Add new category name:', tagFormCategory || '');
+                const input = prompt('Add new category name:', '');
                 const next = (input || '').trim();
                 if (!next) return;
                 setCategoryLibrary((prev) => [...new Set([...prev, next])].sort((a, b) => a.localeCompare(b)));
-                setTagFormCategory(next);
             };
 
             const createCodeOption = () => {
-                const input = prompt('Add new code name:', tagFormName || '');
+                const input = prompt('Add new code name:', '');
                 const next = (input || '').trim();
                 if (!next) return;
                 setCodeLibrary((prev) => [...new Set([...prev, next])].sort((a, b) => a.localeCompare(b)));
-                setTagFormName(next);
             };
 
             const renderHighlightedHtml = () => {
