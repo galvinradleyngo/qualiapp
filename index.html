@@ -3290,6 +3290,17 @@
                             <div>
                                 <h2 className="text-3xl font-display">Codebook Manager</h2>
                                 <p className="text-slate-500 mt-2">{tableData.length} grouped code entries across {uniqueCodeCount} unique codes (transcripts + artifacts).</p>
+                                <div className="mt-3 flex flex-wrap items-center gap-3 text-xs">
+                                    <span className="font-semibold text-slate-500 uppercase tracking-wide">Legend</span>
+                                    <span className="inline-flex items-center gap-1.5">
+                                        <span className="bg-teal-100 border border-teal-200 text-teal-800 px-2.5 py-1 rounded-full text-[11px] font-bold">Code</span>
+                                        <span className="text-slate-500">Code label tag</span>
+                                    </span>
+                                    <span className="inline-flex items-center gap-1.5">
+                                        <span className="text-[10px] uppercase font-bold text-slate-400">Category</span>
+                                        <span className="text-slate-500">Category label text</span>
+                                    </span>
+                                </div>
                             </div>
                             <div className="relative">
                                 <button
@@ -3379,8 +3390,8 @@
                             </div>
                         </div>
 
-                        <div className="grid xl:grid-cols-2 gap-6 mt-6 pb-6">
-                            <section className="bg-white border rounded-2xl shadow-sm overflow-hidden">
+                        <div className="mt-6 pb-6 space-y-6">
+                            <section className="w-full bg-white border rounded-2xl shadow-sm overflow-hidden">
                                 <div className="p-4 border-b bg-slate-50">
                                     <h3 className="text-lg font-bold text-ink">Code Definitions</h3>
                                     <p className="text-xs text-slate-500 mt-1">Codes are auto-listed from the codebook table. Complete definition, use/exclusion criteria, and exemplars.</p>
@@ -3452,7 +3463,7 @@
                                 </div>
                             </section>
 
-                            <section className="bg-white border rounded-2xl shadow-sm overflow-hidden">
+                            <section className="w-full bg-white border rounded-2xl shadow-sm overflow-hidden">
                                 <div className="p-4 border-b bg-slate-50">
                                     <h3 className="text-lg font-bold text-ink">Category Definitions</h3>
                                     <p className="text-xs text-slate-500 mt-1">Categories are auto-listed from the codebook table. Complete definition, use/exclusion criteria, and exemplars.</p>
@@ -3470,7 +3481,7 @@
                                                 <tr><td colSpan="2" className="p-8 text-center text-slate-400 italic">No categories available yet.</td></tr>
                                             ) : categoryRows.map((row) => (
                                                 <tr key={`category_row_${row.name}`} className="align-top hover:bg-slate-50">
-                                                    <td className="p-3 text-slate-600 font-bold uppercase text-[10px]">{row.name}</td>
+                                                    <td className="p-3"><span className="text-[10px] uppercase font-bold text-slate-400 block">{row.name}</span></td>
                                                     <td className="p-3">
                                                         <div className="grid md:grid-cols-2 gap-3">
                                                             <div>
