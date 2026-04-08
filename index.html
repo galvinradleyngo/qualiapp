@@ -393,6 +393,32 @@
 
             const activeTranscript = transcripts.find(t => t.id === activeId);
             const folders = [...new Set([...transcriptFolders, ...transcripts.map(t => t.folder).filter(Boolean)])].sort((a, b) => a.localeCompare(b));
+            const artifactSuggestionTags = useMemo(
+                () => {
+                    const fromCodes = (globalArtifacts || []).flatMap((art) => (art.codes || []).map((codeName) => ({
+                        tagName: codeName,
+                        category: art.folder || ''
+                    })));
+                    const fromFolders = (globalArtifacts || []).map((art) => ({
+                        tagName: '',
+                        category: art.folder || ''
+                    }));
+                    return [...fromCodes, ...fromFolders];
+                },
+                [globalArtifacts]
+            );
+            const crossSourceTagSuggestions = useMemo(
+                () => [...tags, ...observationTags, ...artifactSuggestionTags],
+                [tags, observationTags, artifactSuggestionTags]
+            );
+            const crossSourceCodes = useMemo(
+                () => Array.from(new Set(crossSourceTagSuggestions.map(t => (t.tagName || '').trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b)),
+                [crossSourceTagSuggestions]
+            );
+            const crossSourceCategories = useMemo(
+                () => Array.from(new Set(crossSourceTagSuggestions.map(t => (t.category || '').trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b)),
+                [crossSourceTagSuggestions]
+            );
 
             const handleCreateTranscript = async (data) => {
                 const now = Date.now().toString();
@@ -799,12 +825,12 @@
                                     participants={participants}
                                 />
                             )}
-                            {view === 'artifacts' && <ArtifactDashboard artifacts={globalArtifacts} onUpdate={setGlobalArtifacts} />}
+                            {view === 'artifacts' && <ArtifactDashboard artifacts={globalArtifacts} onUpdate={setGlobalArtifacts} suggestedCodes={crossSourceCodes} suggestedCategories={crossSourceCategories} />}
                             {view === 'observations' && (
                                 <ObservationsView
                                     observations={observations}
                                     observationTags={observationTags}
-                                    allTags={[...tags, ...observationTags]}
+                                    allTags={crossSourceTagSuggestions}
                                     onAddObservation={(obs) => setObservations(prev => [obs, ...prev])}
                                     onUpdateObservation={(updated) => setObservations(prev => prev.map(o => o.id === updated.id ? updated : o))}
                                     onDeleteObservation={(id) => { setObservations(prev => prev.filter(o => o.id !== id)); setObservationTags(prev => prev.filter(t => t.observationId !== id)); }}
@@ -834,7 +860,7 @@
                                 <Editor
                                     transcript={activeTranscript}
                                     tags={tags.filter(t => t.transcriptId === activeTranscript.id)}
-                                    allTags={tags}
+                                    allTags={crossSourceTagSuggestions}
                                     activityTypes={activityTypes}
                                     onAddActivityType={(newType) => !activityTypes.includes(newType) && setActivityTypes([...activityTypes, newType])}
                                     onBack={() => setView('dashboard')}
@@ -1339,7 +1365,7 @@
             );
         }
 
-        function ArtifactDashboard({ artifacts, onUpdate }) {
+        function ArtifactDashboard({ artifacts, onUpdate, suggestedCodes = [], suggestedCategories = [] }) {
             const [editingId, setEditingId] = useState(null);
             const [editNotes, setEditNotes] = useState('');
             const [editCodes, setEditCodes] = useState([]);
@@ -1407,6 +1433,8 @@
             };
 
             const folders = [...new Set(artifacts.map(a => a.folder).filter(Boolean))];
+            const folderSuggestions = [...new Set([...folders, ...suggestedCategories].filter(Boolean))].sort((a, b) => a.localeCompare(b));
+            const codeSuggestions = [...new Set([...(suggestedCodes || []), ...(editCodes || [])].filter(Boolean))].sort((a, b) => a.localeCompare(b));
             const artifactsByFolder = artifacts.reduce((acc, art) => {
                 const folder = art.folder || 'Uncategorized';
                 if (!acc[folder]) acc[folder] = [];
@@ -1450,8 +1478,23 @@
                                             <h4 className="font-semibold text-sm">{art.name}</h4>
                                             <div>
                                                 <label className="block text-xs font-bold text-slate-600 mb-1">Folder</label>
-                                                <input type="text" list="folder_list" value={editingArtifactFolder} onChange={e => setEditingArtifactFolder(e.target.value)} placeholder="Create or select folder" className="w-full border rounded-lg p-2 text-sm focus:ring-2 focus:ring-tide outline-none" />
-                                                <datalist id="folder_list">{folders.map(f => <option key={f} value={f} />)}</datalist>
+                                                <input type="text" list="folder_list" value={editingArtifactFolder} onChange={e => setEditingArtifactFolder(e.target.value)} placeholder="Create or select category/folder" className="w-full border rounded-lg p-2 text-sm focus:ring-2 focus:ring-tide outline-none" />
+                                                <datalist id="folder_list">{folderSuggestions.map(f => <option key={f} value={f} />)}</datalist>
+                                                <div className="mt-2">
+                                                    <p className="text-[10px] uppercase font-bold text-slate-500 mb-1">Common Categories</p>
+                                                    <div className="flex flex-wrap gap-1.5 max-h-16 overflow-y-auto">
+                                                        {folderSuggestions.slice(0, 12).map(category => (
+                                                            <button
+                                                                key={`artifact_cat_${category}`}
+                                                                type="button"
+                                                                onClick={() => setEditingArtifactFolder(category)}
+                                                                className="px-2 py-1 rounded-full text-[11px] border border-slate-300 bg-white hover:bg-slate-100 text-slate-700"
+                                                            >
+                                                                {category}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                </div>
                                             </div>
                                             <div>
                                                 <label className="block text-xs font-bold text-slate-600 mb-1">Notes</label>
@@ -1460,8 +1503,24 @@
                                             <div>
                                                 <label className="block text-xs font-bold text-slate-600 mb-1">Codes</label>
                                                 <div className="flex gap-2 mb-2">
-                                                    <input type="text" value={newCodeInput} onChange={e => setNewCodeInput(e.target.value)} onKeyPress={e => e.key === 'Enter' && addCodeToArtifact()} placeholder="Type code name..." className="flex-1 border rounded p-1.5 text-sm focus:ring-2 focus:ring-tide outline-none" />
+                                                    <input type="text" list="artifact_code_suggestions" value={newCodeInput} onChange={e => setNewCodeInput(e.target.value)} onKeyPress={e => e.key === 'Enter' && addCodeToArtifact()} placeholder="Type code name..." className="flex-1 border rounded p-1.5 text-sm focus:ring-2 focus:ring-tide outline-none" />
+                                                    <datalist id="artifact_code_suggestions">{codeSuggestions.map(c => <option key={c} value={c} />)}</datalist>
                                                     <button onClick={addCodeToArtifact} className="bg-tide hover:bg-teal-600 text-white px-3 rounded text-sm font-semibold">Add</button>
+                                                </div>
+                                                <div className="mb-2">
+                                                    <p className="text-[10px] uppercase font-bold text-slate-500 mb-1">Common Codes</p>
+                                                    <div className="flex flex-wrap gap-1.5 max-h-16 overflow-y-auto">
+                                                        {codeSuggestions.slice(0, 16).map(code => (
+                                                            <button
+                                                                key={`artifact_code_${code}`}
+                                                                type="button"
+                                                                onClick={() => setNewCodeInput(code)}
+                                                                className="px-2 py-1 rounded-full text-[11px] border border-teal-200 bg-teal-50 hover:bg-teal-100 text-teal-800"
+                                                            >
+                                                                {code}
+                                                            </button>
+                                                        ))}
+                                                    </div>
                                                 </div>
                                                 <div className="flex flex-wrap gap-2">
                                                     {editCodes.map(code => (
