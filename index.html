@@ -292,6 +292,7 @@
         function App() {
             const [startupState, setStartupState] = useState('checking');
             const [hasAppPassword, setHasAppPassword] = useState(false);
+            const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
             const [view, setView] = useState('dashboard');
             const [transcripts, setTranscripts] = useState([]);
             const [transcriptFolders, setTranscriptFolders] = useState([]);
@@ -418,6 +419,16 @@
             const crossSourceCategories = useMemo(
                 () => Array.from(new Set(crossSourceTagSuggestions.map(t => (t.category || '').trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b)),
                 [crossSourceTagSuggestions]
+            );
+            const codebookRefreshKey = useMemo(
+                () => [
+                    tags.length,
+                    observationTags.length,
+                    globalArtifacts.length,
+                    Object.keys(codeDefinitions || {}).length,
+                    Object.keys(categoryDefinitions || {}).length
+                ].join('-'),
+                [tags, observationTags, globalArtifacts, codeDefinitions, categoryDefinitions]
             );
 
             const handleCreateTranscript = async (data) => {
@@ -781,11 +792,27 @@
             return (
                 <div className="h-screen bg-hero relative flex flex-col">
                     <div className="flex flex-1 min-h-0">
-                        <aside className="w-72 bg-ink text-slate-200 flex flex-col shadow-soft z-10">
-                            <div className="p-6 border-b border-slate-700/60">
-                                <h1 className="text-3xl font-display text-white leading-none">QualiApp</h1>
-                                <p className="text-xs mt-2 text-slate-400">Offline Qualitative Studio</p>
+                        <aside className={`${isSidebarCollapsed ? 'w-16' : 'w-72'} bg-ink text-slate-200 flex flex-col shadow-soft z-10 transition-all duration-200`}>
+                            <div className={`p-4 border-b border-slate-700/60 ${isSidebarCollapsed ? 'flex items-center justify-center' : 'p-6'}`}>
+                                <div className="w-full flex items-start justify-between gap-2">
+                                    {!isSidebarCollapsed && (
+                                        <div>
+                                            <h1 className="text-3xl font-display text-white leading-none">QualiApp</h1>
+                                            <p className="text-xs mt-2 text-slate-400">Offline Qualitative Studio</p>
+                                        </div>
+                                    )}
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsSidebarCollapsed(prev => !prev)}
+                                        className="p-2 rounded-lg hover:bg-slate-800 text-slate-300"
+                                        title={isSidebarCollapsed ? 'Expand menu' : 'Collapse menu'}
+                                    >
+                                        {isSidebarCollapsed ? '»' : '«'}
+                                    </button>
+                                </div>
                             </div>
+                            {!isSidebarCollapsed && (
+                                <>
                             <nav className="flex-1 px-4 py-4 space-y-2 text-sm">
                                 <NavButton active={view === 'dashboard'} label="Transcripts" onClick={() => setView('dashboard')} />
                                 <NavButton active={view === 'artifacts'} label="Project Artifacts" onClick={() => setView('artifacts')} />
@@ -806,6 +833,8 @@
                                     }} className="w-full bg-slate-800 hover:bg-slate-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition">Set App Password</button>
                                 )}
                             </div>
+                                </>
+                            )}
                         </aside>
 
                         <main className="flex-1 overflow-hidden flex flex-col relative">
@@ -864,14 +893,39 @@
                                     activityTypes={activityTypes}
                                     onAddActivityType={(newType) => !activityTypes.includes(newType) && setActivityTypes([...activityTypes, newType])}
                                     onBack={() => setView('dashboard')}
-                                    onUpdateTranscript={(updated) => setTranscripts(transcripts.map(t => t.id === updated.id ? updated : t))}
-                                    onAddTag={(tag) => setTags((prev) => [...prev, tag])}
-                                    onUpdateTag={(updatedTag) => setTags((prev) => prev.map(t => t.id === updatedTag.id ? updatedTag : t))}
-                                    onRemoveTag={(tagId) => setTags((prev) => prev.filter(t => t.id !== tagId))}
+                                    onUpdateTranscript={(updated) => {
+                                        setTranscripts((prev) => {
+                                            const next = prev.map(t => t.id === updated.id ? updated : t);
+                                            dbSet('data', 'transcripts', next).catch(() => {});
+                                            return next;
+                                        });
+                                    }}
+                                    onAddTag={(tag) => {
+                                        setTags((prev) => {
+                                            const next = [...prev, tag];
+                                            dbSet('data', 'tags', next).catch(() => {});
+                                            return next;
+                                        });
+                                    }}
+                                    onUpdateTag={(updatedTag) => {
+                                        setTags((prev) => {
+                                            const next = prev.map(t => t.id === updatedTag.id ? updatedTag : t);
+                                            dbSet('data', 'tags', next).catch(() => {});
+                                            return next;
+                                        });
+                                    }}
+                                    onRemoveTag={(tagId) => {
+                                        setTags((prev) => {
+                                            const next = prev.filter(t => t.id !== tagId);
+                                            dbSet('data', 'tags', next).catch(() => {});
+                                            return next;
+                                        });
+                                    }}
                                 />
                             )}
                             {view === 'codebook' && (
                                 <Codebook
+                                    key={codebookRefreshKey}
                                     tags={tags}
                                     transcripts={transcripts}
                                     participants={participants}
@@ -1791,6 +1845,9 @@
             const [content, setContent] = useState(transcript.content || '');
             const [contentHtml, setContentHtml] = useState(transcript.contentHtml || '');
             const [notes, setNotes] = useState(transcript.notes || '');
+            const [saveStatus, setSaveStatus] = useState('saved');
+            const [lastSavedAt, setLastSavedAt] = useState(null);
+            const [showSavedToast, setShowSavedToast] = useState(false);
             const [audioUrl, setAudioUrl] = useState(null);
             const [uploadingAudio, setUploadingAudio] = useState(false);
 
@@ -1828,6 +1885,7 @@
                 setContent(nextContent);
                 setContentHtml(transcript.contentHtml || plainToHtml(nextContent));
                 setNotes(transcript.notes || '');
+                setSaveStatus('saved');
             }, [transcript.id]);
 
             useEffect(() => {
@@ -1849,20 +1907,85 @@
                 const html = editableRef.current.innerHTML;
                 setContentHtml(html);
                 setContent(htmlToPlain(html));
+                setSaveStatus('unsaved');
             };
+
+            const persistTranscriptDraft = (nextHtml, nextPlain, nextNotes) => {
+                const savedHtml = transcript.contentHtml || plainToHtml(transcript.content || '');
+                const savedPlain = transcript.content || '';
+                const savedNotes = transcript.notes || '';
+
+                if (nextHtml === savedHtml && nextPlain === savedPlain && nextNotes === savedNotes) {
+                    return false;
+                }
+
+                setSaveStatus('saving');
+                try {
+                    onUpdateTranscript({
+                        ...transcript,
+                        content: nextPlain,
+                        contentHtml: nextHtml,
+                        notes: nextNotes
+                    });
+                    setLastSavedAt(new Date());
+                    setSaveStatus('saved');
+                } catch (_err) {
+                    setSaveStatus('error');
+                }
+
+                return true;
+            };
+
+            useEffect(() => {
+                const nextHtml = contentHtml || plainToHtml(content);
+                const nextPlain = htmlToPlain(nextHtml);
+                const savedHtml = transcript.contentHtml || plainToHtml(transcript.content || '');
+                const savedPlain = transcript.content || '';
+                const savedNotes = transcript.notes || '';
+
+                if (nextHtml === savedHtml && nextPlain === savedPlain && notes === savedNotes) return;
+
+                const timer = setTimeout(() => {
+                    persistTranscriptDraft(nextHtml, nextPlain, notes);
+                }, 300);
+
+                return () => clearTimeout(timer);
+            }, [contentHtml, content, notes, transcript, onUpdateTranscript]);
 
             const handleSave = () => {
                 const latestHtml = editableRef.current ? editableRef.current.innerHTML : contentHtml;
                 const latestPlain = htmlToPlain(latestHtml);
                 setContentHtml(latestHtml);
                 setContent(latestPlain);
-                onUpdateTranscript({
-                    ...transcript,
-                    content: latestPlain,
-                    contentHtml: latestHtml,
-                    notes
-                });
+                const didSave = persistTranscriptDraft(latestHtml, latestPlain, notes);
+                if (!didSave) setSaveStatus('saved');
             };
+
+            const handleManualSave = () => {
+                handleSave();
+                setShowSavedToast(true);
+            };
+
+            useEffect(() => {
+                if (!showSavedToast) return;
+                const timer = setTimeout(() => setShowSavedToast(false), 1800);
+                return () => clearTimeout(timer);
+            }, [showSavedToast]);
+
+            const saveStatusText = saveStatus === 'saving'
+                ? 'Saving...'
+                : saveStatus === 'unsaved'
+                    ? 'Unsaved changes'
+                    : saveStatus === 'error'
+                        ? 'Save failed'
+                        : 'Saved';
+            const saveStatusClass = saveStatus === 'saving'
+                ? 'text-amber-700 bg-amber-100 border-amber-200'
+                : saveStatus === 'unsaved'
+                    ? 'text-slate-700 bg-slate-100 border-slate-200'
+                    : saveStatus === 'error'
+                        ? 'text-red-700 bg-red-100 border-red-200'
+                        : 'text-emerald-700 bg-emerald-100 border-emerald-200';
 
             const applyBold = () => {
                 if (!editableRef.current) return;
@@ -2188,11 +2311,20 @@
                             <button onClick={() => { handleSave(); onBack(); }} className="p-2 hover:bg-slate-200 rounded-full font-bold">Back</button>
                             <h2 className="text-xl font-bold truncate max-w-sm border-l-2 pl-4 border-slate-300" title={transcript.title}>{transcript.title}</h2>
                         </div>
-                        <div className="flex bg-slate-100 p-1 rounded-lg">
-                            <button onClick={() => {handleSave(); setMode('edit');}} className={`px-4 py-2 rounded-md text-sm font-bold transition-all ${mode==='edit'?'bg-amber-500 text-white':'text-slate-600 hover:bg-slate-200'}`}>Edit</button>
-                            <button onClick={() => {handleSave(); setMode('code');}} className={`px-4 py-2 rounded-md text-sm font-bold transition-all ${mode==='code'?'bg-tide text-white':'text-slate-600 hover:bg-slate-200'}`}>Code</button>
-                            <button onClick={() => {handleSave(); setMode('notes');}} className={`px-4 py-2 rounded-md text-sm font-bold transition-all ${mode==='notes'?'bg-ink text-white':'text-slate-600 hover:bg-slate-200'}`}>Memos</button>
-                            <button onClick={() => {handleSave(); setMode('log');}} className={`px-4 py-2 rounded-md text-sm font-bold transition-all ${mode==='log'?'bg-emerald-600 text-white':'text-slate-600 hover:bg-slate-200'}`}>Activity</button>
+                        <div className="flex items-center gap-3">
+                            <div className={`flex items-center px-2.5 py-1 rounded-md text-xs font-semibold border ${saveStatusClass}`}>
+                                {saveStatusText}
+                                {lastSavedAt && saveStatus === 'saved' && (
+                                    <span className="ml-2 opacity-80">{lastSavedAt.toLocaleTimeString()}</span>
+                                )}
+                            </div>
+                            <button onClick={handleManualSave} className="px-3 py-2 rounded-md text-sm font-bold border border-ink text-ink hover:bg-slate-100 transition">Save</button>
+                            <div className="flex bg-slate-100 p-1 rounded-lg">
+                                <button onClick={() => {handleSave(); setMode('edit');}} className={`px-4 py-2 rounded-md text-sm font-bold transition-all ${mode==='edit'?'bg-amber-500 text-white':'text-slate-600 hover:bg-slate-200'}`}>Edit</button>
+                                <button onClick={() => {handleSave(); setMode('code');}} className={`px-4 py-2 rounded-md text-sm font-bold transition-all ${mode==='code'?'bg-tide text-white':'text-slate-600 hover:bg-slate-200'}`}>Code</button>
+                                <button onClick={() => {handleSave(); setMode('notes');}} className={`px-4 py-2 rounded-md text-sm font-bold transition-all ${mode==='notes'?'bg-ink text-white':'text-slate-600 hover:bg-slate-200'}`}>Memos</button>
+                                <button onClick={() => {handleSave(); setMode('log');}} className={`px-4 py-2 rounded-md text-sm font-bold transition-all ${mode==='log'?'bg-emerald-600 text-white':'text-slate-600 hover:bg-slate-200'}`}>Activity</button>
+                            </div>
                         </div>
                     </div>
 
@@ -2261,7 +2393,7 @@
                                 )}
                                 {mode === 'notes' && (
                                     <div className="h-full flex flex-col max-w-3xl mx-auto w-full">
-                                        <textarea value={notes} onChange={e => setNotes(e.target.value)} onBlur={handleSave} placeholder="Type overarching observations and context for this transcript..." className="flex-1 w-full resize-none outline-none border border-slate-300 bg-white p-6 rounded-xl text-lg text-slate-800 leading-relaxed shadow-sm focus:ring-2 ring-ink transition" />
+                                        <textarea value={notes} onChange={e => { setNotes(e.target.value); setSaveStatus('unsaved'); }} onBlur={handleSave} placeholder="Type overarching observations and context for this transcript..." className="flex-1 w-full resize-none outline-none border border-slate-300 bg-white p-6 rounded-xl text-lg text-slate-800 leading-relaxed shadow-sm focus:ring-2 ring-ink transition" />
                                     </div>
                                 )}
                                 {mode === 'log' && (
@@ -2433,6 +2565,11 @@
                             </div>
                         )}
                     </div>
+                    {showSavedToast && (
+                        <div className="absolute right-5 bottom-5 z-30 px-4 py-2 rounded-lg bg-ink text-white text-sm shadow-soft border border-slate-700">
+                            Saved to this device
+                        </div>
+                    )}
                 </div>
             );
         }
