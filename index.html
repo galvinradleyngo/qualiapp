@@ -803,9 +803,10 @@
                                     onAddActivityType={(newType) => !activityTypes.includes(newType) && setActivityTypes([...activityTypes, newType])}
                                     onBack={() => setView('dashboard')}
                                     onUpdateTranscript={(updated) => setTranscripts(transcripts.map(t => t.id === updated.id ? updated : t))}
-                                    onAddTag={(tag) => setTags([...tags, tag])}
-                                    onUpdateTag={(updatedTag) => setTags(tags.map(t => t.id === updatedTag.id ? updatedTag : t))}
-                                    onRemoveTag={(tagId) => setTags(tags.filter(t => t.id !== tagId))}
+                                    onSetTags={setTags}
+                                    onAddTag={(tag) => setTags((prev) => [...prev, tag])}
+                                    onUpdateTag={(updatedTag) => setTags((prev) => prev.map(t => t.id === updatedTag.id ? updatedTag : t))}
+                                    onRemoveTag={(tagId) => setTags((prev) => prev.filter(t => t.id !== tagId))}
                                 />
                             )}
                             {view === 'codebook' && <Codebook tags={tags} transcripts={transcripts} participants={participants} artifacts={globalArtifacts} />}
@@ -1673,7 +1674,7 @@
             );
         }
 
-        function Editor({ transcript, tags, allTags, activityTypes, onAddActivityType, onBack, onUpdateTranscript, onAddTag, onUpdateTag, onRemoveTag }) {
+        function Editor({ transcript, tags, allTags, activityTypes, onAddActivityType, onBack, onUpdateTranscript, onSetTags, onAddTag, onUpdateTag, onRemoveTag }) {
             const [mode, setMode] = useState('edit');
             const [content, setContent] = useState(transcript.content || '');
             const [contentHtml, setContentHtml] = useState(transcript.contentHtml || '');
@@ -1684,16 +1685,8 @@
             const [pendingSelection, setPendingSelection] = useState(null);
             const [editingTagId, setEditingTagId] = useState(null);
             const [selectedTagId, setSelectedTagId] = useState(null);
-
-            const [tagFormCategory, setTagFormCategory] = useState('');
-            const [tagFormName, setTagFormName] = useState('');
-            const [tagFormMemo, setTagFormMemo] = useState('');
-            const [newCategoryInput, setNewCategoryInput] = useState('');
-            const [newCodeInput, setNewCodeInput] = useState('');
-            const [categoryLibrary, setCategoryLibrary] = useState([]);
-            const [codeLibrary, setCodeLibrary] = useState([]);
-            const [categoryStatus, setCategoryStatus] = useState('');
-            const [codeStatus, setCodeStatus] = useState('');
+            const emptyTagRow = () => ({ category: '', tagName: '', memo: '' });
+            const [tagRows, setTagRows] = useState([emptyTagRow()]);
 
             const [logType, setLogType] = useState('');
             const [logNote, setLogNote] = useState('');
@@ -1723,19 +1716,6 @@
                 setContentHtml(transcript.contentHtml || plainToHtml(nextContent));
                 setNotes(transcript.notes || '');
             }, [transcript.id]);
-
-            useEffect(() => {
-                const tagCategories = (allTags || []).map(t => (t.category || '').trim()).filter(Boolean);
-                const tagCodes = (allTags || []).map(t => (t.tagName || '').trim()).filter(Boolean);
-                setCategoryLibrary((prev) => {
-                    const merged = [...new Set([...prev, ...tagCategories])];
-                    return merged.sort((a, b) => a.localeCompare(b));
-                });
-                setCodeLibrary((prev) => {
-                    const merged = [...new Set([...prev, ...tagCodes])];
-                    return merged.sort((a, b) => a.localeCompare(b));
-                });
-            }, [allTags]);
 
             useEffect(() => {
                 if (!editableRef.current) return;
@@ -1947,52 +1927,91 @@
                     const offset = getSelectionOffset(textRef.current);
                     if (offset && offset.text.trim()) {
                         setPendingSelection(offset);
-                        setTagFormCategory('');
-                        setTagFormName('');
-                        setTagFormMemo('');
-                        setNewCategoryInput('');
-                        setNewCodeInput('');
+                        setTagRows([emptyTagRow()]);
                     } else {
                         setPendingSelection(null);
                     }
                 }, 40);
             };
 
+            const setTagRowField = (idx, field, value) => {
+                setTagRows((prev) => prev.map((row, rowIdx) => rowIdx === idx ? { ...row, [field]: value } : row));
+            };
+
+            const addTagRow = () => {
+                setTagRows((prev) => [...prev, emptyTagRow()]);
+            };
+
+            const removeTagRow = (idx) => {
+                setTagRows((prev) => {
+                    if (prev.length <= 1) return prev;
+                    return prev.filter((_, rowIdx) => rowIdx !== idx);
+                });
+            };
+
             const submitTagForm = (e) => {
                 e.preventDefault();
-                if (!tagFormName.trim()) return;
+                const normalizedRows = tagRows
+                    .map((row) => ({
+                        category: (row.category || '').trim() || 'Uncategorized',
+                        tagName: (row.tagName || '').trim(),
+                        memo: (row.memo || '').trim()
+                    }))
+                    .filter((row) => row.tagName);
 
-                const normalizedCategory = tagFormCategory.trim() || 'Uncategorized';
-                const normalizedCode = tagFormName.trim();
-
-                setCategoryLibrary((prev) => [...new Set([...prev, normalizedCategory])].sort((a, b) => a.localeCompare(b)));
-                setCodeLibrary((prev) => [...new Set([...prev, normalizedCode])].sort((a, b) => a.localeCompare(b)));
+                if (normalizedRows.length === 0) {
+                    alert('Enter at least one code before saving.');
+                    return;
+                }
 
                 if (editingTagId) {
                     const existing = tags.find(t => t.id === editingTagId);
                     if (!existing) return;
-                    onUpdateTag({ ...existing, category: normalizedCategory, tagName: normalizedCode, memo: tagFormMemo });
+
+                    const matchesSelection = (t) =>
+                        t.transcriptId === existing.transcriptId &&
+                        t.start === existing.start &&
+                        t.end === existing.end &&
+                        (t.textSnippet || '') === (existing.textSnippet || '');
+
+                    if (typeof onSetTags === 'function') {
+                        onSetTags((prev) => {
+                            const withoutGroup = prev.filter((t) => !matchesSelection(t));
+                            const rebuilt = normalizedRows.map((row, idx) => ({
+                                ...existing,
+                                id: `${Date.now()}_${idx}`,
+                                category: row.category,
+                                tagName: row.tagName,
+                                memo: row.memo
+                            }));
+                            return [...withoutGroup, ...rebuilt];
+                        });
+                    }
                     setEditingTagId(null);
-                    setSelectedTagId(existing.id);
+                    setSelectedTagId(null);
                 } else if (pendingSelection) {
-                    onAddTag({
-                        id: Date.now().toString(),
+                    const baseId = Date.now().toString();
+                    const newTags = normalizedRows.map((row, idx) => ({
+                        id: `${baseId}_${idx}`,
                         transcriptId: transcript.id,
-                        category: normalizedCategory,
-                        tagName: normalizedCode,
-                        memo: tagFormMemo,
+                        category: row.category,
+                        tagName: row.tagName,
+                        memo: row.memo,
                         textSnippet: pendingSelection.text,
                         start: pendingSelection.start,
                         end: pendingSelection.end
-                    });
+                    }));
+
+                    if (typeof onSetTags === 'function') {
+                        onSetTags((prev) => [...prev, ...newTags]);
+                    } else {
+                        newTags.forEach((t) => onAddTag(t));
+                    }
                     setPendingSelection(null);
                     window.getSelection().removeAllRanges();
                 }
-                setTagFormCategory('');
-                setTagFormName('');
-                setTagFormMemo('');
-                setNewCategoryInput('');
-                setNewCodeInput('');
+
+                setTagRows([emptyTagRow()]);
             };
 
             const openEditTag = (tag) => {
@@ -2000,40 +2019,28 @@
                 window.getSelection().removeAllRanges();
                 setEditingTagId(tag.id);
                 setSelectedTagId(tag.id);
-                setTagFormCategory(tag.category);
-                setTagFormName(tag.tagName);
-                setTagFormMemo(tag.memo || '');
-                setNewCategoryInput('');
-                setNewCodeInput('');
+
+                const groupRows = tags
+                    .filter((t) =>
+                        t.transcriptId === tag.transcriptId &&
+                        t.start === tag.start &&
+                        t.end === tag.end &&
+                        (t.textSnippet || '') === (tag.textSnippet || '')
+                    )
+                    .map((t) => ({
+                        category: t.category || '',
+                        tagName: t.tagName || '',
+                        memo: t.memo || ''
+                    }));
+
+                setTagRows(groupRows.length ? groupRows : [emptyTagRow()]);
             };
 
             const cancelTagForm = () => {
                 setPendingSelection(null);
                 setEditingTagId(null);
                 window.getSelection().removeAllRanges();
-                setTagFormCategory('');
-                setTagFormName('');
-                setTagFormMemo('');
-                setNewCategoryInput('');
-                setNewCodeInput('');
-                setCategoryStatus('');
-                setCodeStatus('');
-            };
-
-            const addUniqueLibraryValue = (value, setter, setStatus, label) => {
-                const next = (value || '').trim();
-                if (!next) {
-                    setStatus(`Type a ${label} first.`);
-                    return;
-                }
-                let added = false;
-                setter((prev) => {
-                    const exists = prev.some((item) => item.toLowerCase() === next.toLowerCase());
-                    if (exists) return prev;
-                    added = true;
-                    return [...prev, next].sort((a, b) => a.localeCompare(b));
-                });
-                setStatus(added ? `${label} added: ${next}` : `${label} already exists: ${next}`);
+                setTagRows([emptyTagRow()]);
             };
 
             const scrollToTagHighlight = (tagId) => {
@@ -2048,28 +2055,8 @@
                 setEditingTagId(null);
                 setPendingSelection(null);
                 window.getSelection().removeAllRanges();
-                setTagFormCategory('');
-                setTagFormName('');
-                setTagFormMemo('');
+                setTagRows([emptyTagRow()]);
                 setTimeout(() => scrollToTagHighlight(tag.id), 0);
-            };
-
-            const createCategoryOption = () => {
-                addUniqueLibraryValue(newCategoryInput, setCategoryLibrary, setCategoryStatus, 'Category');
-                setNewCategoryInput('');
-            };
-
-            const addCategoryFromFormField = () => {
-                addUniqueLibraryValue(tagFormCategory, setCategoryLibrary, setCategoryStatus, 'Category');
-            };
-
-            const createCodeOption = () => {
-                addUniqueLibraryValue(newCodeInput, setCodeLibrary, setCodeStatus, 'Code');
-                setNewCodeInput('');
-            };
-
-            const addCodeFromFormField = () => {
-                addUniqueLibraryValue(tagFormName, setCodeLibrary, setCodeStatus, 'Code');
             };
 
             const renderHighlightedHtml = () => {
@@ -2130,8 +2117,8 @@
                 if (tag) focusTag(tag);
             };
 
-            const existingCategories = categoryLibrary;
-            const existingCodes = codeLibrary;
+            const existingCategories = [...new Set((allTags || []).map(t => (t.category || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+            const existingCodes = [...new Set((allTags || []).map(t => (t.tagName || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
 
             return (
                 <div className="flex flex-col h-full bg-white relative">
@@ -2265,140 +2252,55 @@
                                         <form onSubmit={submitTagForm} className={`p-4 rounded-xl border-2 ${editingTagId ? 'bg-orange-50 border-orange-300' : 'bg-teal-50 border-teal-300'}`}>
                                             <p className="text-xs text-slate-600 mb-3 line-clamp-3 italic bg-white p-2 rounded border">"{pendingSelection ? pendingSelection.text : tags.find(t=>t.id===editingTagId)?.textSnippet}"</p>
 
-                                            <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1">Parent Category</label>
-                                            <div className="flex gap-2 mb-2">
-                                                <input type="text" list="categories" value={tagFormCategory} onChange={e=>setTagFormCategory(e.target.value)} placeholder="e.g. Coping" className="flex-1 border border-slate-300 rounded p-2 text-sm focus:ring-2 focus:ring-tide outline-none" />
-                                                <button
-                                                    type="button"
-                                                    onClick={addCategoryFromFormField}
-                                                    className="px-3 bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 rounded text-sm font-semibold"
-                                                    title="Add current category text as an option"
-                                                >
-                                                    +
-                                                </button>
-                                            </div>
-                                            <datalist id="categories">{existingCategories.map(c=><option key={c} value={c}/>)}</datalist>
-                                            {categoryStatus && <p className="text-[11px] text-slate-500 mb-2">{categoryStatus}</p>}
+                                            <datalist id="categories">{existingCategories.map(c => <option key={c} value={c} />)}</datalist>
+                                            <datalist id="tags">{existingCodes.map(c => <option key={c} value={c} />)}</datalist>
 
-                                            <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1">Or Select Existing Category</label>
-                                            <select value={tagFormCategory} onChange={e => setTagFormCategory(e.target.value)} className="w-full border border-slate-300 rounded p-2 text-sm mb-3 bg-white">
-                                                <option value="">Select existing category</option>
-                                                {existingCategories.map(c => <option key={c} value={c}>{c}</option>)}
-                                            </select>
+                                            <div className="space-y-3 mb-4">
+                                                {tagRows.map((row, idx) => (
+                                                    <div key={`tag_row_${idx}`} className="bg-white border border-slate-200 rounded-lg p-2.5">
+                                                        <div className="flex items-center justify-between mb-2">
+                                                            <p className="text-[10px] uppercase font-bold text-slate-500">Tag {idx + 1}</p>
+                                                            {tagRows.length > 1 && (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => removeTagRow(idx)}
+                                                                    className="text-[11px] text-red-600 hover:text-red-700 font-semibold"
+                                                                >
+                                                                    Remove
+                                                                </button>
+                                                            )}
+                                                        </div>
 
-                                            <div className="mb-3">
-                                                <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1">Add Another Category</label>
-                                                <div className="flex gap-2">
-                                                    <input
-                                                        type="text"
-                                                        value={newCategoryInput}
-                                                        onChange={e => setNewCategoryInput(e.target.value)}
-                                                        onKeyDown={(e) => {
-                                                            if (e.key === 'Enter') {
-                                                                e.preventDefault();
-                                                                createCategoryOption();
-                                                            }
-                                                        }}
-                                                        placeholder="Type new category"
-                                                        className="flex-1 border border-slate-300 rounded p-2 text-sm focus:ring-2 focus:ring-tide outline-none"
-                                                    />
-                                                    <button
-                                                        type="button"
-                                                        onClick={createCategoryOption}
-                                                        className="px-3 bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 rounded text-sm font-semibold"
-                                                        title="Add category option"
-                                                    >
-                                                        +
-                                                    </button>
-                                                </div>
-                                            </div>
+                                                        <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1">Parent Category</label>
+                                                        <input
+                                                            type="text"
+                                                            list="categories"
+                                                            value={row.category}
+                                                            onChange={(e) => setTagRowField(idx, 'category', e.target.value)}
+                                                            placeholder="e.g. Coping"
+                                                            className="w-full border border-slate-300 rounded p-2 text-sm mb-2 focus:ring-2 focus:ring-tide outline-none"
+                                                        />
 
-                                            {existingCategories.length > 0 && (
-                                                <div className="mb-3">
-                                                    <p className="text-[10px] uppercase font-bold text-slate-500 mb-1">Available Categories</p>
-                                                    <div className="flex flex-wrap gap-1.5">
-                                                        {existingCategories.slice(0, 16).map(c => (
-                                                            <button
-                                                                key={c}
-                                                                type="button"
-                                                                onClick={() => setTagFormCategory(c)}
-                                                                className="px-2 py-1 rounded-full text-[11px] border bg-white hover:bg-slate-100 text-slate-700"
-                                                            >
-                                                                {c}
-                                                            </button>
-                                                        ))}
+                                                        <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1">Specific Code *</label>
+                                                        <input
+                                                            type="text"
+                                                            list="tags"
+                                                            value={row.tagName}
+                                                            onChange={(e) => setTagRowField(idx, 'tagName', e.target.value)}
+                                                            placeholder="e.g. Humor"
+                                                            className="w-full border border-slate-300 rounded p-2 text-sm focus:ring-2 focus:ring-tide outline-none"
+                                                        />
                                                     </div>
-                                                </div>
-                                            )}
-
-                                            <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1">Specific Code *</label>
-                                            <div className="flex gap-2 mb-2">
-                                                <input type="text" autoFocus list="tags" value={tagFormName} onChange={e=>setTagFormName(e.target.value)} placeholder="e.g. Humor" className="flex-1 border border-slate-300 rounded p-2 text-sm focus:ring-2 focus:ring-tide outline-none" />
-                                                <button
-                                                    type="button"
-                                                    onClick={addCodeFromFormField}
-                                                    className="px-3 bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 rounded text-sm font-semibold"
-                                                    title="Add current code text as an option"
-                                                >
-                                                    +
-                                                </button>
-                                            </div>
-                                            <datalist id="tags">{existingCodes.map(c=><option key={c} value={c}/>)}</datalist>
-                                            {codeStatus && <p className="text-[11px] text-slate-500 mb-2">{codeStatus}</p>}
-
-                                            <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1">Or Select Existing Code</label>
-                                            <select value={tagFormName} onChange={e => setTagFormName(e.target.value)} className="w-full border border-slate-300 rounded p-2 text-sm mb-3 bg-white">
-                                                <option value="">Select existing code</option>
-                                                {existingCodes.map(c => <option key={c} value={c}>{c}</option>)}
-                                            </select>
-
-                                            <div className="mb-3">
-                                                <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1">Add Another Code</label>
-                                                <div className="flex gap-2">
-                                                    <input
-                                                        type="text"
-                                                        value={newCodeInput}
-                                                        onChange={e => setNewCodeInput(e.target.value)}
-                                                        onKeyDown={(e) => {
-                                                            if (e.key === 'Enter') {
-                                                                e.preventDefault();
-                                                                createCodeOption();
-                                                            }
-                                                        }}
-                                                        placeholder="Type new code"
-                                                        className="flex-1 border border-slate-300 rounded p-2 text-sm focus:ring-2 focus:ring-tide outline-none"
-                                                    />
-                                                    <button
-                                                        type="button"
-                                                        onClick={createCodeOption}
-                                                        className="px-3 bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 rounded text-sm font-semibold"
-                                                        title="Add code option"
-                                                    >
-                                                        +
-                                                    </button>
-                                                </div>
+                                                ))}
                                             </div>
 
-                                            {existingCodes.length > 0 && (
-                                                <div className="mb-3">
-                                                    <p className="text-[10px] uppercase font-bold text-slate-500 mb-1">Available Codes</p>
-                                                    <div className="flex flex-wrap gap-1.5">
-                                                        {existingCodes.slice(0, 16).map(c => (
-                                                            <button
-                                                                key={c}
-                                                                type="button"
-                                                                onClick={() => setTagFormName(c)}
-                                                                className="px-2 py-1 rounded-full text-[11px] border bg-white hover:bg-slate-100 text-slate-700"
-                                                            >
-                                                                {c}
-                                                            </button>
-                                                        ))}
-                                                    </div>
-                                                </div>
-                                            )}
-
-                                            <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1">Code Memo</label>
-                                            <textarea value={tagFormMemo} onChange={e=>setTagFormMemo(e.target.value)} placeholder="Why is this interesting?" className="w-full border border-slate-300 rounded p-2 text-sm mb-4 focus:ring-2 focus:ring-tide outline-none resize-none h-20" />
+                                            <button
+                                                type="button"
+                                                onClick={addTagRow}
+                                                className="w-full mb-4 py-2 border border-dashed border-slate-400 text-slate-700 rounded font-semibold hover:bg-slate-100"
+                                            >
+                                                + Add Another Category/Code Tag
+                                            </button>
 
                                             <div className="flex gap-2">
                                                 <button type="button" onClick={cancelTagForm} className="flex-1 py-2 bg-white border border-slate-300 text-slate-600 font-semibold rounded">Cancel</button>
