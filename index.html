@@ -1687,6 +1687,8 @@
             const [tagFormCategory, setTagFormCategory] = useState('');
             const [tagFormName, setTagFormName] = useState('');
             const [tagFormMemo, setTagFormMemo] = useState('');
+            const [customCategories, setCustomCategories] = useState([]);
+            const [customCodes, setCustomCodes] = useState([]);
 
             const [logType, setLogType] = useState('');
             const [logNote, setLogNote] = useState('');
@@ -1981,6 +1983,28 @@
                 setTagFormMemo('');
             };
 
+            const addCategoryOption = () => {
+                const next = tagFormCategory.trim();
+                if (!next) return;
+                const existsInTags = allTags.some(t => (t.category || '').toLowerCase() === next.toLowerCase());
+                const existsInCustom = customCategories.some(c => c.toLowerCase() === next.toLowerCase());
+                if (!existsInTags && !existsInCustom) {
+                    setCustomCategories([...customCategories, next]);
+                }
+                setTagFormCategory(next);
+            };
+
+            const addCodeOption = () => {
+                const next = tagFormName.trim();
+                if (!next) return;
+                const existsInTags = allTags.some(t => (t.tagName || '').toLowerCase() === next.toLowerCase());
+                const existsInCustom = customCodes.some(c => c.toLowerCase() === next.toLowerCase());
+                if (!existsInTags && !existsInCustom) {
+                    setCustomCodes([...customCodes, next]);
+                }
+                setTagFormName(next);
+            };
+
             const renderHighlightedHtml = () => {
                 const baseHtml = contentHtml || plainToHtml(content);
                 if (!baseHtml) return '';
@@ -2039,8 +2063,10 @@
                 if (tag) openEditTag(tag);
             };
 
-            const existingCategories = [...new Set(allTags.map(t => t.category).filter(Boolean))];
-            const existingCodes = [...new Set(allTags.map(t => t.tagName).filter(Boolean))];
+            const existingCategories = [...new Set([...allTags.map(t => t.category).filter(Boolean), ...customCategories])]
+                .sort((a, b) => a.localeCompare(b));
+            const existingCodes = [...new Set([...allTags.map(t => t.tagName).filter(Boolean), ...customCodes])]
+                .sort((a, b) => a.localeCompare(b));
 
             return (
                 <div className="flex flex-col h-full bg-white relative">
@@ -2175,7 +2201,17 @@
                                             <p className="text-xs text-slate-600 mb-3 line-clamp-3 italic bg-white p-2 rounded border">"{pendingSelection ? pendingSelection.text : tags.find(t=>t.id===editingTagId)?.textSnippet}"</p>
 
                                             <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1">Parent Category</label>
-                                            <input type="text" list="categories" value={tagFormCategory} onChange={e=>setTagFormCategory(e.target.value)} placeholder="e.g. Coping" className="w-full border border-slate-300 rounded p-2 text-sm mb-2 focus:ring-2 focus:ring-tide outline-none" />
+                                            <div className="flex gap-2 mb-2">
+                                                <input type="text" list="categories" value={tagFormCategory} onChange={e=>setTagFormCategory(e.target.value)} placeholder="e.g. Coping" className="flex-1 border border-slate-300 rounded p-2 text-sm focus:ring-2 focus:ring-tide outline-none" />
+                                                <button
+                                                    type="button"
+                                                    onClick={addCategoryOption}
+                                                    className="px-3 bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 rounded text-sm font-semibold"
+                                                    title="Add this as a category option"
+                                                >
+                                                    +
+                                                </button>
+                                            </div>
                                             <datalist id="categories">{existingCategories.map(c=><option key={c} value={c}/>)}</datalist>
 
                                             <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1">Or Select Existing Category</label>
@@ -2185,7 +2221,17 @@
                                             </select>
 
                                             <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1">Specific Code *</label>
-                                            <input type="text" autoFocus list="tags" value={tagFormName} onChange={e=>setTagFormName(e.target.value)} placeholder="e.g. Humor" className="w-full border border-slate-300 rounded p-2 text-sm mb-2 focus:ring-2 focus:ring-tide outline-none" />
+                                            <div className="flex gap-2 mb-2">
+                                                <input type="text" autoFocus list="tags" value={tagFormName} onChange={e=>setTagFormName(e.target.value)} placeholder="e.g. Humor" className="flex-1 border border-slate-300 rounded p-2 text-sm focus:ring-2 focus:ring-tide outline-none" />
+                                                <button
+                                                    type="button"
+                                                    onClick={addCodeOption}
+                                                    className="px-3 bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 rounded text-sm font-semibold"
+                                                    title="Add this as a code option"
+                                                >
+                                                    +
+                                                </button>
+                                            </div>
                                             <datalist id="tags">{existingCodes.map(c=><option key={c} value={c}/>)}</datalist>
 
                                             <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1">Or Select Existing Code</label>
