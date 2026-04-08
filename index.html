@@ -1683,6 +1683,7 @@
 
             const [pendingSelection, setPendingSelection] = useState(null);
             const [editingTagId, setEditingTagId] = useState(null);
+            const [selectedTagId, setSelectedTagId] = useState(null);
 
             const [tagFormCategory, setTagFormCategory] = useState('');
             const [tagFormName, setTagFormName] = useState('');
@@ -1963,8 +1964,10 @@
 
                 if (editingTagId) {
                     const existing = tags.find(t => t.id === editingTagId);
+                    if (!existing) return;
                     onUpdateTag({ ...existing, category: normalizedCategory, tagName: normalizedCode, memo: tagFormMemo });
                     setEditingTagId(null);
+                    setSelectedTagId(existing.id);
                 } else if (pendingSelection) {
                     onAddTag({
                         id: Date.now().toString(),
@@ -1988,6 +1991,7 @@
                 setPendingSelection(null);
                 window.getSelection().removeAllRanges();
                 setEditingTagId(tag.id);
+                setSelectedTagId(tag.id);
                 setTagFormCategory(tag.category);
                 setTagFormName(tag.tagName);
                 setTagFormMemo(tag.memo || '');
@@ -2002,23 +2006,35 @@
                 setTagFormMemo('');
             };
 
-            const addCategoryOption = () => {
-                let next = tagFormCategory.trim();
-                if (!next) {
-                    const input = prompt('Add new category name:', '');
-                    next = (input || '').trim();
-                }
+            const scrollToTagHighlight = (tagId) => {
+                if (!textRef.current || !tagId) return;
+                const mark = textRef.current.querySelector(`mark[data-tag-id="${tagId}"]`);
+                if (!mark) return;
+                mark.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            };
+
+            const focusTag = (tag) => {
+                setSelectedTagId(tag.id);
+                setEditingTagId(null);
+                setPendingSelection(null);
+                window.getSelection().removeAllRanges();
+                setTagFormCategory('');
+                setTagFormName('');
+                setTagFormMemo('');
+                setTimeout(() => scrollToTagHighlight(tag.id), 0);
+            };
+
+            const createCategoryOption = () => {
+                const input = prompt('Add new category name:', tagFormCategory || '');
+                const next = (input || '').trim();
                 if (!next) return;
                 setCategoryLibrary((prev) => [...new Set([...prev, next])].sort((a, b) => a.localeCompare(b)));
                 setTagFormCategory(next);
             };
 
-            const addCodeOption = () => {
-                let next = tagFormName.trim();
-                if (!next) {
-                    const input = prompt('Add new code name:', '');
-                    next = (input || '').trim();
-                }
+            const createCodeOption = () => {
+                const input = prompt('Add new code name:', tagFormName || '');
+                const next = (input || '').trim();
                 if (!next) return;
                 setCodeLibrary((prev) => [...new Set([...prev, next])].sort((a, b) => a.localeCompare(b)));
                 setTagFormName(next);
@@ -2079,7 +2095,7 @@
                 if (!target) return;
                 const tagId = target.getAttribute('data-tag-id');
                 const tag = tags.find(t => t.id === tagId);
-                if (tag) openEditTag(tag);
+                if (tag) focusTag(tag);
             };
 
             const existingCategories = categoryLibrary;
@@ -2222,9 +2238,9 @@
                                                 <input type="text" list="categories" value={tagFormCategory} onChange={e=>setTagFormCategory(e.target.value)} placeholder="e.g. Coping" className="flex-1 border border-slate-300 rounded p-2 text-sm focus:ring-2 focus:ring-tide outline-none" />
                                                 <button
                                                     type="button"
-                                                    onClick={addCategoryOption}
+                                                    onClick={createCategoryOption}
                                                     className="px-3 bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 rounded text-sm font-semibold"
-                                                    title="Add this as a category option"
+                                                    title="Create a new category"
                                                 >
                                                     +
                                                 </button>
@@ -2242,9 +2258,9 @@
                                                 <input type="text" autoFocus list="tags" value={tagFormName} onChange={e=>setTagFormName(e.target.value)} placeholder="e.g. Humor" className="flex-1 border border-slate-300 rounded p-2 text-sm focus:ring-2 focus:ring-tide outline-none" />
                                                 <button
                                                     type="button"
-                                                    onClick={addCodeOption}
+                                                    onClick={createCodeOption}
                                                     className="px-3 bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 rounded text-sm font-semibold"
-                                                    title="Add this as a code option"
+                                                    title="Create a new code"
                                                 >
                                                     +
                                                 </button>
@@ -2273,14 +2289,39 @@
                                 <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-slate-50">
                                     {tags.length === 0 && !pendingSelection && !editingTagId && <p className="text-center text-slate-400 text-sm mt-10">No codes yet in this document.</p>}
                                     {tags.map(tag => (
-                                        <div key={tag.id} className={`bg-white p-3 rounded-lg border shadow-sm relative group transition cursor-pointer ${editingTagId === tag.id ? 'ring-2 ring-orange-400 border-orange-400' : 'hover:border-tide'}`} onClick={() => !editingTagId && openEditTag(tag)}>
+                                        <div key={tag.id} className={`bg-white p-3 rounded-lg border shadow-sm relative group transition cursor-pointer ${editingTagId === tag.id ? 'ring-2 ring-orange-400 border-orange-400' : (selectedTagId === tag.id ? 'ring-2 ring-tide border-tide' : 'hover:border-tide')}`} onClick={() => focusTag(tag)}>
                                             <div className="mb-1 pr-6">
                                                 <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">{tag.category || 'Uncategorized'}</span>
                                                 <span className="text-xs font-bold text-teal-800 bg-teal-100 border border-teal-200 px-2 py-0.5 rounded inline-block">{tag.tagName}</span>
                                             </div>
                                             <p className="text-xs text-slate-600 italic mt-2 line-clamp-2 bg-slate-50 p-1 rounded">"{tag.textSnippet}"</p>
                                             {tag.memo && <p className="text-[11px] text-slate-700 mt-2 line-clamp-2">{tag.memo}</p>}
-                                            <button onClick={(e) => { e.stopPropagation(); onRemoveTag(tag.id); }} className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 hover:text-red-500 bg-slate-100 rounded-full p-1 text-sm transition" title="Delete Code">Delete</button>
+                                            {selectedTagId === tag.id && (
+                                                <div className="mt-3 flex gap-2">
+                                                    <button
+                                                        type="button"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            openEditTag(tag);
+                                                        }}
+                                                        className="flex-1 py-1.5 bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 text-xs font-semibold rounded"
+                                                    >
+                                                        Edit
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            if (editingTagId === tag.id) setEditingTagId(null);
+                                                            setSelectedTagId(null);
+                                                            onRemoveTag(tag.id);
+                                                        }}
+                                                        className="flex-1 py-1.5 bg-red-50 border border-red-200 hover:bg-red-100 text-red-700 text-xs font-semibold rounded"
+                                                    >
+                                                        Delete
+                                                    </button>
+                                                </div>
+                                            )}
                                         </div>
                                     ))}
                                 </div>
