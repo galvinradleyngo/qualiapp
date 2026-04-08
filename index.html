@@ -2818,6 +2818,7 @@
                     return {
                         ...tag,
                         sourceType: 'Transcript',
+                        sourceId: tag.transcriptId,
                         transcriptLabel: parent?.participantId ? (participantCodeById[parent.participantId] || parent.participantId) : `Transcript ${String(tag.transcriptId).slice(-4)}`,
                         folder: parent?.folder || 'Uncategorized',
                         subfolder: parent?.subfolder || 'General',
@@ -2828,6 +2829,7 @@
                 const artifactRows = (artifacts || []).flatMap(art => (art.codes || []).map(codeName => ({
                     id: `${art.id}_${codeName}`,
                     sourceType: 'Artifact',
+                    sourceId: art.id,
                     tagName: codeName,
                     category: art.folder || 'Artifact',
                     transcriptLabel: art.name,
@@ -2837,12 +2839,43 @@
                     memo: ''
                 })));
 
-                return [...transcriptRows, ...artifactRows].filter(item =>
-                    item.tagName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                    item.category.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                    item.textSnippet.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                    (item.memo && item.memo.toLowerCase().includes(searchTerm.toLowerCase()))
-                ).sort((a, b) => a.category.localeCompare(b.category) || a.tagName.localeCompare(b.tagName));
+                const groupedRows = Object.values([...transcriptRows, ...artifactRows].reduce((acc, item) => {
+                    const groupKey = [item.sourceType, item.sourceId, item.tagName].join('::');
+                    if (!acc[groupKey]) {
+                        acc[groupKey] = {
+                            id: groupKey,
+                            sourceType: item.sourceType,
+                            sourceId: item.sourceId,
+                            tagName: item.tagName,
+                            category: item.category,
+                            transcriptLabel: item.transcriptLabel,
+                            folder: item.folder,
+                            subfolder: item.subfolder,
+                            quoteCount: 0,
+                            quotes: [],
+                            memos: []
+                        };
+                    }
+
+                    acc[groupKey].quoteCount += 1;
+                    if (item.textSnippet && item.textSnippet.trim()) {
+                        acc[groupKey].quotes.push(item.textSnippet.trim());
+                    }
+                    if (item.memo && item.memo.trim()) {
+                        acc[groupKey].memos.push(item.memo.trim());
+                    }
+                    return acc;
+                }, {}));
+
+                return groupedRows.filter(item => {
+                    const combinedQuotes = item.quotes.join(' ');
+                    const combinedMemos = item.memos.join(' ');
+                    const query = searchTerm.toLowerCase();
+                    return item.tagName.toLowerCase().includes(query) ||
+                        item.category.toLowerCase().includes(query) ||
+                        combinedQuotes.toLowerCase().includes(query) ||
+                        combinedMemos.toLowerCase().includes(query);
+                }).sort((a, b) => a.category.localeCompare(b.category) || a.tagName.localeCompare(b.tagName) || a.transcriptLabel.localeCompare(b.transcriptLabel));
             }, [tags, transcripts, participants, artifacts, searchTerm]);
 
             const uniqueCodeCount = useMemo(() => new Set(tableData.map(t => t.tagName)).size, [tableData]);
@@ -2853,7 +2886,7 @@
                         <div className="flex justify-between items-end mb-8 bg-white p-6 rounded-2xl shadow-soft border">
                             <div>
                                 <h2 className="text-3xl font-display">Codebook Manager</h2>
-                                <p className="text-slate-500 mt-2">{tableData.length} code entries across {uniqueCodeCount} unique codes (transcripts + artifacts).</p>
+                                <p className="text-slate-500 mt-2">{tableData.length} grouped code entries across {uniqueCodeCount} unique codes (transcripts + artifacts).</p>
                             </div>
                         </div>
                         <input type="text" placeholder="Search categories, codes, memos, or quotes..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full max-w-lg p-3 mb-6 border rounded-xl shadow-sm outline-none focus:ring-2 focus:ring-tide" />
@@ -2866,12 +2899,13 @@
                                             <th className="p-4 font-bold w-32">Category</th>
                                             <th className="p-4 font-bold w-40">Code</th>
                                             <th className="p-4 font-bold w-48">Source</th>
+                                            <th className="p-4 font-bold w-28">Quote Count</th>
                                             <th className="p-4 font-bold">Quote & Memo</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y text-sm">
-                                        {tableData.length === 0 ? <tr><td colSpan="4" className="p-12 text-center text-slate-400 italic">No codes match your search.</td></tr> : tableData.map((row, idx) => (
-                                            <tr key={idx} className="hover:bg-slate-50 align-top">
+                                        {tableData.length === 0 ? <tr><td colSpan="5" className="p-12 text-center text-slate-400 italic">No codes match your search.</td></tr> : tableData.map((row) => (
+                                            <tr key={row.id} className="hover:bg-slate-50 align-top">
                                                 <td className="p-4 text-slate-500 font-bold uppercase text-[10px]">{row.category}</td>
                                                 <td className="p-4"><span className="bg-teal-100 border border-teal-200 text-teal-800 px-3 py-1 rounded-full text-xs font-bold">{row.tagName}</span></td>
                                                 <td className="p-4 text-slate-700">
@@ -2879,9 +2913,15 @@
                                                     <span className={`text-[10px] mt-1 inline-block px-2 py-0.5 rounded-full ${row.sourceType === 'Artifact' ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-700'}`}>{row.sourceType}</span>
                                                     <span className="text-xs text-slate-400 mt-1 block">{row.folder} / {row.subfolder}</span>
                                                 </td>
+                                                <td className="p-4 text-slate-700 font-semibold">{row.quoteCount}</td>
                                                 <td className="p-4">
-                                                    <p className="italic text-slate-700 mb-2 leading-relaxed">"{row.textSnippet}"</p>
-                                                    {row.memo && <p className="text-sm text-slate-600">{row.memo}</p>}
+                                                    {row.quotes.length === 0 && row.memos.length === 0 && <p className="text-sm text-slate-400 italic">No quote text available.</p>}
+                                                    {row.quotes.map((quote, quoteIdx) => (
+                                                        <p key={`${row.id}_quote_${quoteIdx}`} className="italic text-slate-700 mb-2 leading-relaxed">"{quote}"</p>
+                                                    ))}
+                                                    {row.memos.map((memo, memoIdx) => (
+                                                        <p key={`${row.id}_memo_${memoIdx}`} className="text-sm text-slate-600 mb-2">{memo}</p>
+                                                    ))}
                                                 </td>
                                             </tr>
                                         ))}
