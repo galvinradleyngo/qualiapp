@@ -2951,6 +2951,7 @@
             const [searchTerm, setSearchTerm] = useState('');
             const [sortBy, setSortBy] = useState('category');
             const [sortDirection, setSortDirection] = useState('asc');
+            const [showExportMenu, setShowExportMenu] = useState(false);
 
             const csvEscape = (value) => {
                 const text = String(value ?? '');
@@ -2965,6 +2966,40 @@
                 link.download = filename;
                 link.click();
                 URL.revokeObjectURL(link.href);
+            };
+
+            const downloadWordDoc = (filename, htmlContent) => {
+                const wrapped = `<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body>${htmlContent}</body></html>`;
+                const blob = new Blob([wrapped], { type: 'application/msword;charset=utf-8' });
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(blob);
+                link.download = filename;
+                link.click();
+                URL.revokeObjectURL(link.href);
+            };
+
+            const escapeForHtml = (value) => String(value ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+
+            const buildApaTableHtml = (tableNumber, title, columns, rows, noteText) => {
+                const header = columns.map(col => `<th style="text-align:left;padding:6px;border-bottom:1.5px solid #000;font-weight:700;">${escapeForHtml(col)}</th>`).join('');
+                const body = rows.map(row => `<tr>${row.map(cell => `<td style="padding:6px;border-bottom:1px solid #d1d5db;vertical-align:top;">${escapeForHtml(cell)}</td>`).join('')}</tr>`).join('');
+
+                return `
+                    <div style="font-family:'Times New Roman',serif;font-size:12pt;line-height:1.35;margin-bottom:24px;">
+                        <div style="font-weight:700;">Table ${tableNumber}</div>
+                        <div style="font-style:italic;margin:4px 0 10px 0;">${escapeForHtml(title)}</div>
+                        <table style="width:100%;border-collapse:collapse;border-top:1.5px solid #000;">
+                            <thead><tr>${header}</tr></thead>
+                            <tbody>${body || `<tr><td colspan="${columns.length}" style="padding:6px;">No rows available.</td></tr>`}</tbody>
+                        </table>
+                        <div style="margin-top:6px;"><span style="font-style:italic;">Note.</span> ${escapeForHtml(noteText)}</div>
+                    </div>
+                `;
             };
 
             const tableData = useMemo(() => {
@@ -3144,6 +3179,90 @@
                 downloadCsv(`QualiApp_Category_Definitions_${new Date().toISOString().slice(0, 10)}.csv`, lines);
             };
 
+            const exportCodebookApaDoc = () => {
+                const html = buildApaTableHtml(
+                    1,
+                    'Grouped Codebook Entries',
+                    ['Category', 'Code', 'Source', 'Quote Count', 'Quote and memo'],
+                    tableData.map(row => [
+                        row.category,
+                        row.tagName,
+                        `${row.sourceType}: ${row.transcriptLabel}`,
+                        String(row.quoteCount),
+                        [...(row.quotes || []).slice(0, 3), ...(row.memos || []).slice(0, 2)].join(' | ')
+                    ]),
+                    'Quote text may be truncated in export previews.'
+                );
+                downloadWordDoc(`QualiApp_APA7_Codebook_Table_${new Date().toISOString().slice(0, 10)}.doc`, html);
+            };
+
+            const exportCodeDefinitionsApaDoc = () => {
+                const html = buildApaTableHtml(
+                    1,
+                    'Code Definitions',
+                    ['Code', 'Definition', 'Example 1', 'Example 2', 'Example 3'],
+                    codeRows.map(row => [
+                        row.name,
+                        row.definition,
+                        row.examples[0] || '',
+                        row.examples[1] || '',
+                        row.examples[2] || ''
+                    ]),
+                    'Definitions are user-authored and examples are auto-sampled from coded quotes.'
+                );
+                downloadWordDoc(`QualiApp_APA7_Code_Definitions_${new Date().toISOString().slice(0, 10)}.doc`, html);
+            };
+
+            const exportCategoryDefinitionsApaDoc = () => {
+                const html = buildApaTableHtml(
+                    1,
+                    'Category Definitions',
+                    ['Category', 'Definition', 'Example 1', 'Example 2', 'Example 3'],
+                    categoryRows.map(row => [
+                        row.name,
+                        row.definition,
+                        row.examples[0] || '',
+                        row.examples[1] || '',
+                        row.examples[2] || ''
+                    ]),
+                    'Definitions are user-authored and examples are auto-sampled from coded quotes.'
+                );
+                downloadWordDoc(`QualiApp_APA7_Category_Definitions_${new Date().toISOString().slice(0, 10)}.doc`, html);
+            };
+
+            const exportAllApaDoc = () => {
+                const html = [
+                    buildApaTableHtml(
+                        1,
+                        'Grouped Codebook Entries',
+                        ['Category', 'Code', 'Source', 'Quote Count', 'Quote and memo'],
+                        tableData.map(row => [
+                            row.category,
+                            row.tagName,
+                            `${row.sourceType}: ${row.transcriptLabel}`,
+                            String(row.quoteCount),
+                            [...(row.quotes || []).slice(0, 3), ...(row.memos || []).slice(0, 2)].join(' | ')
+                        ]),
+                        'Quote text may be truncated in export previews.'
+                    ),
+                    buildApaTableHtml(
+                        2,
+                        'Code Definitions',
+                        ['Code', 'Definition', 'Example 1', 'Example 2', 'Example 3'],
+                        codeRows.map(row => [row.name, row.definition, row.examples[0] || '', row.examples[1] || '', row.examples[2] || '']),
+                        'Definitions are user-authored and examples are auto-sampled from coded quotes.'
+                    ),
+                    buildApaTableHtml(
+                        3,
+                        'Category Definitions',
+                        ['Category', 'Definition', 'Example 1', 'Example 2', 'Example 3'],
+                        categoryRows.map(row => [row.name, row.definition, row.examples[0] || '', row.examples[1] || '', row.examples[2] || '']),
+                        'Definitions are user-authored and examples are auto-sampled from coded quotes.'
+                    )
+                ].join('');
+                downloadWordDoc(`QualiApp_APA7_All_Codebook_Tables_${new Date().toISOString().slice(0, 10)}.doc`, html);
+            };
+
             return (
                 <div className="p-8 h-full overflow-y-auto flex flex-col">
                     <div className="max-w-[1400px] mx-auto w-full flex-1 flex flex-col pt-2">
@@ -3152,10 +3271,28 @@
                                 <h2 className="text-3xl font-display">Codebook Manager</h2>
                                 <p className="text-slate-500 mt-2">{tableData.length} grouped code entries across {uniqueCodeCount} unique codes (transcripts + artifacts).</p>
                             </div>
-                            <div className="flex flex-wrap gap-2">
-                                <button onClick={exportGroupedCodebookCsv} className="px-3 py-2 rounded-lg bg-ink text-white text-sm font-semibold hover:bg-slate-800">Export Codebook CSV</button>
-                                <button onClick={exportCodeDefinitionsCsv} className="px-3 py-2 rounded-lg bg-tide text-white text-sm font-semibold hover:bg-teal-700">Export Code Definitions CSV</button>
-                                <button onClick={exportCategoryDefinitionsCsv} className="px-3 py-2 rounded-lg bg-ember text-white text-sm font-semibold hover:bg-orange-700">Export Category Definitions CSV</button>
+                            <div className="relative">
+                                <button
+                                    type="button"
+                                    onClick={() => setShowExportMenu(prev => !prev)}
+                                    className="px-4 py-2 rounded-lg bg-ink text-white text-sm font-semibold hover:bg-slate-800"
+                                >
+                                    Export
+                                </button>
+                                {showExportMenu && (
+                                    <div className="absolute right-0 mt-2 w-72 bg-white border border-slate-200 rounded-xl shadow-soft z-30 p-2">
+                                        <p className="px-2 py-1 text-[11px] uppercase font-bold tracking-wide text-slate-500">CSV</p>
+                                        <button type="button" onClick={() => { exportGroupedCodebookCsv(); setShowExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm text-slate-700">Codebook table (.csv)</button>
+                                        <button type="button" onClick={() => { exportCodeDefinitionsCsv(); setShowExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm text-slate-700">Code definitions (.csv)</button>
+                                        <button type="button" onClick={() => { exportCategoryDefinitionsCsv(); setShowExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm text-slate-700">Category definitions (.csv)</button>
+                                        <div className="my-1 border-t" />
+                                        <p className="px-2 py-1 text-[11px] uppercase font-bold tracking-wide text-slate-500">APA7 Word (.doc)</p>
+                                        <button type="button" onClick={() => { exportCodebookApaDoc(); setShowExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm text-slate-700">Codebook table APA7 (.doc)</button>
+                                        <button type="button" onClick={() => { exportCodeDefinitionsApaDoc(); setShowExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm text-slate-700">Code definitions APA7 (.doc)</button>
+                                        <button type="button" onClick={() => { exportCategoryDefinitionsApaDoc(); setShowExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm text-slate-700">Category definitions APA7 (.doc)</button>
+                                        <button type="button" onClick={() => { exportAllApaDoc(); setShowExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm font-semibold text-ink">All codebook tables APA7 (.doc)</button>
+                                    </div>
+                                )}
                             </div>
                         </div>
                         <div className="mb-6 rounded-2xl border bg-white p-4 shadow-sm">
