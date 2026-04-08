@@ -188,6 +188,16 @@
             return toBase64(digest);
         };
 
+        const offlineDataNotice = 'Offline app: QualiApp runs fully in your browser. All project data is stored only on this device in your browser storage unless you explicitly export a backup file.';
+
+        function AppFooter({ dark = false }) {
+            return (
+                <footer className={`w-full px-4 py-3 text-center text-xs border-t ${dark ? 'bg-slate-950 text-slate-300 border-slate-800' : 'bg-white/80 text-slate-600 border-slate-200'}`}>
+                    {offlineDataNotice}
+                </footer>
+            );
+        }
+
         function LockScreen({ onUnlock }) {
             const [password, setPassword] = useState('');
             const [error, setError] = useState('');
@@ -200,23 +210,26 @@
             };
 
             return (
-                <div className="h-screen w-screen flex items-center justify-center bg-ink text-white">
-                    <form onSubmit={handleSubmit} className="bg-slate-900/90 p-8 rounded-2xl shadow-soft max-w-sm w-full text-center border border-slate-700">
-                        <h2 className="text-3xl font-display mb-2">QualiApp Locked</h2>
-                        <p className="text-slate-400 mb-6 text-sm">Local-only workspace protection.</p>
-                        <input
-                            type="password"
-                            autoFocus
-                            value={password}
-                            onChange={e => setPassword(e.target.value)}
-                            className="w-full p-3 rounded-lg bg-slate-800 border border-slate-700 text-center text-xl mb-4 focus:outline-none focus:ring-2 focus:ring-tide"
-                            placeholder="Enter password"
-                        />
-                        {error && <p className="text-red-300 text-sm mb-4">{error}</p>}
-                        <button type="submit" className="w-full bg-tide hover:bg-teal-600 text-white font-bold py-3 rounded-lg transition">
-                            Unlock
-                        </button>
-                    </form>
+                <div className="h-screen w-screen bg-ink text-white flex flex-col">
+                    <div className="flex-1 flex items-center justify-center p-4">
+                        <form onSubmit={handleSubmit} className="bg-slate-900/90 p-8 rounded-2xl shadow-soft max-w-sm w-full text-center border border-slate-700">
+                            <h2 className="text-3xl font-display mb-2">QualiApp Locked</h2>
+                            <p className="text-slate-400 mb-6 text-sm">Local-only workspace protection.</p>
+                            <input
+                                type="password"
+                                autoFocus
+                                value={password}
+                                onChange={e => setPassword(e.target.value)}
+                                className="w-full p-3 rounded-lg bg-slate-800 border border-slate-700 text-center text-xl mb-4 focus:outline-none focus:ring-2 focus:ring-tide"
+                                placeholder="Enter password"
+                            />
+                            {error && <p className="text-red-300 text-sm mb-4">{error}</p>}
+                            <button type="submit" className="w-full bg-tide hover:bg-teal-600 text-white font-bold py-3 rounded-lg transition">
+                                Unlock
+                            </button>
+                        </form>
+                    </div>
+                    <AppFooter dark={true} />
                 </div>
             );
         }
@@ -235,35 +248,43 @@
             };
 
             return (
-                <div className="h-screen w-screen bg-hero text-ink p-6 md:p-10 overflow-y-auto">
-                    <div className="max-w-5xl mx-auto grid lg:grid-cols-[1.2fr,1fr] gap-6 pt-8">
-                        <section className="bg-white border rounded-2xl p-8 shadow-soft">
-                            <h1 className="text-4xl font-display">Welcome to QualiApp</h1>
-                            <p className="text-slate-500 mt-3">Start a new project right away or restore an existing backup. Password protection is optional and can be enabled anytime.</p>
+                <div className="h-screen w-screen bg-hero text-ink flex flex-col">
+                    <div className="flex-1 p-6 md:p-10 overflow-y-auto">
+                        <div className="max-w-5xl mx-auto grid lg:grid-cols-[1.2fr,1fr] gap-6 pt-8">
+                            <section className="bg-white border rounded-2xl p-8 shadow-soft">
+                                <h1 className="text-4xl font-display">Welcome to QualiApp</h1>
+                                <p className="text-slate-500 mt-3">Start a new project right away or restore an existing backup. Password protection is optional and can be enabled anytime.</p>
 
-                            <div className="mt-8 flex flex-col sm:flex-row gap-3">
-                                <button onClick={onStartNew} className="bg-tide hover:bg-teal-600 text-white px-5 py-3 rounded-xl font-semibold">Start New Project</button>
-                                <button onClick={onRestoreExisting} className="bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 px-5 py-3 rounded-xl font-semibold">Open Existing Project</button>
-                            </div>
+                                <div className="mt-6 p-4 rounded-xl bg-teal-50 border-2 border-teal-200 text-teal-900">
+                                    <p className="text-sm font-semibold">Your data stays on your device.</p>
+                                    <p className="text-sm mt-1">QualiApp works entirely offline in your browser. Transcript and coding data are saved locally in this browser on this device unless you choose to export a backup file.</p>
+                                </div>
 
-                            <div className="mt-8 p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-sm">
-                                Private/incognito sessions may clear data when the browser closes. Use Backup regularly.
-                            </div>
-                        </section>
+                                <div className="mt-8 flex flex-col sm:flex-row gap-3">
+                                    <button onClick={onStartNew} className="bg-tide hover:bg-teal-600 text-white px-5 py-3 rounded-xl font-semibold">Start New Project</button>
+                                    <button onClick={onRestoreExisting} className="bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 px-5 py-3 rounded-xl font-semibold">Open Existing Project</button>
+                                </div>
 
-                        <section className="bg-white border rounded-2xl p-6 shadow-soft space-y-4">
-                            <h2 className="text-2xl font-display">Optional Security</h2>
-                            <p className="text-sm text-slate-500">Set an app password if this device is shared. Not required to begin coding.</p>
-                            <input
-                                type="password"
-                                value={passwordInput}
-                                onChange={(e) => setPasswordInput(e.target.value)}
-                                placeholder={hasPassword ? 'Update app password' : 'Set app password (optional)'}
-                                className="w-full border rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-ink"
-                            />
-                            <button onClick={saveOptionalPassword} className="w-full bg-ink hover:bg-slate-800 text-white py-3 rounded-lg font-semibold">{hasPassword ? 'Update Password' : 'Set Password'}</button>
-                        </section>
+                                <div className="mt-8 p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-sm">
+                                    Private/incognito sessions may clear data when the browser closes. Use Backup regularly.
+                                </div>
+                            </section>
+
+                            <section className="bg-white border rounded-2xl p-6 shadow-soft space-y-4">
+                                <h2 className="text-2xl font-display">Optional Security</h2>
+                                <p className="text-sm text-slate-500">Set an app password if this device is shared. Not required to begin coding.</p>
+                                <input
+                                    type="password"
+                                    value={passwordInput}
+                                    onChange={(e) => setPasswordInput(e.target.value)}
+                                    placeholder={hasPassword ? 'Update app password' : 'Set app password (optional)'}
+                                    className="w-full border rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-ink"
+                                />
+                                <button onClick={saveOptionalPassword} className="w-full bg-ink hover:bg-slate-800 text-white py-3 rounded-lg font-semibold">{hasPassword ? 'Update Password' : 'Set Password'}</button>
+                            </section>
+                        </div>
                     </div>
+                    <AppFooter />
                 </div>
             );
         }
@@ -704,90 +725,93 @@
                 }
             };
 
-            if (startupState === 'checking') return <div className="flex h-screen items-center justify-center">Loading...</div>;
+            if (startupState === 'checking') return <div className="h-screen w-screen bg-hero flex flex-col"><div className="flex-1 flex items-center justify-center">Loading...</div><AppFooter /></div>;
             if (startupState === 'welcome') return <WelcomeScreen hasPassword={hasAppPassword} onSetPassword={handleSetAppPassword} onStartNew={() => setStartupState('open')} onRestoreExisting={() => { setStartupState('open'); setView('backup'); }} />;
             if (startupState === 'locked') return <LockScreen onUnlock={() => setStartupState('open')} />;
-            if (!isReady) return <div className="flex h-screen items-center justify-center">Loading...</div>;
+            if (!isReady) return <div className="h-screen w-screen bg-hero flex flex-col"><div className="flex-1 flex items-center justify-center">Loading...</div><AppFooter /></div>;
 
             return (
-                <div className="flex h-screen bg-hero relative">
-                    <aside className="w-72 bg-ink text-slate-200 flex flex-col shadow-soft z-10">
-                        <div className="p-6 border-b border-slate-700/60">
-                            <h1 className="text-3xl font-display text-white leading-none">QualiApp</h1>
-                            <p className="text-xs mt-2 text-slate-400">Offline Qualitative Studio</p>
-                        </div>
-                        <nav className="flex-1 px-4 py-4 space-y-2 text-sm">
-                            <NavButton active={view === 'dashboard'} label="Transcripts" onClick={() => setView('dashboard')} />
-                            <NavButton active={view === 'artifacts'} label="Project Artifacts" onClick={() => setView('artifacts')} />
-                            <NavButton active={view === 'participants'} label="Participant Coding" onClick={() => setView('participants')} />
-                            <NavButton active={view === 'analysis'} label="Analysis Canvas" onClick={() => setView('analysis')} />
-                            <NavButton active={view === 'codebook'} label="Codebook" onClick={() => setView('codebook')} />
-                            <NavButton active={view === 'triangulation'} label="Triangulation" onClick={() => setView('triangulation')} />
-                            <NavButton active={view === 'backup'} label="Backup & Restore" onClick={() => setView('backup')} />
-                        </nav>
-                        <div className="p-4 border-t border-slate-700/60 space-y-2">
-                            {hasAppPassword ? (
-                                <button onClick={() => setStartupState('locked')} className="w-full bg-slate-800 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition">Lock App</button>
-                            ) : (
-                                <button onClick={() => {
-                                    const p = prompt('Set an app password (min 4 chars):', '');
-                                    if (p && p.length >= 4) handleSetAppPassword(p);
-                                }} className="w-full bg-slate-800 hover:bg-slate-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition">Set App Password</button>
-                            )}
-                        </div>
-                    </aside>
+                <div className="h-screen bg-hero relative flex flex-col">
+                    <div className="flex flex-1 min-h-0">
+                        <aside className="w-72 bg-ink text-slate-200 flex flex-col shadow-soft z-10">
+                            <div className="p-6 border-b border-slate-700/60">
+                                <h1 className="text-3xl font-display text-white leading-none">QualiApp</h1>
+                                <p className="text-xs mt-2 text-slate-400">Offline Qualitative Studio</p>
+                            </div>
+                            <nav className="flex-1 px-4 py-4 space-y-2 text-sm">
+                                <NavButton active={view === 'dashboard'} label="Transcripts" onClick={() => setView('dashboard')} />
+                                <NavButton active={view === 'artifacts'} label="Project Artifacts" onClick={() => setView('artifacts')} />
+                                <NavButton active={view === 'participants'} label="Participant Coding" onClick={() => setView('participants')} />
+                                <NavButton active={view === 'analysis'} label="Analysis Canvas" onClick={() => setView('analysis')} />
+                                <NavButton active={view === 'codebook'} label="Codebook" onClick={() => setView('codebook')} />
+                                <NavButton active={view === 'triangulation'} label="Triangulation" onClick={() => setView('triangulation')} />
+                                <NavButton active={view === 'backup'} label="Backup & Restore" onClick={() => setView('backup')} />
+                            </nav>
+                            <div className="p-4 border-t border-slate-700/60 space-y-2">
+                                {hasAppPassword ? (
+                                    <button onClick={() => setStartupState('locked')} className="w-full bg-slate-800 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition">Lock App</button>
+                                ) : (
+                                    <button onClick={() => {
+                                        const p = prompt('Set an app password (min 4 chars):', '');
+                                        if (p && p.length >= 4) handleSetAppPassword(p);
+                                    }} className="w-full bg-slate-800 hover:bg-slate-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition">Set App Password</button>
+                                )}
+                            </div>
+                        </aside>
 
-                    <main className="flex-1 overflow-hidden flex flex-col relative">
-                        {view === 'dashboard' && (
-                            <Dashboard
-                                transcripts={transcripts}
-                                folders={folders}
-                                onDownloadApp={handleDownloadApp}
-                                onCreate={handleCreateTranscript}
-                                onCreateFolder={handleCreateFolder}
-                                onRenameFolder={handleRenameFolder}
-                                onDeleteFolder={handleDeleteFolder}
-                                onMoveTranscript={handleMoveTranscriptToFolder}
-                                onRenameTranscript={handleRenameTranscript}
-                                onOpen={(id) => { setActiveId(id); setView('editor'); }}
-                                onDelete={handleDeleteTranscript}
-                                participants={participants}
-                            />
-                        )}
-                        {view === 'artifacts' && <ArtifactDashboard artifacts={globalArtifacts} onUpdate={setGlobalArtifacts} />}
-                        {view === 'participants' && <ParticipantVault participants={participants} onUpdate={setParticipants} />}
-                        {view === 'analysis' && <AnalysisBoard tags={tags} canvases={analysisCanvases} onUpdate={setAnalysisCanvases} artifacts={globalArtifacts} transcripts={transcripts} participants={participants} />}
-                        {view === 'triangulation' && (
-                            <TriangulationDashboard
-                                transcripts={transcripts}
-                                tags={tags}
-                                artifacts={globalArtifacts}
-                                analysisCanvases={analysisCanvases}
-                                sessions={triangulationSessions}
-                                assignmentMeta={triangulationAssignmentMeta}
-                                onExportAssignment={handleExportTriangulationAssignment}
-                                onImportAssignment={handleImportTriangulationAssignment}
-                                onExportReturn={handleExportTriangulationReturn}
-                                onImportReturn={handleImportTriangulationReturn}
-                            />
-                        )}
-                        {view === 'backup' && <BackupDashboard onBackup={handleBackupDownload} onRestore={handleRestoreUpload} />}
-                        {view === 'editor' && activeTranscript && (
-                            <Editor
-                                transcript={activeTranscript}
-                                tags={tags.filter(t => t.transcriptId === activeTranscript.id)}
-                                allTags={tags}
-                                activityTypes={activityTypes}
-                                onAddActivityType={(newType) => !activityTypes.includes(newType) && setActivityTypes([...activityTypes, newType])}
-                                onBack={() => setView('dashboard')}
-                                onUpdateTranscript={(updated) => setTranscripts(transcripts.map(t => t.id === updated.id ? updated : t))}
-                                onAddTag={(tag) => setTags([...tags, tag])}
-                                onUpdateTag={(updatedTag) => setTags(tags.map(t => t.id === updatedTag.id ? updatedTag : t))}
-                                onRemoveTag={(tagId) => setTags(tags.filter(t => t.id !== tagId))}
-                            />
-                        )}
-                        {view === 'codebook' && <Codebook tags={tags} transcripts={transcripts} participants={participants} artifacts={globalArtifacts} />}
-                    </main>
+                        <main className="flex-1 overflow-hidden flex flex-col relative">
+                            {view === 'dashboard' && (
+                                <Dashboard
+                                    transcripts={transcripts}
+                                    folders={folders}
+                                    onDownloadApp={handleDownloadApp}
+                                    onCreate={handleCreateTranscript}
+                                    onCreateFolder={handleCreateFolder}
+                                    onRenameFolder={handleRenameFolder}
+                                    onDeleteFolder={handleDeleteFolder}
+                                    onMoveTranscript={handleMoveTranscriptToFolder}
+                                    onRenameTranscript={handleRenameTranscript}
+                                    onOpen={(id) => { setActiveId(id); setView('editor'); }}
+                                    onDelete={handleDeleteTranscript}
+                                    participants={participants}
+                                />
+                            )}
+                            {view === 'artifacts' && <ArtifactDashboard artifacts={globalArtifacts} onUpdate={setGlobalArtifacts} />}
+                            {view === 'participants' && <ParticipantVault participants={participants} onUpdate={setParticipants} />}
+                            {view === 'analysis' && <AnalysisBoard tags={tags} canvases={analysisCanvases} onUpdate={setAnalysisCanvases} artifacts={globalArtifacts} transcripts={transcripts} participants={participants} />}
+                            {view === 'triangulation' && (
+                                <TriangulationDashboard
+                                    transcripts={transcripts}
+                                    tags={tags}
+                                    artifacts={globalArtifacts}
+                                    analysisCanvases={analysisCanvases}
+                                    sessions={triangulationSessions}
+                                    assignmentMeta={triangulationAssignmentMeta}
+                                    onExportAssignment={handleExportTriangulationAssignment}
+                                    onImportAssignment={handleImportTriangulationAssignment}
+                                    onExportReturn={handleExportTriangulationReturn}
+                                    onImportReturn={handleImportTriangulationReturn}
+                                />
+                            )}
+                            {view === 'backup' && <BackupDashboard onBackup={handleBackupDownload} onRestore={handleRestoreUpload} />}
+                            {view === 'editor' && activeTranscript && (
+                                <Editor
+                                    transcript={activeTranscript}
+                                    tags={tags.filter(t => t.transcriptId === activeTranscript.id)}
+                                    allTags={tags}
+                                    activityTypes={activityTypes}
+                                    onAddActivityType={(newType) => !activityTypes.includes(newType) && setActivityTypes([...activityTypes, newType])}
+                                    onBack={() => setView('dashboard')}
+                                    onUpdateTranscript={(updated) => setTranscripts(transcripts.map(t => t.id === updated.id ? updated : t))}
+                                    onAddTag={(tag) => setTags([...tags, tag])}
+                                    onUpdateTag={(updatedTag) => setTags(tags.map(t => t.id === updatedTag.id ? updatedTag : t))}
+                                    onRemoveTag={(tagId) => setTags(tags.filter(t => t.id !== tagId))}
+                                />
+                            )}
+                            {view === 'codebook' && <Codebook tags={tags} transcripts={transcripts} participants={participants} artifacts={globalArtifacts} />}
+                        </main>
+                    </div>
+                    <AppFooter />
                 </div>
             );
         }
@@ -994,6 +1018,10 @@
                                 <div>
                                     <h2 className="text-4xl font-display">Transcript Workspace</h2>
                                     <p className="text-slate-500 mt-1">Drag transcript cards into the folder sidebar. Rename titles and manage folders inline.</p>
+                                    <div className="mt-4 p-3 rounded-xl border-2 border-teal-200 bg-teal-50 text-teal-900 max-w-3xl">
+                                        <p className="text-sm font-semibold">Offline and device-local by default.</p>
+                                        <p className="text-sm mt-1">Everything you enter is saved in this browser on this device only. Data leaves your device only when you intentionally export a backup file.</p>
+                                    </div>
                                 </div>
                                 <div className="flex gap-3">
                                     <button onClick={onDownloadApp} className="bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 px-5 py-3 rounded-xl shadow font-semibold">Download App</button>
