@@ -803,7 +803,6 @@
                                     onAddActivityType={(newType) => !activityTypes.includes(newType) && setActivityTypes([...activityTypes, newType])}
                                     onBack={() => setView('dashboard')}
                                     onUpdateTranscript={(updated) => setTranscripts(transcripts.map(t => t.id === updated.id ? updated : t))}
-                                    onSetTags={setTags}
                                     onAddTag={(tag) => setTags((prev) => [...prev, tag])}
                                     onUpdateTag={(updatedTag) => setTags((prev) => prev.map(t => t.id === updatedTag.id ? updatedTag : t))}
                                     onRemoveTag={(tagId) => setTags((prev) => prev.filter(t => t.id !== tagId))}
@@ -1674,7 +1673,7 @@
             );
         }
 
-        function Editor({ transcript, tags, allTags, activityTypes, onAddActivityType, onBack, onUpdateTranscript, onSetTags, onAddTag, onUpdateTag, onRemoveTag }) {
+        function Editor({ transcript, tags, allTags, activityTypes, onAddActivityType, onBack, onUpdateTranscript, onAddTag, onUpdateTag, onRemoveTag }) {
             const [mode, setMode] = useState('edit');
             const [content, setContent] = useState(transcript.content || '');
             const [contentHtml, setContentHtml] = useState(transcript.contentHtml || '');
@@ -1685,8 +1684,11 @@
             const [pendingSelection, setPendingSelection] = useState(null);
             const [editingTagId, setEditingTagId] = useState(null);
             const [selectedTagId, setSelectedTagId] = useState(null);
-            const emptyTagRow = () => ({ category: '', tagName: '', memo: '' });
-            const [tagRows, setTagRows] = useState([emptyTagRow()]);
+            const [tagFormCategory, setTagFormCategory] = useState('');
+            const [tagFormName, setTagFormName] = useState('');
+            const [tagFormMemo, setTagFormMemo] = useState('');
+            const emptyPendingTag = () => ({ category: '', tagName: '' });
+            const [pendingTagRows, setPendingTagRows] = useState([emptyPendingTag()]);
 
             const [logType, setLogType] = useState('');
             const [logNote, setLogNote] = useState('');
@@ -1927,23 +1929,26 @@
                     const offset = getSelectionOffset(textRef.current);
                     if (offset && offset.text.trim()) {
                         setPendingSelection(offset);
-                        setTagRows([emptyTagRow()]);
+                        setTagFormCategory('');
+                        setTagFormName('');
+                        setTagFormMemo('');
+                        setPendingTagRows([emptyPendingTag()]);
                     } else {
                         setPendingSelection(null);
                     }
                 }, 40);
             };
 
-            const setTagRowField = (idx, field, value) => {
-                setTagRows((prev) => prev.map((row, rowIdx) => rowIdx === idx ? { ...row, [field]: value } : row));
+            const setPendingTagField = (idx, field, value) => {
+                setPendingTagRows((prev) => prev.map((row, rowIdx) => rowIdx === idx ? { ...row, [field]: value } : row));
             };
 
-            const addTagRow = () => {
-                setTagRows((prev) => [...prev, emptyTagRow()]);
+            const addPendingTagRow = () => {
+                setPendingTagRows((prev) => [...prev, emptyPendingTag()]);
             };
 
-            const removeTagRow = (idx) => {
-                setTagRows((prev) => {
+            const removePendingTagRow = (idx) => {
+                setPendingTagRows((prev) => {
                     if (prev.length <= 1) return prev;
                     return prev.filter((_, rowIdx) => rowIdx !== idx);
                 });
@@ -1951,67 +1956,63 @@
 
             const submitTagForm = (e) => {
                 e.preventDefault();
-                const normalizedRows = tagRows
-                    .map((row) => ({
-                        category: (row.category || '').trim() || 'Uncategorized',
-                        tagName: (row.tagName || '').trim(),
-                        memo: (row.memo || '').trim()
-                    }))
-                    .filter((row) => row.tagName);
 
-                if (normalizedRows.length === 0) {
-                    alert('Enter at least one code before saving.');
+                if (editingTagId) {
+                    if (!tagFormName.trim()) return;
+                    const normalizedCategory = tagFormCategory.trim() || 'Uncategorized';
+                    const normalizedCode = tagFormName.trim();
+
+                    const existing = tags.find(t => t.id === editingTagId);
+                    if (!existing) return;
+                    onUpdateTag({ ...existing, category: normalizedCategory, tagName: normalizedCode, memo: tagFormMemo });
+                    setEditingTagId(null);
+                    setSelectedTagId(existing.id);
+                    setTagFormCategory('');
+                    setTagFormName('');
+                    setTagFormMemo('');
                     return;
                 }
 
-                if (editingTagId) {
-                    const existing = tags.find(t => t.id === editingTagId);
-                    if (!existing) return;
+                const normalizedRows = pendingTagRows
+                    .map((row) => ({
+                        category: (row.category || '').trim() || 'Uncategorized',
+                        tagName: (row.tagName || '').trim()
+                    }))
+                    .filter((row) => row.tagName);
 
-                    const matchesSelection = (t) =>
-                        t.transcriptId === existing.transcriptId &&
-                        t.start === existing.start &&
-                        t.end === existing.end &&
-                        (t.textSnippet || '') === (existing.textSnippet || '');
+                if (normalizedRows.length === 0) return;
 
-                    if (typeof onSetTags === 'function') {
-                        onSetTags((prev) => {
-                            const withoutGroup = prev.filter((t) => !matchesSelection(t));
-                            const rebuilt = normalizedRows.map((row, idx) => ({
-                                ...existing,
-                                id: `${Date.now()}_${idx}`,
-                                category: row.category,
-                                tagName: row.tagName,
-                                memo: row.memo
-                            }));
-                            return [...withoutGroup, ...rebuilt];
-                        });
-                    }
-                    setEditingTagId(null);
-                    setSelectedTagId(null);
-                } else if (pendingSelection) {
-                    const baseId = Date.now().toString();
-                    const newTags = normalizedRows.map((row, idx) => ({
+                const seen = new Set();
+                const dedupedRows = normalizedRows.filter((row) => {
+                    const key = `${row.category.toLowerCase()}::${row.tagName.toLowerCase()}`;
+                    if (seen.has(key)) return false;
+                    seen.add(key);
+                    return true;
+                });
+
+                if (!pendingSelection) return;
+
+                const baseId = Date.now().toString();
+                dedupedRows.forEach((row, idx) => {
+                    onAddTag({
                         id: `${baseId}_${idx}`,
                         transcriptId: transcript.id,
                         category: row.category,
                         tagName: row.tagName,
-                        memo: row.memo,
+                        memo: '',
                         textSnippet: pendingSelection.text,
                         start: pendingSelection.start,
                         end: pendingSelection.end
-                    }));
+                    });
+                });
 
-                    if (typeof onSetTags === 'function') {
-                        onSetTags((prev) => [...prev, ...newTags]);
-                    } else {
-                        newTags.forEach((t) => onAddTag(t));
-                    }
-                    setPendingSelection(null);
-                    window.getSelection().removeAllRanges();
-                }
+                setPendingSelection(null);
+                window.getSelection().removeAllRanges();
+                setPendingTagRows([emptyPendingTag()]);
 
-                setTagRows([emptyTagRow()]);
+                setTagFormCategory('');
+                setTagFormName('');
+                setTagFormMemo('');
             };
 
             const openEditTag = (tag) => {
@@ -2019,28 +2020,19 @@
                 window.getSelection().removeAllRanges();
                 setEditingTagId(tag.id);
                 setSelectedTagId(tag.id);
-
-                const groupRows = tags
-                    .filter((t) =>
-                        t.transcriptId === tag.transcriptId &&
-                        t.start === tag.start &&
-                        t.end === tag.end &&
-                        (t.textSnippet || '') === (tag.textSnippet || '')
-                    )
-                    .map((t) => ({
-                        category: t.category || '',
-                        tagName: t.tagName || '',
-                        memo: t.memo || ''
-                    }));
-
-                setTagRows(groupRows.length ? groupRows : [emptyTagRow()]);
+                setTagFormCategory(tag.category || '');
+                setTagFormName(tag.tagName || '');
+                setTagFormMemo(tag.memo || '');
             };
 
             const cancelTagForm = () => {
                 setPendingSelection(null);
                 setEditingTagId(null);
                 window.getSelection().removeAllRanges();
-                setTagRows([emptyTagRow()]);
+                setTagFormCategory('');
+                setTagFormName('');
+                setTagFormMemo('');
+                setPendingTagRows([emptyPendingTag()]);
             };
 
             const scrollToTagHighlight = (tagId) => {
@@ -2055,7 +2047,10 @@
                 setEditingTagId(null);
                 setPendingSelection(null);
                 window.getSelection().removeAllRanges();
-                setTagRows([emptyTagRow()]);
+                setTagFormCategory('');
+                setTagFormName('');
+                setTagFormMemo('');
+                setPendingTagRows([emptyPendingTag()]);
                 setTimeout(() => scrollToTagHighlight(tag.id), 0);
             };
 
@@ -2255,56 +2250,84 @@
                                             <datalist id="categories">{existingCategories.map(c => <option key={c} value={c} />)}</datalist>
                                             <datalist id="tags">{existingCodes.map(c => <option key={c} value={c} />)}</datalist>
 
-                                            <div className="space-y-3 mb-4">
-                                                {tagRows.map((row, idx) => (
-                                                    <div key={`tag_row_${idx}`} className="bg-white border border-slate-200 rounded-lg p-2.5">
-                                                        <div className="flex items-center justify-between mb-2">
-                                                            <p className="text-[10px] uppercase font-bold text-slate-500">Tag {idx + 1}</p>
-                                                            {tagRows.length > 1 && (
+                                            {editingTagId ? (
+                                                <>
+                                                    <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1">Parent Category</label>
+                                                    <input
+                                                        type="text"
+                                                        list="categories"
+                                                        value={tagFormCategory}
+                                                        onChange={e => setTagFormCategory(e.target.value)}
+                                                        placeholder="e.g. Coping"
+                                                        className="w-full border border-slate-300 rounded p-2 text-sm mb-3 focus:ring-2 focus:ring-tide outline-none"
+                                                    />
+
+                                                    <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1">Specific Code *</label>
+                                                    <input
+                                                        type="text"
+                                                        autoFocus
+                                                        list="tags"
+                                                        value={tagFormName}
+                                                        onChange={e => setTagFormName(e.target.value)}
+                                                        placeholder="e.g. Humor"
+                                                        className="w-full border border-slate-300 rounded p-2 text-sm mb-3 focus:ring-2 focus:ring-tide outline-none"
+                                                    />
+
+                                                    <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1">Code Memo</label>
+                                                    <textarea
+                                                        value={tagFormMemo}
+                                                        onChange={e => setTagFormMemo(e.target.value)}
+                                                        placeholder="Why is this interesting?"
+                                                        className="w-full border border-slate-300 rounded p-2 text-sm mb-4 focus:ring-2 focus:ring-tide outline-none resize-none h-20"
+                                                    />
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <div className="space-y-2 mb-4">
+                                                        {pendingTagRows.map((row, idx) => (
+                                                            <div key={`pending_row_${idx}`} className="grid grid-cols-[1fr,1fr,auto] gap-2 items-center">
+                                                                <input
+                                                                    type="text"
+                                                                    list="categories"
+                                                                    value={row.category}
+                                                                    onChange={(e) => setPendingTagField(idx, 'category', e.target.value)}
+                                                                    placeholder="Parent category"
+                                                                    className="border border-slate-300 rounded p-2 text-sm focus:ring-2 focus:ring-tide outline-none"
+                                                                />
+                                                                <input
+                                                                    type="text"
+                                                                    list="tags"
+                                                                    value={row.tagName}
+                                                                    onChange={(e) => setPendingTagField(idx, 'tagName', e.target.value)}
+                                                                    placeholder="Code"
+                                                                    className="border border-slate-300 rounded p-2 text-sm focus:ring-2 focus:ring-tide outline-none"
+                                                                />
                                                                 <button
                                                                     type="button"
-                                                                    onClick={() => removeTagRow(idx)}
-                                                                    className="text-[11px] text-red-600 hover:text-red-700 font-semibold"
+                                                                    onClick={() => removePendingTagRow(idx)}
+                                                                    className="px-2 py-2 text-xs border border-slate-300 rounded text-slate-600 hover:bg-slate-100 disabled:opacity-40"
+                                                                    disabled={pendingTagRows.length <= 1}
+                                                                    title="Remove row"
                                                                 >
                                                                     Remove
                                                                 </button>
-                                                            )}
-                                                        </div>
-
-                                                        <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1">Parent Category</label>
-                                                        <input
-                                                            type="text"
-                                                            list="categories"
-                                                            value={row.category}
-                                                            onChange={(e) => setTagRowField(idx, 'category', e.target.value)}
-                                                            placeholder="e.g. Coping"
-                                                            className="w-full border border-slate-300 rounded p-2 text-sm mb-2 focus:ring-2 focus:ring-tide outline-none"
-                                                        />
-
-                                                        <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1">Specific Code *</label>
-                                                        <input
-                                                            type="text"
-                                                            list="tags"
-                                                            value={row.tagName}
-                                                            onChange={(e) => setTagRowField(idx, 'tagName', e.target.value)}
-                                                            placeholder="e.g. Humor"
-                                                            className="w-full border border-slate-300 rounded p-2 text-sm focus:ring-2 focus:ring-tide outline-none"
-                                                        />
+                                                            </div>
+                                                        ))}
                                                     </div>
-                                                ))}
-                                            </div>
 
-                                            <button
-                                                type="button"
-                                                onClick={addTagRow}
-                                                className="w-full mb-4 py-2 border border-dashed border-slate-400 text-slate-700 rounded font-semibold hover:bg-slate-100"
-                                            >
-                                                + Add Another Category/Code Tag
-                                            </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={addPendingTagRow}
+                                                        className="w-full mb-4 py-2 border border-dashed border-slate-400 text-slate-700 rounded font-semibold hover:bg-slate-100"
+                                                    >
+                                                        + Add Another Tag
+                                                    </button>
+                                                </>
+                                            )}
 
                                             <div className="flex gap-2">
                                                 <button type="button" onClick={cancelTagForm} className="flex-1 py-2 bg-white border border-slate-300 text-slate-600 font-semibold rounded">Cancel</button>
-                                                <button type="submit" className={`flex-1 py-2 text-white font-bold rounded ${editingTagId ? 'bg-orange-500 hover:bg-orange-600' : 'bg-tide hover:bg-teal-600'}`}>{editingTagId ? 'Update' : 'Save Code'}</button>
+                                                <button type="submit" className={`flex-1 py-2 text-white font-bold rounded ${editingTagId ? 'bg-orange-500 hover:bg-orange-600' : 'bg-tide hover:bg-teal-600'}`}>{editingTagId ? 'Update' : 'Save Tags'}</button>
                                             </div>
                                         </form>
                                     ) : (
