@@ -302,6 +302,8 @@
             const [analysisCanvases, setAnalysisCanvases] = useState([]);
             const [triangulationSessions, setTriangulationSessions] = useState([]);
             const [triangulationAssignmentMeta, setTriangulationAssignmentMeta] = useState(null);
+            const [codeDefinitions, setCodeDefinitions] = useState({});
+            const [categoryDefinitions, setCategoryDefinitions] = useState({});
             const [activeId, setActiveId] = useState(null);
             const [isReady, setIsReady] = useState(false);
 
@@ -357,6 +359,8 @@
                     setAnalysisCanvases(await dbGet('data', 'analysis_canvases') || []);
                     setTriangulationSessions(await dbGet('data', 'triangulation_sessions') || []);
                     setTriangulationAssignmentMeta(await dbGet('data', 'triangulation_assignment_meta') || null);
+                    setCodeDefinitions(await dbGet('data', 'code_definitions') || {});
+                    setCategoryDefinitions(await dbGet('data', 'category_definitions') || {});
                     const savedActivityTypes = await dbGet('data', 'activityTypes');
                     if (savedActivityTypes) setActivityTypes(savedActivityTypes);
                     setIsReady(true);
@@ -375,8 +379,10 @@
                     dbSet('data', 'analysis_canvases', analysisCanvases);
                     dbSet('data', 'triangulation_sessions', triangulationSessions);
                     dbSet('data', 'triangulation_assignment_meta', triangulationAssignmentMeta);
+                    dbSet('data', 'code_definitions', codeDefinitions);
+                    dbSet('data', 'category_definitions', categoryDefinitions);
                 }
-            }, [transcripts, transcriptFolders, tags, globalArtifacts, activityTypes, participants, analysisCanvases, triangulationSessions, triangulationAssignmentMeta, isReady, startupState]);
+            }, [transcripts, transcriptFolders, tags, globalArtifacts, activityTypes, participants, analysisCanvases, triangulationSessions, triangulationAssignmentMeta, codeDefinitions, categoryDefinitions, isReady, startupState]);
 
             const activeTranscript = transcripts.find(t => t.id === activeId);
             const folders = [...new Set([...transcriptFolders, ...transcripts.map(t => t.folder).filter(Boolean)])].sort((a, b) => a.localeCompare(b));
@@ -500,7 +506,9 @@
                         participants,
                         analysisCanvases,
                         triangulationSessions,
-                        triangulationAssignmentMeta
+                        triangulationAssignmentMeta,
+                        codeDefinitions,
+                        categoryDefinitions
                     },
                     files: serializedFiles,
                     security: {
@@ -533,6 +541,8 @@
                 setAnalysisCanvases(d.analysisCanvases || []);
                 setTriangulationSessions(d.triangulationSessions || []);
                 setTriangulationAssignmentMeta(d.triangulationAssignmentMeta || null);
+                setCodeDefinitions(d.codeDefinitions || {});
+                setCategoryDefinitions(d.categoryDefinitions || {});
                 setActiveId(null);
                 setView('dashboard');
                 setStartupState('open');
@@ -808,7 +818,18 @@
                                     onRemoveTag={(tagId) => setTags((prev) => prev.filter(t => t.id !== tagId))}
                                 />
                             )}
-                            {view === 'codebook' && <Codebook tags={tags} transcripts={transcripts} participants={participants} artifacts={globalArtifacts} />}
+                            {view === 'codebook' && (
+                                <Codebook
+                                    tags={tags}
+                                    transcripts={transcripts}
+                                    participants={participants}
+                                    artifacts={globalArtifacts}
+                                    codeDefinitions={codeDefinitions}
+                                    categoryDefinitions={categoryDefinitions}
+                                    onUpdateCodeDefinitions={setCodeDefinitions}
+                                    onUpdateCategoryDefinitions={setCategoryDefinitions}
+                                />
+                            )}
                         </main>
                     </div>
                     <AppFooter />
@@ -2926,10 +2947,26 @@
             );
         }
 
-        function Codebook({ tags, transcripts, participants, artifacts }) {
+        function Codebook({ tags, transcripts, participants, artifacts, codeDefinitions, categoryDefinitions, onUpdateCodeDefinitions, onUpdateCategoryDefinitions }) {
             const [searchTerm, setSearchTerm] = useState('');
             const [sortBy, setSortBy] = useState('category');
             const [sortDirection, setSortDirection] = useState('asc');
+
+            const csvEscape = (value) => {
+                const text = String(value ?? '');
+                if (/[",\n]/.test(text)) return `"${text.replace(/"/g, '""')}"`;
+                return text;
+            };
+
+            const downloadCsv = (filename, lines) => {
+                const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(blob);
+                link.download = filename;
+                link.click();
+                URL.revokeObjectURL(link.href);
+            };
+
             const tableData = useMemo(() => {
                 const participantCodeById = {};
                 (participants || []).forEach(p => { participantCodeById[p.id] = p.pseudonym || p.id; });
@@ -3019,14 +3056,106 @@
             }, [tags, transcripts, participants, artifacts, searchTerm, sortBy, sortDirection]);
 
             const uniqueCodeCount = useMemo(() => new Set(tableData.map(t => t.tagName)).size, [tableData]);
+            const pickExamples = (quotes) => Array.from(new Set((quotes || []).map(q => (q || '').trim()).filter(Boolean))).slice(0, 3);
+
+            const codeRows = useMemo(() => {
+                const names = Array.from(new Set([
+                    ...tableData.map(item => item.tagName),
+                    ...Object.keys(codeDefinitions || {})
+                ])).sort((a, b) => a.localeCompare(b));
+
+                return names.map((name) => {
+                    const related = tableData.filter(item => item.tagName === name);
+                    const examples = pickExamples(related.flatMap(item => item.quotes));
+                    return {
+                        name,
+                        definition: (codeDefinitions || {})[name] || '',
+                        examples
+                    };
+                });
+            }, [tableData, codeDefinitions]);
+
+            const categoryRows = useMemo(() => {
+                const names = Array.from(new Set([
+                    ...tableData.map(item => item.category),
+                    ...Object.keys(categoryDefinitions || {})
+                ])).sort((a, b) => a.localeCompare(b));
+
+                return names.map((name) => {
+                    const related = tableData.filter(item => item.category === name);
+                    const examples = pickExamples(related.flatMap(item => item.quotes));
+                    return {
+                        name,
+                        definition: (categoryDefinitions || {})[name] || '',
+                        examples
+                    };
+                });
+            }, [tableData, categoryDefinitions]);
+
+            const updateDefinitionMap = (currentMap, setter, key, value) => {
+                const next = { ...(currentMap || {}) };
+                if (value.trim()) next[key] = value;
+                else delete next[key];
+                setter(next);
+            };
+
+            const exportGroupedCodebookCsv = () => {
+                const lines = ['Category,Code,Source,Folder,Subfolder,Quote Count,Quotes,Memos'];
+                tableData.forEach((row) => {
+                    lines.push([
+                        csvEscape(row.category),
+                        csvEscape(row.tagName),
+                        csvEscape(`${row.sourceType}: ${row.transcriptLabel}`),
+                        csvEscape(row.folder),
+                        csvEscape(row.subfolder),
+                        csvEscape(row.quoteCount),
+                        csvEscape((row.quotes || []).slice(0, 3).join(' | ')),
+                        csvEscape((row.memos || []).join(' | '))
+                    ].join(','));
+                });
+                downloadCsv(`QualiApp_Codebook_Table_${new Date().toISOString().slice(0, 10)}.csv`, lines);
+            };
+
+            const exportCodeDefinitionsCsv = () => {
+                const lines = ['Code,Definition,Example 1,Example 2,Example 3'];
+                codeRows.forEach((row) => {
+                    lines.push([
+                        csvEscape(row.name),
+                        csvEscape(row.definition),
+                        csvEscape(row.examples[0] || ''),
+                        csvEscape(row.examples[1] || ''),
+                        csvEscape(row.examples[2] || '')
+                    ].join(','));
+                });
+                downloadCsv(`QualiApp_Code_Definitions_${new Date().toISOString().slice(0, 10)}.csv`, lines);
+            };
+
+            const exportCategoryDefinitionsCsv = () => {
+                const lines = ['Category,Definition,Example 1,Example 2,Example 3'];
+                categoryRows.forEach((row) => {
+                    lines.push([
+                        csvEscape(row.name),
+                        csvEscape(row.definition),
+                        csvEscape(row.examples[0] || ''),
+                        csvEscape(row.examples[1] || ''),
+                        csvEscape(row.examples[2] || '')
+                    ].join(','));
+                });
+                downloadCsv(`QualiApp_Category_Definitions_${new Date().toISOString().slice(0, 10)}.csv`, lines);
+            };
 
             return (
                 <div className="p-8 h-full overflow-y-auto flex flex-col">
                     <div className="max-w-[1400px] mx-auto w-full flex-1 flex flex-col pt-2">
-                        <div className="flex justify-between items-end mb-8 bg-white p-6 rounded-2xl shadow-soft border">
+                        <div className="flex flex-col md:flex-row md:justify-between md:items-end gap-4 mb-8 bg-white p-6 rounded-2xl shadow-soft border">
                             <div>
                                 <h2 className="text-3xl font-display">Codebook Manager</h2>
                                 <p className="text-slate-500 mt-2">{tableData.length} grouped code entries across {uniqueCodeCount} unique codes (transcripts + artifacts).</p>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                                <button onClick={exportGroupedCodebookCsv} className="px-3 py-2 rounded-lg bg-ink text-white text-sm font-semibold hover:bg-slate-800">Export Codebook CSV</button>
+                                <button onClick={exportCodeDefinitionsCsv} className="px-3 py-2 rounded-lg bg-tide text-white text-sm font-semibold hover:bg-teal-700">Export Code Definitions CSV</button>
+                                <button onClick={exportCategoryDefinitionsCsv} className="px-3 py-2 rounded-lg bg-ember text-white text-sm font-semibold hover:bg-orange-700">Export Category Definitions CSV</button>
                             </div>
                         </div>
                         <div className="mb-6 rounded-2xl border bg-white p-4 shadow-sm">
@@ -3091,6 +3220,88 @@
                                     </tbody>
                                 </table>
                             </div>
+                        </div>
+
+                        <div className="grid xl:grid-cols-2 gap-6 mt-6 pb-6">
+                            <section className="bg-white border rounded-2xl shadow-sm overflow-hidden">
+                                <div className="p-4 border-b bg-slate-50">
+                                    <h3 className="text-lg font-bold text-ink">Code Definitions</h3>
+                                    <p className="text-xs text-slate-500 mt-1">Codes are auto-listed from the codebook table. Add your definition and review up to 3 quote examples.</p>
+                                </div>
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-left border-collapse">
+                                        <thead>
+                                            <tr className="bg-slate-50 border-b text-slate-600 uppercase text-xs tracking-wider">
+                                                <th className="p-3 font-bold w-40">Code</th>
+                                                <th className="p-3 font-bold w-64">Definition</th>
+                                                <th className="p-3 font-bold">Examples (max 3)</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y text-sm">
+                                            {codeRows.length === 0 ? (
+                                                <tr><td colSpan="3" className="p-8 text-center text-slate-400 italic">No codes available yet.</td></tr>
+                                            ) : codeRows.map((row) => (
+                                                <tr key={`code_row_${row.name}`} className="align-top hover:bg-slate-50">
+                                                    <td className="p-3"><span className="bg-teal-100 border border-teal-200 text-teal-800 px-2.5 py-1 rounded-full text-xs font-bold">{row.name}</span></td>
+                                                    <td className="p-3">
+                                                        <textarea
+                                                            value={row.definition}
+                                                            onChange={(e) => updateDefinitionMap(codeDefinitions, onUpdateCodeDefinitions, row.name, e.target.value)}
+                                                            placeholder="Type definition for this code..."
+                                                            className="w-full min-h-[92px] border rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-tide resize-y"
+                                                        />
+                                                    </td>
+                                                    <td className="p-3">
+                                                        {row.examples.length === 0 ? <p className="text-xs text-slate-400 italic">No quote examples yet.</p> : row.examples.map((example, idx) => (
+                                                            <p key={`code_example_${row.name}_${idx}`} className="text-xs italic text-slate-700 mb-2">"{example}"</p>
+                                                        ))}
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </section>
+
+                            <section className="bg-white border rounded-2xl shadow-sm overflow-hidden">
+                                <div className="p-4 border-b bg-slate-50">
+                                    <h3 className="text-lg font-bold text-ink">Category Definitions</h3>
+                                    <p className="text-xs text-slate-500 mt-1">Categories are auto-listed from the codebook table. Add your definition and review up to 3 quote examples.</p>
+                                </div>
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-left border-collapse">
+                                        <thead>
+                                            <tr className="bg-slate-50 border-b text-slate-600 uppercase text-xs tracking-wider">
+                                                <th className="p-3 font-bold w-40">Category</th>
+                                                <th className="p-3 font-bold w-64">Definition</th>
+                                                <th className="p-3 font-bold">Examples (max 3)</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y text-sm">
+                                            {categoryRows.length === 0 ? (
+                                                <tr><td colSpan="3" className="p-8 text-center text-slate-400 italic">No categories available yet.</td></tr>
+                                            ) : categoryRows.map((row) => (
+                                                <tr key={`category_row_${row.name}`} className="align-top hover:bg-slate-50">
+                                                    <td className="p-3 text-slate-600 font-bold uppercase text-[10px]">{row.name}</td>
+                                                    <td className="p-3">
+                                                        <textarea
+                                                            value={row.definition}
+                                                            onChange={(e) => updateDefinitionMap(categoryDefinitions, onUpdateCategoryDefinitions, row.name, e.target.value)}
+                                                            placeholder="Type definition for this category..."
+                                                            className="w-full min-h-[92px] border rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-tide resize-y"
+                                                        />
+                                                    </td>
+                                                    <td className="p-3">
+                                                        {row.examples.length === 0 ? <p className="text-xs text-slate-400 italic">No quote examples yet.</p> : row.examples.map((example, idx) => (
+                                                            <p key={`category_example_${row.name}_${idx}`} className="text-xs italic text-slate-700 mb-2">"{example}"</p>
+                                                        ))}
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </section>
                         </div>
                     </div>
                 </div>
