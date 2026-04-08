@@ -57,6 +57,10 @@
 
         const dbName = 'QualiMacDB_v7';
         const participantPinKey = 'quali_participant_pin_hash';
+        const recoveryQuestionKey = 'quali_recovery_question';
+        const recoveryAnswerHashKey = 'quali_recovery_answer_hash';
+
+        const normalizeRecoveryAnswer = (value) => String(value || '').trim().toLowerCase();
 
         const openDB = () => new Promise((resolve, reject) => {
             const req = indexedDB.open(dbName, 1);
@@ -189,11 +193,16 @@
         };
 
         const offlineDataNotice = 'Offline app: QualiApp runs fully in your browser. All project data is stored only on this device in your browser storage unless you explicitly export a backup file.';
+        const appVersionLabel = 'v7.6.0';
+        const appVersionUpdatedAt = '2026-04-08 15:30 UTC';
+        const appLicenseNote = 'Licensed under Creative Commons Attribution-NonCommercial-ShareAlike (CC BY-NC-SA).';
 
         function AppFooter({ dark = false }) {
             return (
                 <footer className={`w-full px-4 py-3 text-center text-xs border-t ${dark ? 'bg-slate-950 text-slate-300 border-slate-800' : 'bg-white/80 text-slate-600 border-slate-200'}`}>
-                    {offlineDataNotice}
+                    <p>{offlineDataNotice}</p>
+                    <p className="mt-1">Version {appVersionLabel} • Updated {appVersionUpdatedAt}</p>
+                    <p className="mt-1">{appLicenseNote}</p>
                 </footer>
             );
         }
@@ -201,12 +210,49 @@
         function LockScreen({ onUnlock }) {
             const [password, setPassword] = useState('');
             const [error, setError] = useState('');
+            const [showRecovery, setShowRecovery] = useState(false);
+            const [recoveryQuestion, setRecoveryQuestion] = useState('');
+            const [recoveryAnswer, setRecoveryAnswer] = useState('');
+            const [newPassword, setNewPassword] = useState('');
+            const [confirmNewPassword, setConfirmNewPassword] = useState('');
 
             const handleSubmit = (e) => {
                 e.preventDefault();
                 const saved = localStorage.getItem('quali_pin');
                 if (saved && btoa(password) === saved) onUnlock();
                 else setError('Incorrect password.');
+            };
+
+            useEffect(() => {
+                setRecoveryQuestion(localStorage.getItem(recoveryQuestionKey) || '');
+            }, []);
+
+            const handleResetFromRecovery = async () => {
+                const savedHash = localStorage.getItem(recoveryAnswerHashKey);
+                if (!savedHash || !recoveryQuestion) {
+                    setError('Recovery is not configured on this device.');
+                    return;
+                }
+                if (newPassword.length < 4) {
+                    setError('New password must be at least 4 characters.');
+                    return;
+                }
+                if (newPassword !== confirmNewPassword) {
+                    setError('New password and confirmation do not match.');
+                    return;
+                }
+                const answerHash = await stringHash(normalizeRecoveryAnswer(recoveryAnswer));
+                if (answerHash !== savedHash) {
+                    setError('Recovery answer is incorrect.');
+                    return;
+                }
+
+                localStorage.setItem('quali_pin', btoa(newPassword));
+                setError('Password reset successful. You can now unlock.');
+                setShowRecovery(false);
+                setRecoveryAnswer('');
+                setNewPassword('');
+                setConfirmNewPassword('');
             };
 
             return (
@@ -227,6 +273,44 @@
                             <button type="submit" className="w-full bg-tide hover:bg-teal-600 text-white font-bold py-3 rounded-lg transition">
                                 Unlock
                             </button>
+                            <button
+                                type="button"
+                                onClick={() => setShowRecovery(prev => !prev)}
+                                className="w-full mt-3 text-sm text-slate-300 hover:text-white underline"
+                            >
+                                Forgot password?
+                            </button>
+
+                            {showRecovery && (
+                                <div className="mt-4 p-4 rounded-lg bg-slate-800 border border-slate-700 space-y-3 text-left">
+                                    <p className="text-xs text-slate-300 font-semibold">Recovery question</p>
+                                    <p className="text-sm text-white">{recoveryQuestion || 'No recovery question saved.'}</p>
+                                    <input
+                                        type="text"
+                                        value={recoveryAnswer}
+                                        onChange={(e) => setRecoveryAnswer(e.target.value)}
+                                        placeholder="Recovery answer"
+                                        className="w-full p-2 rounded bg-slate-900 border border-slate-600 text-sm"
+                                    />
+                                    <input
+                                        type="password"
+                                        value={newPassword}
+                                        onChange={(e) => setNewPassword(e.target.value)}
+                                        placeholder="New password"
+                                        className="w-full p-2 rounded bg-slate-900 border border-slate-600 text-sm"
+                                    />
+                                    <input
+                                        type="password"
+                                        value={confirmNewPassword}
+                                        onChange={(e) => setConfirmNewPassword(e.target.value)}
+                                        placeholder="Confirm new password"
+                                        className="w-full p-2 rounded bg-slate-900 border border-slate-600 text-sm"
+                                    />
+                                    <button type="button" onClick={handleResetFromRecovery} className="w-full bg-amber-600 hover:bg-amber-700 text-white font-semibold py-2 rounded">
+                                        Reset Password
+                                    </button>
+                                </div>
+                            )}
                         </form>
                     </div>
                     <AppFooter dark={true} />
@@ -234,26 +318,61 @@
             );
         }
 
-        function WelcomeScreen({ hasPassword, onStartNew, onRestoreExisting, onSetPassword }) {
+        function WelcomeScreen({ hasPassword, hasRecovery, onStartNew, onRestoreExisting, onConfigureNewProjectSecurity }) {
+            const [showHelp, setShowHelp] = useState(false);
+            const [showSetupSecurity, setShowSetupSecurity] = useState(false);
             const [passwordInput, setPasswordInput] = useState('');
+            const [confirmPasswordInput, setConfirmPasswordInput] = useState('');
+            const [recoveryQuestion, setRecoveryQuestion] = useState('');
+            const [recoveryAnswer, setRecoveryAnswer] = useState('');
+            const [setupError, setSetupError] = useState('');
 
-            const saveOptionalPassword = () => {
-                if (!passwordInput.trim()) return;
+            const beginNewProjectSetup = async () => {
+                setSetupError('');
                 if (passwordInput.length < 4) {
-                    alert('Password must be at least 4 characters.');
+                    setSetupError('Password must be at least 4 characters.');
                     return;
                 }
-                onSetPassword(passwordInput);
+                if (passwordInput !== confirmPasswordInput) {
+                    setSetupError('Password confirmation does not match.');
+                    return;
+                }
+                if (!recoveryQuestion.trim() || !recoveryAnswer.trim()) {
+                    setSetupError('Recovery question and answer are required.');
+                    return;
+                }
+
+                await onConfigureNewProjectSecurity({
+                    password: passwordInput,
+                    recoveryQuestion: recoveryQuestion.trim(),
+                    recoveryAnswer: recoveryAnswer.trim()
+                });
+
                 setPasswordInput('');
+                setConfirmPasswordInput('');
+                setRecoveryQuestion('');
+                setRecoveryAnswer('');
+                setShowSetupSecurity(false);
+                onStartNew();
             };
 
             return (
                 <div className="h-screen w-screen bg-hero text-ink flex flex-col">
                     <div className="flex-1 p-6 md:p-10 overflow-y-auto">
+                        <div className="max-w-5xl mx-auto flex justify-end mb-3">
+                            <button
+                                type="button"
+                                onClick={() => setShowHelp(true)}
+                                className="w-10 h-10 rounded-full border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 text-lg font-bold"
+                                title="How to use QualiApp"
+                            >
+                                ?
+                            </button>
+                        </div>
                         <div className="max-w-5xl mx-auto grid lg:grid-cols-[1.2fr,1fr] gap-6 pt-8">
                             <section className="bg-white border rounded-2xl p-8 shadow-soft">
                                 <h1 className="text-4xl font-display">Welcome to QualiApp</h1>
-                                <p className="text-slate-500 mt-3">Start a new project right away or restore an existing backup. Password protection is optional and can be enabled anytime.</p>
+                                <p className="text-slate-500 mt-3">Start a new project or restore an existing backup. New projects now begin with quick password and recovery setup.</p>
 
                                 <div className="mt-6 p-4 rounded-xl bg-teal-50 border-2 border-teal-200 text-teal-900">
                                     <p className="text-sm font-semibold">Your data stays on your device.</p>
@@ -261,7 +380,7 @@
                                 </div>
 
                                 <div className="mt-8 flex flex-col sm:flex-row gap-3">
-                                    <button onClick={onStartNew} className="bg-tide hover:bg-teal-600 text-white px-5 py-3 rounded-xl font-semibold">Start New Project</button>
+                                    <button onClick={() => setShowSetupSecurity(true)} className="bg-tide hover:bg-teal-600 text-white px-5 py-3 rounded-xl font-semibold">Start New Project</button>
                                     <button onClick={onRestoreExisting} className="bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 px-5 py-3 rounded-xl font-semibold">Open Existing Project</button>
                                 </div>
 
@@ -271,18 +390,82 @@
                             </section>
 
                             <section className="bg-white border rounded-2xl p-6 shadow-soft space-y-4">
-                                <h2 className="text-2xl font-display">Optional Security</h2>
-                                <p className="text-sm text-slate-500">Set an app password if this device is shared. Not required to begin coding.</p>
-                                <input
-                                    type="password"
-                                    value={passwordInput}
-                                    onChange={(e) => setPasswordInput(e.target.value)}
-                                    placeholder={hasPassword ? 'Update app password' : 'Set app password (optional)'}
-                                    className="w-full border rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-ink"
-                                />
-                                <button onClick={saveOptionalPassword} className="w-full bg-ink hover:bg-slate-800 text-white py-3 rounded-lg font-semibold">{hasPassword ? 'Update Password' : 'Set Password'}</button>
+                                <h2 className="text-2xl font-display">Simple Onboarding</h2>
+                                <p className="text-sm text-slate-500">1) Start New Project 2) Set password 3) Add recovery question 4) Begin coding.</p>
+                                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
+                                    <p>Password set: {hasPassword ? 'Yes' : 'No'}</p>
+                                    <p>Recovery set: {hasRecovery ? 'Yes' : 'No'}</p>
+                                </div>
+                                <button onClick={() => setShowHelp(true)} className="w-full bg-ink hover:bg-slate-800 text-white py-3 rounded-lg font-semibold">Open Quick Help</button>
                             </section>
                         </div>
+
+                        {showHelp && (
+                            <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center p-4 z-50">
+                                <div className="bg-white rounded-2xl shadow-soft border w-full max-w-xl p-6 space-y-3">
+                                    <div className="flex items-center justify-between">
+                                        <h3 className="text-2xl font-display">How to use QualiApp</h3>
+                                        <button onClick={() => setShowHelp(false)} className="text-slate-400 hover:text-slate-700 text-xl">×</button>
+                                    </div>
+                                    <ol className="list-decimal list-inside text-sm text-slate-700 space-y-2">
+                                        <li>Click Start New Project.</li>
+                                        <li>Create your app password and recovery question.</li>
+                                        <li>Add transcripts in Transcripts workspace.</li>
+                                        <li>Code transcript text in the editor.</li>
+                                        <li>Review outputs in Analysis Canvas and Codebook.</li>
+                                        <li>Use Backup and Restore regularly.</li>
+                                    </ol>
+                                    <div className="pt-2 flex justify-end">
+                                        <button onClick={() => setShowHelp(false)} className="px-4 py-2 rounded-lg bg-ink text-white font-semibold">Close</button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {showSetupSecurity && (
+                            <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center p-4 z-50">
+                                <div className="bg-white rounded-2xl shadow-soft border w-full max-w-lg p-6 space-y-4">
+                                    <div className="flex items-center justify-between">
+                                        <h3 className="text-2xl font-display">Secure New Project</h3>
+                                        <button onClick={() => setShowSetupSecurity(false)} className="text-slate-400 hover:text-slate-700 text-xl">×</button>
+                                    </div>
+                                    <p className="text-sm text-slate-500">Set a password now, then add a recovery question in case you forget it.</p>
+                                    <input
+                                        type="password"
+                                        value={passwordInput}
+                                        onChange={(e) => setPasswordInput(e.target.value)}
+                                        placeholder="Password (min 4 chars)"
+                                        className="w-full border rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-ink"
+                                    />
+                                    <input
+                                        type="password"
+                                        value={confirmPasswordInput}
+                                        onChange={(e) => setConfirmPasswordInput(e.target.value)}
+                                        placeholder="Confirm password"
+                                        className="w-full border rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-ink"
+                                    />
+                                    <input
+                                        type="text"
+                                        value={recoveryQuestion}
+                                        onChange={(e) => setRecoveryQuestion(e.target.value)}
+                                        placeholder="Recovery question (e.g., First school?)"
+                                        className="w-full border rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-ink"
+                                    />
+                                    <input
+                                        type="text"
+                                        value={recoveryAnswer}
+                                        onChange={(e) => setRecoveryAnswer(e.target.value)}
+                                        placeholder="Recovery answer"
+                                        className="w-full border rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-ink"
+                                    />
+                                    {setupError && <p className="text-sm text-red-600">{setupError}</p>}
+                                    <div className="flex justify-end gap-2">
+                                        <button onClick={() => setShowSetupSecurity(false)} className="px-4 py-2 rounded-lg bg-slate-100 text-slate-700 font-semibold">Cancel</button>
+                                        <button onClick={beginNewProjectSetup} className="px-4 py-2 rounded-lg bg-tide text-white font-semibold hover:bg-teal-600">Save and Start</button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
                     </div>
                     <AppFooter />
                 </div>
@@ -292,6 +475,10 @@
         function App() {
             const [startupState, setStartupState] = useState('checking');
             const [hasAppPassword, setHasAppPassword] = useState(false);
+            const [hasRecoverySetup, setHasRecoverySetup] = useState(false);
+            const [showRecoveryPrompt, setShowRecoveryPrompt] = useState(false);
+            const [recoveryQuestionInput, setRecoveryQuestionInput] = useState('');
+            const [recoveryAnswerInput, setRecoveryAnswerInput] = useState('');
             const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
             const [view, setView] = useState('dashboard');
             const [transcripts, setTranscripts] = useState([]);
@@ -314,6 +501,9 @@
             useEffect(() => {
                 const detectStartupState = async () => {
                     const savedPin = localStorage.getItem('quali_pin');
+                    const savedRecoveryQuestion = localStorage.getItem(recoveryQuestionKey);
+                    const savedRecoveryAnswerHash = localStorage.getItem(recoveryAnswerHashKey);
+                    const hasRecovery = !!(savedRecoveryQuestion && savedRecoveryAnswerHash);
                     const existingTranscripts = await dbGet('data', 'transcripts') || [];
                     const existingTags = await dbGet('data', 'tags') || [];
                     const existingArtifacts = await dbGet('data', 'global_artifacts') || [];
@@ -322,6 +512,8 @@
                     const hasProjectData = existingTranscripts.length > 0 || existingTags.length > 0 || existingArtifacts.length > 0 || existingParticipants.length > 0 || existingCanvases.length > 0;
 
                     setHasAppPassword(!!savedPin);
+                    setHasRecoverySetup(hasRecovery);
+                    setShowRecoveryPrompt(!!savedPin && !hasRecovery);
                     if (hasProjectData && savedPin) {
                         setStartupState('locked');
                         return;
@@ -559,7 +751,9 @@
                     files: serializedFiles,
                     security: {
                         appPin: localStorage.getItem('quali_pin') || null,
-                        participantPinHash: localStorage.getItem(participantPinKey) || null
+                        participantPinHash: localStorage.getItem(participantPinKey) || null,
+                        recoveryQuestion: localStorage.getItem(recoveryQuestionKey) || null,
+                        recoveryAnswerHash: localStorage.getItem(recoveryAnswerHashKey) || null
                     }
                 };
 
@@ -608,14 +802,37 @@
                 if (payload.security) {
                     if (payload.security.appPin) localStorage.setItem('quali_pin', payload.security.appPin);
                     if (payload.security.participantPinHash) localStorage.setItem(participantPinKey, payload.security.participantPinHash);
+                    if (payload.security.recoveryQuestion) localStorage.setItem(recoveryQuestionKey, payload.security.recoveryQuestion);
+                    if (payload.security.recoveryAnswerHash) localStorage.setItem(recoveryAnswerHashKey, payload.security.recoveryAnswerHash);
                     setHasAppPassword(!!localStorage.getItem('quali_pin'));
+                    setHasRecoverySetup(!!(localStorage.getItem(recoveryQuestionKey) && localStorage.getItem(recoveryAnswerHashKey)));
+                    setShowRecoveryPrompt(!!localStorage.getItem('quali_pin') && !(localStorage.getItem(recoveryQuestionKey) && localStorage.getItem(recoveryAnswerHashKey)));
                 }
             };
 
-            const handleSetAppPassword = (password) => {
+            const handleSetAppPassword = async (password) => {
                 localStorage.setItem('quali_pin', btoa(password));
                 setHasAppPassword(true);
+                const hasRecovery = !!(localStorage.getItem(recoveryQuestionKey) && localStorage.getItem(recoveryAnswerHashKey));
+                setHasRecoverySetup(hasRecovery);
+                if (!hasRecovery) setShowRecoveryPrompt(true);
                 alert('App password saved.');
+            };
+
+            const handleSetRecovery = async (question, answer) => {
+                const cleanQuestion = String(question || '').trim();
+                const cleanAnswer = normalizeRecoveryAnswer(answer);
+                if (!cleanQuestion || !cleanAnswer) return;
+                const hashedAnswer = await stringHash(cleanAnswer);
+                localStorage.setItem(recoveryQuestionKey, cleanQuestion);
+                localStorage.setItem(recoveryAnswerHashKey, hashedAnswer);
+                setHasRecoverySetup(true);
+                setShowRecoveryPrompt(false);
+            };
+
+            const handleConfigureNewProjectSecurity = async ({ password, recoveryQuestion, recoveryAnswer }) => {
+                await handleSetAppPassword(password);
+                await handleSetRecovery(recoveryQuestion, recoveryAnswer);
             };
 
             const computeProjectFingerprint = async () => {
@@ -785,7 +1002,7 @@
             };
 
             if (startupState === 'checking') return <div className="h-screen w-screen bg-hero flex flex-col"><div className="flex-1 flex items-center justify-center">Loading...</div><AppFooter /></div>;
-            if (startupState === 'welcome') return <WelcomeScreen hasPassword={hasAppPassword} onSetPassword={handleSetAppPassword} onStartNew={() => setStartupState('open')} onRestoreExisting={() => { setStartupState('open'); setView('backup'); }} />;
+            if (startupState === 'welcome') return <WelcomeScreen hasPassword={hasAppPassword} hasRecovery={hasRecoverySetup} onConfigureNewProjectSecurity={handleConfigureNewProjectSecurity} onStartNew={() => setStartupState('open')} onRestoreExisting={() => { setStartupState('open'); setView('backup'); }} />;
             if (startupState === 'locked') return <LockScreen onUnlock={() => setStartupState('open')} />;
             if (!isReady) return <div className="h-screen w-screen bg-hero flex flex-col"><div className="flex-1 flex items-center justify-center">Loading...</div><AppFooter /></div>;
 
@@ -838,6 +1055,46 @@
                         </aside>
 
                         <main className="flex-1 overflow-hidden flex flex-col relative">
+                            {showRecoveryPrompt && startupState === 'open' && (
+                                <div className="absolute inset-0 z-40 bg-slate-900/55 flex items-center justify-center p-4">
+                                    <div className="w-full max-w-lg bg-white rounded-2xl border shadow-soft p-6 space-y-4">
+                                        <h3 className="text-2xl font-display">Add Password Recovery</h3>
+                                        <p className="text-sm text-slate-500">Your app has a password but no recovery setup. Add a recovery question and answer now.</p>
+                                        <input
+                                            type="text"
+                                            value={recoveryQuestionInput}
+                                            onChange={(e) => setRecoveryQuestionInput(e.target.value)}
+                                            placeholder="Recovery question"
+                                            className="w-full border rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-ink"
+                                        />
+                                        <input
+                                            type="text"
+                                            value={recoveryAnswerInput}
+                                            onChange={(e) => setRecoveryAnswerInput(e.target.value)}
+                                            placeholder="Recovery answer"
+                                            className="w-full border rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-ink"
+                                        />
+                                        <div className="flex justify-end gap-2">
+                                            <button onClick={() => setShowRecoveryPrompt(false)} className="px-4 py-2 rounded-lg bg-slate-100 text-slate-700 font-semibold">Later</button>
+                                            <button
+                                                onClick={async () => {
+                                                    if (!recoveryQuestionInput.trim() || !recoveryAnswerInput.trim()) {
+                                                        alert('Please enter both recovery question and answer.');
+                                                        return;
+                                                    }
+                                                    await handleSetRecovery(recoveryQuestionInput, recoveryAnswerInput);
+                                                    setRecoveryQuestionInput('');
+                                                    setRecoveryAnswerInput('');
+                                                    alert('Recovery setup saved.');
+                                                }}
+                                                className="px-4 py-2 rounded-lg bg-tide text-white font-semibold hover:bg-teal-600"
+                                            >
+                                                Save Recovery
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
                             {view === 'dashboard' && (
                                 <Dashboard
                                     transcripts={transcripts}
@@ -2088,8 +2345,12 @@
                     if (mode !== 'edit' || !editableRef.current) return;
                     if (!isSelectionOrFocusInsideEditor()) return;
 
+                    const isSaveShortcut = (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's';
                     const isBoldShortcut = (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'b';
                     const isQuestionShortcut = (e.metaKey || e.ctrlKey) && (e.key === ';' || e.code === 'Semicolon');
+                    if (isSaveShortcut) {
+                        return;
+                    }
                     if (isBoldShortcut) {
                         e.preventDefault();
                         applyBold();
@@ -2581,6 +2842,56 @@
             const [editingThemeId, setEditingThemeId] = useState(null);
             const [editThemeName, setEditThemeName] = useState('');
             const [selectedFolders, setSelectedFolders] = useState([]);
+            const [showExportMenu, setShowExportMenu] = useState(false);
+
+            const csvEscape = (value) => {
+                const text = String(value ?? '');
+                if (/[",\n]/.test(text)) return `"${text.replace(/"/g, '""')}"`;
+                return text;
+            };
+
+            const downloadCsv = (filename, lines) => {
+                const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(blob);
+                link.download = filename;
+                link.click();
+                URL.revokeObjectURL(link.href);
+            };
+
+            const downloadWordDoc = (filename, htmlContent) => {
+                const wrapped = `<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body>${htmlContent}</body></html>`;
+                const blob = new Blob([wrapped], { type: 'application/msword;charset=utf-8' });
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(blob);
+                link.download = filename;
+                link.click();
+                URL.revokeObjectURL(link.href);
+            };
+
+            const escapeForHtml = (value) => String(value ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+
+            const buildApaTableHtml = (tableNumber, title, columns, rows, noteText) => {
+                const header = columns.map(col => `<th style="text-align:left;padding:6px;border-bottom:1.5px solid #000;font-weight:700;">${escapeForHtml(col)}</th>`).join('');
+                const body = rows.map(row => `<tr>${row.map(cell => `<td style="padding:6px;border-bottom:1px solid #d1d5db;vertical-align:top;">${escapeForHtml(cell)}</td>`).join('')}</tr>`).join('');
+
+                return `
+                    <div style="font-family:'Times New Roman',serif;font-size:12pt;line-height:1.35;margin-bottom:24px;">
+                        <div style="font-weight:700;">Table ${tableNumber}</div>
+                        <div style="font-style:italic;margin:4px 0 10px 0;">${escapeForHtml(title)}</div>
+                        <table style="width:100%;border-collapse:collapse;border-top:1.5px solid #000;">
+                            <thead><tr>${header}</tr></thead>
+                            <tbody>${body || `<tr><td colspan="${columns.length}" style="padding:6px;">No rows available.</td></tr>`}</tbody>
+                        </table>
+                        <div style="margin-top:6px;"><span style="font-style:italic;">Note.</span> ${escapeForHtml(noteText)}</div>
+                    </div>
+                `;
+            };
 
             useEffect(() => {
                 if (!activeCanvasId && canvases[0]) setActiveCanvasId(canvases[0].id);
@@ -2710,6 +3021,12 @@
             }, [tags, artifacts, observationTags, observations, transcriptById, selectedFolderSet, participantCodeById]);
 
             const activeCanvas = canvases.find(c => c.id === activeCanvasId) || null;
+            const uniqueCodeCount = useMemo(() => new Set(codeDetails.map(c => (c.name || '').trim()).filter(Boolean)).size, [codeDetails]);
+            const uniqueCategoryCount = useMemo(() => new Set(codeDetails.map(c => (c.category || 'Uncategorized').trim() || 'Uncategorized')).size, [codeDetails]);
+            const uniqueThemeCount = useMemo(() => {
+                if (!activeCanvas) return 0;
+                return new Set((activeCanvas.themes || []).map(t => (t.name || '').trim()).filter(Boolean)).size;
+            }, [activeCanvas]);
 
             const createCanvas = () => {
                 if (!newCanvasName.trim()) return;
@@ -2805,27 +3122,36 @@
 
             const exportCanvasCsv = () => {
                 if (!activeCanvas) return;
-                const escape = (v) => {
-                    const s = String(v ?? '');
-                    return `"${s.replace(/"/g, '""')}"`;
-                };
                 const lines = ['Theme,Code,Category,Quote Count,Quotes'];
                 tableRows.forEach((r) => {
                     const quotes = r.quotes.map(q => `[${q.source}] ${q.ref}: ${q.text}`).join(' || ');
                     lines.push([
-                        escape(r.theme),
-                        escape(r.code),
-                        escape(r.category),
-                        escape(r.quoteCount),
-                        escape(quotes)
+                        csvEscape(r.theme),
+                        csvEscape(r.code),
+                        csvEscape(r.category),
+                        csvEscape(r.quoteCount),
+                        csvEscape(quotes)
                     ].join(','));
                 });
-                const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
-                const a = document.createElement('a');
-                a.href = URL.createObjectURL(blob);
-                a.download = `${activeCanvas.name.replace(/\s+/g, '_')}_analysis_table.csv`;
-                a.click();
-                URL.revokeObjectURL(a.href);
+                downloadCsv(`${activeCanvas.name.replace(/\s+/g, '_')}_analysis_table.csv`, lines);
+            };
+
+            const exportCanvasApaDoc = () => {
+                if (!activeCanvas) return;
+                const html = buildApaTableHtml(
+                    1,
+                    `${activeCanvas.name} Analysis Table`,
+                    ['Theme', 'Code', 'Category', 'Quote Count', 'Quotes'],
+                    tableRows.map((row) => [
+                        row.theme,
+                        row.code,
+                        row.category,
+                        String(row.quoteCount),
+                        row.quotes.map(q => `[${q.source}] ${q.ref} (${q.folder}): ${q.text}`).join(' | ')
+                    ]),
+                    'Quotes are exported from current folder-filtered analysis rows and may be truncated for long entries.'
+                );
+                downloadWordDoc(`${activeCanvas.name.replace(/\s+/g, '_')}_APA7_analysis_table.doc`, html);
             };
 
             const toggleFolder = (folder) => {
@@ -2837,7 +3163,8 @@
                     <div className="max-w-7xl mx-auto space-y-6">
                         <div className="bg-white border rounded-2xl p-6 shadow-soft">
                             <h2 className="text-3xl font-display">Analysis Canvases</h2>
-                            <p className="text-slate-500 mt-1">Create theme buckets, filter by folder, review theme tables, and export to Excel-ready CSV.</p>
+                            <p className="text-slate-500 mt-1">Create theme buckets, filter by folder, review theme tables, and export via CSV or APA7 Word formats.</p>
+                            <p className="text-slate-500 mt-1">Unique codes: {uniqueCodeCount} • Unique categories: {uniqueCategoryCount} • Unique themes in selected canvas: {uniqueThemeCount}</p>
                         </div>
 
                         <div className="bg-white border rounded-2xl p-5 shadow-soft grid md:grid-cols-3 gap-4">
@@ -2966,7 +3293,24 @@
                                 <div className="bg-white border rounded-2xl p-5 shadow-soft mt-6">
                                     <div className="flex items-center justify-between mb-3">
                                         <h3 className="font-bold">Canvas Table (Themes, Codes, Quotes)</h3>
-                                        <button onClick={exportCanvasCsv} className="px-3 py-1.5 rounded-lg bg-ink text-white text-sm font-semibold hover:bg-slate-800">Export CSV (Excel)</button>
+                                        <div className="relative">
+                                            <button
+                                                type="button"
+                                                onClick={() => setShowExportMenu(prev => !prev)}
+                                                className="px-3 py-1.5 rounded-lg bg-ink text-white text-sm font-semibold hover:bg-slate-800"
+                                            >
+                                                Export
+                                            </button>
+                                            {showExportMenu && (
+                                                <div className="absolute right-0 mt-2 w-64 bg-white border border-slate-200 rounded-xl shadow-soft z-30 p-2">
+                                                    <p className="px-2 py-1 text-[11px] uppercase font-bold tracking-wide text-slate-500">CSV</p>
+                                                    <button type="button" onClick={() => { exportCanvasCsv(); setShowExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm text-slate-700">Canvas table (.csv)</button>
+                                                    <div className="my-1 border-t" />
+                                                    <p className="px-2 py-1 text-[11px] uppercase font-bold tracking-wide text-slate-500">APA7 Word (.doc)</p>
+                                                    <button type="button" onClick={() => { exportCanvasApaDoc(); setShowExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm text-slate-700">Canvas table APA7 (.doc)</button>
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
                                     {tableRows.length === 0 ? (
                                         <p className="text-sm text-slate-500">No rows yet. Assign codes to themes first.</p>
@@ -3021,6 +3365,56 @@
             const [coderId, setCoderId] = useState('');
             const [threshold, setThreshold] = useState(0.5);
             const [importing, setImporting] = useState(false);
+            const [showExportMenu, setShowExportMenu] = useState(false);
+
+            const csvEscape = (value) => {
+                const text = String(value ?? '');
+                if (/[",\n]/.test(text)) return `"${text.replace(/"/g, '""')}"`;
+                return text;
+            };
+
+            const downloadCsv = (filename, lines) => {
+                const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(blob);
+                link.download = filename;
+                link.click();
+                URL.revokeObjectURL(link.href);
+            };
+
+            const downloadWordDoc = (filename, htmlContent) => {
+                const wrapped = `<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body>${htmlContent}</body></html>`;
+                const blob = new Blob([wrapped], { type: 'application/msword;charset=utf-8' });
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(blob);
+                link.download = filename;
+                link.click();
+                URL.revokeObjectURL(link.href);
+            };
+
+            const escapeForHtml = (value) => String(value ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+
+            const buildApaTableHtml = (tableNumber, title, columns, rows, noteText) => {
+                const header = columns.map(col => `<th style="text-align:left;padding:6px;border-bottom:1.5px solid #000;font-weight:700;">${escapeForHtml(col)}</th>`).join('');
+                const body = rows.map(row => `<tr>${row.map(cell => `<td style="padding:6px;border-bottom:1px solid #d1d5db;vertical-align:top;">${escapeForHtml(cell)}</td>`).join('')}</tr>`).join('');
+
+                return `
+                    <div style="font-family:'Times New Roman',serif;font-size:12pt;line-height:1.35;margin-bottom:24px;">
+                        <div style="font-weight:700;">Table ${tableNumber}</div>
+                        <div style="font-style:italic;margin:4px 0 10px 0;">${escapeForHtml(title)}</div>
+                        <table style="width:100%;border-collapse:collapse;border-top:1.5px solid #000;">
+                            <thead><tr>${header}</tr></thead>
+                            <tbody>${body || `<tr><td colspan="${columns.length}" style="padding:6px;">No rows available.</td></tr>`}</tbody>
+                        </table>
+                        <div style="margin-top:6px;"><span style="font-style:italic;">Note.</span> ${escapeForHtml(noteText)}</div>
+                    </div>
+                `;
+            };
 
             const primaryThemeSet = useMemo(() => {
                 const out = new Set();
@@ -3140,6 +3534,46 @@
                 onExportReturn(coderId.trim());
             };
 
+            const exportAgreementCsv = () => {
+                const lines = ['Coder ID,Imported At,Agreement %,Matched Tags,Primary Only,Co-rater Only,Co-rater Tags,Shared Themes,Primary Theme Count,Co-rater Theme Count,Shared Artifact Codes'];
+                sessionStats.forEach((s) => {
+                    lines.push([
+                        csvEscape(s.coderId),
+                        csvEscape(new Date(s.importedAt).toLocaleString()),
+                        csvEscape(s.agreementPct),
+                        csvEscape(s.matched),
+                        csvEscape(s.primaryOnly),
+                        csvEscape(s.coOnly),
+                        csvEscape(s.coTagCount),
+                        csvEscape(s.sharedThemes),
+                        csvEscape(s.primaryThemes),
+                        csvEscape(s.coThemes),
+                        csvEscape(s.sharedArtifactCodes)
+                    ].join(','));
+                });
+                downloadCsv(`QualiApp_Agreement_Analysis_${new Date().toISOString().slice(0, 10)}.csv`, lines);
+            };
+
+            const exportAgreementApaDoc = () => {
+                const html = buildApaTableHtml(
+                    1,
+                    'Agreement Analysis Summary',
+                    ['Coder ID', 'Imported At', 'Agreement %', 'Matched', 'Primary only', 'Co-rater only', 'Shared themes', 'Shared artifact codes'],
+                    sessionStats.map((s) => [
+                        s.coderId,
+                        new Date(s.importedAt).toLocaleString(),
+                        `${s.agreementPct}%`,
+                        String(s.matched),
+                        String(s.primaryOnly),
+                        String(s.coOnly),
+                        String(s.sharedThemes),
+                        String(s.sharedArtifactCodes)
+                    ]),
+                    `Computed using overlap threshold = ${threshold}.`
+                );
+                downloadWordDoc(`QualiApp_APA7_Agreement_Analysis_${new Date().toISOString().slice(0, 10)}.doc`, html);
+            };
+
             return (
                 <div className="p-8 h-full overflow-y-auto">
                     <div className="max-w-7xl mx-auto space-y-6">
@@ -3174,10 +3608,32 @@
                         <section className="bg-white border rounded-2xl p-5 shadow-soft space-y-4">
                             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                                 <h3 className="text-lg font-bold">Agreement Analysis</h3>
-                                <label className="text-sm text-slate-600 flex items-center gap-2">
-                                    Overlap threshold
-                                    <input type="number" min="0.1" max="1" step="0.05" value={threshold} onChange={(e) => setThreshold(Math.min(1, Math.max(0.1, Number(e.target.value) || 0.5)))} className="w-20 border rounded p-1.5" />
-                                </label>
+                                <div className="flex items-center gap-3">
+                                    <label className="text-sm text-slate-600 flex items-center gap-2">
+                                        Overlap threshold
+                                        <input type="number" min="0.1" max="1" step="0.05" value={threshold} onChange={(e) => setThreshold(Math.min(1, Math.max(0.1, Number(e.target.value) || 0.5)))} className="w-20 border rounded p-1.5" />
+                                    </label>
+                                    {sessionStats.length > 0 && (
+                                        <div className="relative">
+                                            <button
+                                                type="button"
+                                                onClick={() => setShowExportMenu(prev => !prev)}
+                                                className="px-3 py-1.5 rounded-lg bg-ink text-white text-sm font-semibold hover:bg-slate-800"
+                                            >
+                                                Export
+                                            </button>
+                                            {showExportMenu && (
+                                                <div className="absolute right-0 mt-2 w-64 bg-white border border-slate-200 rounded-xl shadow-soft z-30 p-2">
+                                                    <p className="px-2 py-1 text-[11px] uppercase font-bold tracking-wide text-slate-500">CSV</p>
+                                                    <button type="button" onClick={() => { exportAgreementCsv(); setShowExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm text-slate-700">Agreement analysis (.csv)</button>
+                                                    <div className="my-1 border-t" />
+                                                    <p className="px-2 py-1 text-[11px] uppercase font-bold tracking-wide text-slate-500">APA7 Word (.doc)</p>
+                                                    <button type="button" onClick={() => { exportAgreementApaDoc(); setShowExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm text-slate-700">Agreement analysis APA7 (.doc)</button>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
                             </div>
 
                             {sessionStats.length === 0 ? (
@@ -3828,6 +4284,7 @@
             }, [tags, transcripts, participants, artifacts, observations, observationTags, searchTerm, sortBy, sortDirection]);
 
             const uniqueCodeCount = useMemo(() => new Set(tableData.map(t => t.tagName)).size, [tableData]);
+            const uniqueCategoryCount = useMemo(() => new Set(tableData.map(t => t.category)).size, [tableData]);
             const pickExamples = (quotes) => Array.from(new Set((quotes || []).map(q => (q || '').trim()).filter(Boolean))).slice(0, 3);
 
             const toDefinitionRecord = (value) => {
@@ -4024,7 +4481,7 @@
                         <div className="flex flex-col md:flex-row md:justify-between md:items-end gap-4 mb-8 bg-white p-6 rounded-2xl shadow-soft border">
                             <div>
                                 <h2 className="text-3xl font-display">Codebook Manager</h2>
-                                <p className="text-slate-500 mt-2">{tableData.length} grouped code entries across {uniqueCodeCount} unique codes (transcripts + artifacts + observations).</p>
+                                <p className="text-slate-500 mt-2">{tableData.length} grouped code entries across {uniqueCodeCount} unique codes and {uniqueCategoryCount} unique categories (transcripts + artifacts + observations).</p>
                                 <div className="mt-3 flex flex-wrap items-center gap-3 text-xs">
                                     <span className="font-semibold text-slate-500 uppercase tracking-wide">Legend</span>
                                     <span className="inline-flex items-center gap-1.5">
