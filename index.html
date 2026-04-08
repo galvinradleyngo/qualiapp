@@ -1687,8 +1687,6 @@
             const [tagFormCategory, setTagFormCategory] = useState('');
             const [tagFormName, setTagFormName] = useState('');
             const [tagFormMemo, setTagFormMemo] = useState('');
-            const emptyPendingTag = () => ({ category: '', tagName: '' });
-            const [pendingTagRows, setPendingTagRows] = useState([emptyPendingTag()]);
 
             const [logType, setLogType] = useState('');
             const [logNote, setLogNote] = useState('');
@@ -1932,83 +1930,40 @@
                         setTagFormCategory('');
                         setTagFormName('');
                         setTagFormMemo('');
-                        setPendingTagRows([emptyPendingTag()]);
                     } else {
                         setPendingSelection(null);
                     }
                 }, 40);
             };
 
-            const setPendingTagField = (idx, field, value) => {
-                setPendingTagRows((prev) => prev.map((row, rowIdx) => rowIdx === idx ? { ...row, [field]: value } : row));
-            };
-
-            const addPendingTagRow = () => {
-                setPendingTagRows((prev) => [...prev, emptyPendingTag()]);
-            };
-
-            const removePendingTagRow = (idx) => {
-                setPendingTagRows((prev) => {
-                    if (prev.length <= 1) return prev;
-                    return prev.filter((_, rowIdx) => rowIdx !== idx);
-                });
-            };
-
             const submitTagForm = (e) => {
                 e.preventDefault();
 
-                if (editingTagId) {
-                    if (!tagFormName.trim()) return;
-                    const normalizedCategory = tagFormCategory.trim() || 'Uncategorized';
-                    const normalizedCode = tagFormName.trim();
+                if (!tagFormName.trim()) return;
 
+                const normalizedCategory = tagFormCategory.trim() || 'Uncategorized';
+                const normalizedCode = tagFormName.trim();
+
+                if (editingTagId) {
                     const existing = tags.find(t => t.id === editingTagId);
                     if (!existing) return;
                     onUpdateTag({ ...existing, category: normalizedCategory, tagName: normalizedCode, memo: tagFormMemo });
                     setEditingTagId(null);
                     setSelectedTagId(existing.id);
-                    setTagFormCategory('');
-                    setTagFormName('');
-                    setTagFormMemo('');
-                    return;
-                }
-
-                const normalizedRows = pendingTagRows
-                    .map((row) => ({
-                        category: (row.category || '').trim() || 'Uncategorized',
-                        tagName: (row.tagName || '').trim()
-                    }))
-                    .filter((row) => row.tagName);
-
-                if (normalizedRows.length === 0) return;
-
-                const seen = new Set();
-                const dedupedRows = normalizedRows.filter((row) => {
-                    const key = `${row.category.toLowerCase()}::${row.tagName.toLowerCase()}`;
-                    if (seen.has(key)) return false;
-                    seen.add(key);
-                    return true;
-                });
-
-                if (!pendingSelection) return;
-
-                const baseId = Date.now().toString();
-                dedupedRows.forEach((row, idx) => {
+                } else if (pendingSelection) {
                     onAddTag({
-                        id: `${baseId}_${idx}`,
+                        id: Date.now().toString(),
                         transcriptId: transcript.id,
-                        category: row.category,
-                        tagName: row.tagName,
-                        memo: '',
+                        category: normalizedCategory,
+                        tagName: normalizedCode,
+                        memo: tagFormMemo,
                         textSnippet: pendingSelection.text,
                         start: pendingSelection.start,
                         end: pendingSelection.end
                     });
-                });
-
-                setPendingSelection(null);
-                window.getSelection().removeAllRanges();
-                setPendingTagRows([emptyPendingTag()]);
+                    setPendingSelection(null);
+                    window.getSelection().removeAllRanges();
+                }
 
                 setTagFormCategory('');
                 setTagFormName('');
@@ -2032,7 +1987,6 @@
                 setTagFormCategory('');
                 setTagFormName('');
                 setTagFormMemo('');
-                setPendingTagRows([emptyPendingTag()]);
             };
 
             const scrollToTagHighlight = (tagId) => {
@@ -2050,7 +2004,6 @@
                 setTagFormCategory('');
                 setTagFormName('');
                 setTagFormMemo('');
-                setPendingTagRows([emptyPendingTag()]);
                 setTimeout(() => scrollToTagHighlight(tag.id), 0);
             };
 
@@ -2250,84 +2203,38 @@
                                             <datalist id="categories">{existingCategories.map(c => <option key={c} value={c} />)}</datalist>
                                             <datalist id="tags">{existingCodes.map(c => <option key={c} value={c} />)}</datalist>
 
-                                            {editingTagId ? (
-                                                <>
-                                                    <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1">Parent Category</label>
-                                                    <input
-                                                        type="text"
-                                                        list="categories"
-                                                        value={tagFormCategory}
-                                                        onChange={e => setTagFormCategory(e.target.value)}
-                                                        placeholder="e.g. Coping"
-                                                        className="w-full border border-slate-300 rounded p-2 text-sm mb-3 focus:ring-2 focus:ring-tide outline-none"
-                                                    />
+                                            <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1">Parent Category</label>
+                                            <input
+                                                type="text"
+                                                list="categories"
+                                                value={tagFormCategory}
+                                                onChange={e => setTagFormCategory(e.target.value)}
+                                                placeholder="e.g. Coping"
+                                                className="w-full border border-slate-300 rounded p-2 text-sm mb-3 focus:ring-2 focus:ring-tide outline-none"
+                                            />
 
-                                                    <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1">Specific Code *</label>
-                                                    <input
-                                                        type="text"
-                                                        autoFocus
-                                                        list="tags"
-                                                        value={tagFormName}
-                                                        onChange={e => setTagFormName(e.target.value)}
-                                                        placeholder="e.g. Humor"
-                                                        className="w-full border border-slate-300 rounded p-2 text-sm mb-3 focus:ring-2 focus:ring-tide outline-none"
-                                                    />
+                                            <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1">Specific Code *</label>
+                                            <input
+                                                type="text"
+                                                autoFocus
+                                                list="tags"
+                                                value={tagFormName}
+                                                onChange={e => setTagFormName(e.target.value)}
+                                                placeholder="e.g. Humor"
+                                                className="w-full border border-slate-300 rounded p-2 text-sm mb-3 focus:ring-2 focus:ring-tide outline-none"
+                                            />
 
-                                                    <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1">Code Memo</label>
-                                                    <textarea
-                                                        value={tagFormMemo}
-                                                        onChange={e => setTagFormMemo(e.target.value)}
-                                                        placeholder="Why is this interesting?"
-                                                        className="w-full border border-slate-300 rounded p-2 text-sm mb-4 focus:ring-2 focus:ring-tide outline-none resize-none h-20"
-                                                    />
-                                                </>
-                                            ) : (
-                                                <>
-                                                    <div className="space-y-2 mb-4">
-                                                        {pendingTagRows.map((row, idx) => (
-                                                            <div key={`pending_row_${idx}`} className="grid grid-cols-[1fr,1fr,auto] gap-2 items-center">
-                                                                <input
-                                                                    type="text"
-                                                                    list="categories"
-                                                                    value={row.category}
-                                                                    onChange={(e) => setPendingTagField(idx, 'category', e.target.value)}
-                                                                    placeholder="Parent category"
-                                                                    className="border border-slate-300 rounded p-2 text-sm focus:ring-2 focus:ring-tide outline-none"
-                                                                />
-                                                                <input
-                                                                    type="text"
-                                                                    list="tags"
-                                                                    value={row.tagName}
-                                                                    onChange={(e) => setPendingTagField(idx, 'tagName', e.target.value)}
-                                                                    placeholder="Code"
-                                                                    className="border border-slate-300 rounded p-2 text-sm focus:ring-2 focus:ring-tide outline-none"
-                                                                />
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => removePendingTagRow(idx)}
-                                                                    className="px-2 py-2 text-xs border border-slate-300 rounded text-slate-600 hover:bg-slate-100 disabled:opacity-40"
-                                                                    disabled={pendingTagRows.length <= 1}
-                                                                    title="Remove row"
-                                                                >
-                                                                    Remove
-                                                                </button>
-                                                            </div>
-                                                        ))}
-                                                    </div>
-
-                                                    <button
-                                                        type="button"
-                                                        onClick={addPendingTagRow}
-                                                        className="w-full mb-4 py-2 border border-dashed border-slate-400 text-slate-700 rounded font-semibold hover:bg-slate-100"
-                                                    >
-                                                        + Add Another Tag
-                                                    </button>
-                                                </>
-                                            )}
+                                            <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1">Code Memo</label>
+                                            <textarea
+                                                value={tagFormMemo}
+                                                onChange={e => setTagFormMemo(e.target.value)}
+                                                placeholder="Why is this interesting?"
+                                                className="w-full border border-slate-300 rounded p-2 text-sm mb-4 focus:ring-2 focus:ring-tide outline-none resize-none h-20"
+                                            />
 
                                             <div className="flex gap-2">
                                                 <button type="button" onClick={cancelTagForm} className="flex-1 py-2 bg-white border border-slate-300 text-slate-600 font-semibold rounded">Cancel</button>
-                                                <button type="submit" className={`flex-1 py-2 text-white font-bold rounded ${editingTagId ? 'bg-orange-500 hover:bg-orange-600' : 'bg-tide hover:bg-teal-600'}`}>{editingTagId ? 'Update' : 'Save Tags'}</button>
+                                                <button type="submit" className={`flex-1 py-2 text-white font-bold rounded ${editingTagId ? 'bg-orange-500 hover:bg-orange-600' : 'bg-tide hover:bg-teal-600'}`}>{editingTagId ? 'Update' : 'Save Code'}</button>
                                             </div>
                                         </form>
                                     ) : (
