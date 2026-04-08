@@ -3029,23 +3029,28 @@
                                 <p className="text-slate-500 mt-2">{tableData.length} grouped code entries across {uniqueCodeCount} unique codes (transcripts + artifacts).</p>
                             </div>
                         </div>
-                        <div className="mb-6 flex flex-col lg:flex-row lg:items-end gap-3">
-                            <input type="text" placeholder="Search categories, codes, memos, or quotes..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full lg:flex-1 p-3 border rounded-xl shadow-sm outline-none focus:ring-2 focus:ring-tide" />
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full lg:w-auto">
-                                <label className="text-xs font-bold uppercase tracking-wide text-slate-500">
-                                    Sort By
-                                    <select value={sortBy} onChange={e => setSortBy(e.target.value)} className="mt-1 w-full sm:w-44 p-3 border rounded-xl bg-white text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-tide">
-                                        <option value="category">Category</option>
-                                        <option value="code">Code</option>
-                                    </select>
-                                </label>
-                                <label className="text-xs font-bold uppercase tracking-wide text-slate-500">
-                                    Direction
-                                    <select value={sortDirection} onChange={e => setSortDirection(e.target.value)} className="mt-1 w-full sm:w-40 p-3 border rounded-xl bg-white text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-tide">
-                                        <option value="asc">A to Z</option>
-                                        <option value="desc">Z to A</option>
-                                    </select>
-                                </label>
+                        <div className="mb-6 rounded-2xl border bg-white p-4 shadow-sm">
+                            <div className="flex flex-col xl:flex-row xl:items-end gap-4">
+                                <div className="w-full xl:flex-1">
+                                    <label className="block text-xs font-bold uppercase tracking-wide text-slate-500 mb-1.5">Search</label>
+                                    <input type="text" placeholder="Search categories, codes, memos, or quotes..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full p-3 border rounded-xl outline-none focus:ring-2 focus:ring-tide" />
+                                </div>
+                                <div className="w-full xl:w-auto grid grid-cols-1 sm:grid-cols-2 gap-3 xl:min-w-[360px]">
+                                    <div>
+                                        <label className="block text-xs font-bold uppercase tracking-wide text-slate-500 mb-1.5">Sort By</label>
+                                        <select value={sortBy} onChange={e => setSortBy(e.target.value)} className="w-full p-3 border rounded-xl bg-white text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-tide">
+                                            <option value="category">Category</option>
+                                            <option value="code">Code</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold uppercase tracking-wide text-slate-500 mb-1.5">Direction</label>
+                                        <select value={sortDirection} onChange={e => setSortDirection(e.target.value)} className="w-full p-3 border rounded-xl bg-white text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-tide">
+                                            <option value="asc">A to Z</option>
+                                            <option value="desc">Z to A</option>
+                                        </select>
+                                    </div>
+                                </div>
                             </div>
                         </div>
 
