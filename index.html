@@ -2952,6 +2952,7 @@
             const [sortBy, setSortBy] = useState('category');
             const [sortDirection, setSortDirection] = useState('asc');
             const [showExportMenu, setShowExportMenu] = useState(false);
+            const [definitionsEditMode, setDefinitionsEditMode] = useState(false);
 
             const csvEscape = (value) => {
                 const text = String(value ?? '');
@@ -3302,28 +3303,37 @@
                                     </span>
                                 </div>
                             </div>
-                            <div className="relative">
+                            <div className="flex items-center gap-2">
                                 <button
                                     type="button"
-                                    onClick={() => setShowExportMenu(prev => !prev)}
-                                    className="px-4 py-2 rounded-lg bg-ink text-white text-sm font-semibold hover:bg-slate-800"
+                                    onClick={() => setDefinitionsEditMode(prev => !prev)}
+                                    className={`px-4 py-2 rounded-lg text-sm font-semibold border ${definitionsEditMode ? 'bg-amber-100 border-amber-300 text-amber-900 hover:bg-amber-200' : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-100'}`}
                                 >
-                                    Export
+                                    {definitionsEditMode ? 'Exit Edit Mode' : 'Edit Mode'}
                                 </button>
-                                {showExportMenu && (
-                                    <div className="absolute right-0 mt-2 w-72 bg-white border border-slate-200 rounded-xl shadow-soft z-30 p-2">
-                                        <p className="px-2 py-1 text-[11px] uppercase font-bold tracking-wide text-slate-500">CSV</p>
-                                        <button type="button" onClick={() => { exportGroupedCodebookCsv(); setShowExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm text-slate-700">Codebook table (.csv)</button>
-                                        <button type="button" onClick={() => { exportCodeDefinitionsCsv(); setShowExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm text-slate-700">Code definitions (.csv)</button>
-                                        <button type="button" onClick={() => { exportCategoryDefinitionsCsv(); setShowExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm text-slate-700">Category definitions (.csv)</button>
-                                        <div className="my-1 border-t" />
-                                        <p className="px-2 py-1 text-[11px] uppercase font-bold tracking-wide text-slate-500">APA7 Word (.doc)</p>
-                                        <button type="button" onClick={() => { exportCodebookApaDoc(); setShowExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm text-slate-700">Codebook table APA7 (.doc)</button>
-                                        <button type="button" onClick={() => { exportCodeDefinitionsApaDoc(); setShowExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm text-slate-700">Code definitions APA7 (.doc)</button>
-                                        <button type="button" onClick={() => { exportCategoryDefinitionsApaDoc(); setShowExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm text-slate-700">Category definitions APA7 (.doc)</button>
-                                        <button type="button" onClick={() => { exportAllApaDoc(); setShowExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm font-semibold text-ink">All codebook tables APA7 (.doc)</button>
-                                    </div>
-                                )}
+                                <div className="relative">
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowExportMenu(prev => !prev)}
+                                        className="px-4 py-2 rounded-lg bg-ink text-white text-sm font-semibold hover:bg-slate-800"
+                                    >
+                                        Export
+                                    </button>
+                                    {showExportMenu && (
+                                        <div className="absolute right-0 mt-2 w-72 bg-white border border-slate-200 rounded-xl shadow-soft z-30 p-2">
+                                            <p className="px-2 py-1 text-[11px] uppercase font-bold tracking-wide text-slate-500">CSV</p>
+                                            <button type="button" onClick={() => { exportGroupedCodebookCsv(); setShowExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm text-slate-700">Codebook table (.csv)</button>
+                                            <button type="button" onClick={() => { exportCodeDefinitionsCsv(); setShowExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm text-slate-700">Code definitions (.csv)</button>
+                                            <button type="button" onClick={() => { exportCategoryDefinitionsCsv(); setShowExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm text-slate-700">Category definitions (.csv)</button>
+                                            <div className="my-1 border-t" />
+                                            <p className="px-2 py-1 text-[11px] uppercase font-bold tracking-wide text-slate-500">APA7 Word (.doc)</p>
+                                            <button type="button" onClick={() => { exportCodebookApaDoc(); setShowExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm text-slate-700">Codebook table APA7 (.doc)</button>
+                                            <button type="button" onClick={() => { exportCodeDefinitionsApaDoc(); setShowExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm text-slate-700">Code definitions APA7 (.doc)</button>
+                                            <button type="button" onClick={() => { exportCategoryDefinitionsApaDoc(); setShowExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm text-slate-700">Category definitions APA7 (.doc)</button>
+                                            <button type="button" onClick={() => { exportAllApaDoc(); setShowExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm font-semibold text-ink">All codebook tables APA7 (.doc)</button>
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                         </div>
                         <div className="mb-6 rounded-2xl border bg-white p-4 shadow-sm">
@@ -3367,7 +3377,11 @@
                                         {tableData.length === 0 ? <tr><td colSpan="5" className="p-12 text-center text-slate-400 italic">No codes match your search.</td></tr> : tableData.map((row) => (
                                             <tr key={row.id} className="hover:bg-slate-50 align-top">
                                                 <td className="p-4 text-slate-500 font-bold uppercase text-[10px]">{row.category}</td>
-                                                <td className="p-4"><span className="bg-teal-100 border border-teal-200 text-teal-800 px-3 py-1 rounded-full text-xs font-bold">{row.tagName}</span></td>
+                                                <td className="p-4">
+                                                    <span className="inline-block max-w-[220px] whitespace-normal break-words leading-tight bg-teal-100 border border-teal-200 text-teal-800 px-3 py-1.5 rounded-xl text-xs font-bold">
+                                                        {row.tagName}
+                                                    </span>
+                                                </td>
                                                 <td className="p-4 text-slate-700">
                                                     <span className="font-bold block">{row.transcriptLabel}</span>
                                                     <span className={`text-[10px] mt-1 inline-block px-2 py-0.5 rounded-full ${row.sourceType === 'Artifact' ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-700'}`}>{row.sourceType}</span>
@@ -3394,7 +3408,7 @@
                             <section className="w-full bg-white border rounded-2xl shadow-sm overflow-hidden">
                                 <div className="p-4 border-b bg-slate-50">
                                     <h3 className="text-lg font-bold text-ink">Code Definitions</h3>
-                                    <p className="text-xs text-slate-500 mt-1">Codes are auto-listed from the codebook table. Complete definition, use/exclusion criteria, and exemplars.</p>
+                                    <p className="text-xs text-slate-500 mt-1">{definitionsEditMode ? 'Edit mode is on. Fill in the full code definition fields.' : 'Collapsed view is on. Turn on Edit Mode to fill in definition fields.'}</p>
                                 </div>
                                 <div className="overflow-x-auto">
                                     <table className="w-full text-left border-collapse">
@@ -3409,52 +3423,73 @@
                                                 <tr><td colSpan="2" className="p-8 text-center text-slate-400 italic">No codes available yet.</td></tr>
                                             ) : codeRows.map((row) => (
                                                 <tr key={`code_row_${row.name}`} className="align-top hover:bg-slate-50">
-                                                    <td className="p-3"><span className="bg-teal-100 border border-teal-200 text-teal-800 px-2.5 py-1 rounded-full text-xs font-bold">{row.name}</span></td>
                                                     <td className="p-3">
-                                                        <div className="grid md:grid-cols-2 gap-3">
-                                                            <div>
-                                                                <label className="block text-[11px] font-semibold text-slate-600 mb-1">Definition</label>
-                                                                <textarea
-                                                                    value={row.definition}
-                                                                    onChange={(e) => updateDefinitionMap(codeDefinitions, onUpdateCodeDefinitions, row.name, 'definition', e.target.value)}
-                                                                    placeholder="Detailed explanation of what this code represents..."
-                                                                    className="w-full min-h-[90px] border rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-tide resize-y"
-                                                                />
+                                                        <span className="inline-block max-w-[220px] whitespace-normal break-words leading-tight bg-teal-100 border border-teal-200 text-teal-800 px-3 py-1.5 rounded-xl text-xs font-bold">
+                                                            {row.name}
+                                                        </span>
+                                                    </td>
+                                                    <td className="p-3">
+                                                        {definitionsEditMode ? (
+                                                            <>
+                                                                <div className="grid md:grid-cols-2 gap-3">
+                                                                    <div>
+                                                                        <label className="block text-[11px] font-semibold text-slate-600 mb-1">Definition</label>
+                                                                        <textarea
+                                                                            value={row.definition}
+                                                                            onChange={(e) => updateDefinitionMap(codeDefinitions, onUpdateCodeDefinitions, row.name, 'definition', e.target.value)}
+                                                                            placeholder="Detailed explanation of what this code represents..."
+                                                                            className="w-full min-h-[90px] border rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-tide resize-y"
+                                                                        />
+                                                                    </div>
+                                                                    <div>
+                                                                        <label className="block text-[11px] font-semibold text-slate-600 mb-1">Description / When to Use</label>
+                                                                        <textarea
+                                                                            value={row.inclusion}
+                                                                            onChange={(e) => updateDefinitionMap(codeDefinitions, onUpdateCodeDefinitions, row.name, 'inclusion', e.target.value)}
+                                                                            placeholder="Criteria for applying this code..."
+                                                                            className="w-full min-h-[90px] border rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-tide resize-y"
+                                                                        />
+                                                                    </div>
+                                                                    <div>
+                                                                        <label className="block text-[11px] font-semibold text-slate-600 mb-1">When Not to Use / Exclusion Criteria</label>
+                                                                        <textarea
+                                                                            value={row.exclusion}
+                                                                            onChange={(e) => updateDefinitionMap(codeDefinitions, onUpdateCodeDefinitions, row.name, 'exclusion', e.target.value)}
+                                                                            placeholder="Guidelines for when not to apply this code..."
+                                                                            className="w-full min-h-[90px] border rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-tide resize-y"
+                                                                        />
+                                                                    </div>
+                                                                    <div>
+                                                                        <label className="block text-[11px] font-semibold text-slate-600 mb-1">Data Exemplars / Examples</label>
+                                                                        <textarea
+                                                                            value={row.exemplars}
+                                                                            onChange={(e) => updateDefinitionMap(codeDefinitions, onUpdateCodeDefinitions, row.name, 'exemplars', e.target.value)}
+                                                                            placeholder="Add core matches and edge cases..."
+                                                                            className="w-full min-h-[90px] border rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-tide resize-y"
+                                                                        />
+                                                                    </div>
+                                                                </div>
+                                                                <div className="mt-3 bg-slate-50 border rounded-lg p-2">
+                                                                    <p className="text-[11px] font-semibold text-slate-500 mb-1">Auto examples from highlighted quotes (max 3)</p>
+                                                                    {row.examples.length === 0 ? <p className="text-xs text-slate-400 italic">No quote examples yet.</p> : row.examples.map((example, idx) => (
+                                                                        <p key={`code_example_${row.name}_${idx}`} className="text-xs italic text-slate-700 mb-1">"{example}"</p>
+                                                                    ))}
+                                                                </div>
+                                                            </>
+                                                        ) : (
+                                                            <div className="space-y-2 text-sm">
+                                                                <div><span className="font-semibold text-slate-700">Definition:</span> <span className="text-slate-600">{row.definition || 'Not provided yet.'}</span></div>
+                                                                <div><span className="font-semibold text-slate-700">When to Use:</span> <span className="text-slate-600">{row.inclusion || 'Not provided yet.'}</span></div>
+                                                                <div><span className="font-semibold text-slate-700">Exclusion Criteria:</span> <span className="text-slate-600">{row.exclusion || 'Not provided yet.'}</span></div>
+                                                                <div><span className="font-semibold text-slate-700">Exemplars:</span> <span className="text-slate-600">{row.exemplars || 'Not provided yet.'}</span></div>
+                                                                <div className="mt-2 bg-slate-50 border rounded-lg p-2">
+                                                                    <p className="text-[11px] font-semibold text-slate-500 mb-1">Auto examples from highlighted quotes (max 3)</p>
+                                                                    {row.examples.length === 0 ? <p className="text-xs text-slate-400 italic">No quote examples yet.</p> : row.examples.map((example, idx) => (
+                                                                        <p key={`code_example_${row.name}_${idx}`} className="text-xs italic text-slate-700 mb-1">"{example}"</p>
+                                                                    ))}
+                                                                </div>
                                                             </div>
-                                                            <div>
-                                                                <label className="block text-[11px] font-semibold text-slate-600 mb-1">Description / When to Use</label>
-                                                                <textarea
-                                                                    value={row.inclusion}
-                                                                    onChange={(e) => updateDefinitionMap(codeDefinitions, onUpdateCodeDefinitions, row.name, 'inclusion', e.target.value)}
-                                                                    placeholder="Criteria for applying this code..."
-                                                                    className="w-full min-h-[90px] border rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-tide resize-y"
-                                                                />
-                                                            </div>
-                                                            <div>
-                                                                <label className="block text-[11px] font-semibold text-slate-600 mb-1">When Not to Use / Exclusion Criteria</label>
-                                                                <textarea
-                                                                    value={row.exclusion}
-                                                                    onChange={(e) => updateDefinitionMap(codeDefinitions, onUpdateCodeDefinitions, row.name, 'exclusion', e.target.value)}
-                                                                    placeholder="Guidelines for when not to apply this code..."
-                                                                    className="w-full min-h-[90px] border rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-tide resize-y"
-                                                                />
-                                                            </div>
-                                                            <div>
-                                                                <label className="block text-[11px] font-semibold text-slate-600 mb-1">Data Exemplars / Examples</label>
-                                                                <textarea
-                                                                    value={row.exemplars}
-                                                                    onChange={(e) => updateDefinitionMap(codeDefinitions, onUpdateCodeDefinitions, row.name, 'exemplars', e.target.value)}
-                                                                    placeholder="Add core matches and edge cases..."
-                                                                    className="w-full min-h-[90px] border rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-tide resize-y"
-                                                                />
-                                                            </div>
-                                                        </div>
-                                                        <div className="mt-3 bg-slate-50 border rounded-lg p-2">
-                                                            <p className="text-[11px] font-semibold text-slate-500 mb-1">Auto examples from highlighted quotes (max 3)</p>
-                                                            {row.examples.length === 0 ? <p className="text-xs text-slate-400 italic">No quote examples yet.</p> : row.examples.map((example, idx) => (
-                                                                <p key={`code_example_${row.name}_${idx}`} className="text-xs italic text-slate-700 mb-1">"{example}"</p>
-                                                            ))}
-                                                        </div>
+                                                        )}
                                                     </td>
                                                 </tr>
                                             ))}
@@ -3466,7 +3501,7 @@
                             <section className="w-full bg-white border rounded-2xl shadow-sm overflow-hidden">
                                 <div className="p-4 border-b bg-slate-50">
                                     <h3 className="text-lg font-bold text-ink">Category Definitions</h3>
-                                    <p className="text-xs text-slate-500 mt-1">Categories are auto-listed from the codebook table. Complete definition, use/exclusion criteria, and exemplars.</p>
+                                    <p className="text-xs text-slate-500 mt-1">{definitionsEditMode ? 'Edit mode is on. Fill in the full category definition fields.' : 'Collapsed view is on. Turn on Edit Mode to fill in definition fields.'}</p>
                                 </div>
                                 <div className="overflow-x-auto">
                                     <table className="w-full text-left border-collapse">
@@ -3483,50 +3518,67 @@
                                                 <tr key={`category_row_${row.name}`} className="align-top hover:bg-slate-50">
                                                     <td className="p-3"><span className="text-[10px] uppercase font-bold text-slate-400 block">{row.name}</span></td>
                                                     <td className="p-3">
-                                                        <div className="grid md:grid-cols-2 gap-3">
-                                                            <div>
-                                                                <label className="block text-[11px] font-semibold text-slate-600 mb-1">Definition</label>
-                                                                <textarea
-                                                                    value={row.definition}
-                                                                    onChange={(e) => updateDefinitionMap(categoryDefinitions, onUpdateCategoryDefinitions, row.name, 'definition', e.target.value)}
-                                                                    placeholder="Detailed explanation of what this category represents..."
-                                                                    className="w-full min-h-[90px] border rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-tide resize-y"
-                                                                />
+                                                        {definitionsEditMode ? (
+                                                            <>
+                                                                <div className="grid md:grid-cols-2 gap-3">
+                                                                    <div>
+                                                                        <label className="block text-[11px] font-semibold text-slate-600 mb-1">Definition</label>
+                                                                        <textarea
+                                                                            value={row.definition}
+                                                                            onChange={(e) => updateDefinitionMap(categoryDefinitions, onUpdateCategoryDefinitions, row.name, 'definition', e.target.value)}
+                                                                            placeholder="Detailed explanation of what this category represents..."
+                                                                            className="w-full min-h-[90px] border rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-tide resize-y"
+                                                                        />
+                                                                    </div>
+                                                                    <div>
+                                                                        <label className="block text-[11px] font-semibold text-slate-600 mb-1">Description / When to Use</label>
+                                                                        <textarea
+                                                                            value={row.inclusion}
+                                                                            onChange={(e) => updateDefinitionMap(categoryDefinitions, onUpdateCategoryDefinitions, row.name, 'inclusion', e.target.value)}
+                                                                            placeholder="Criteria for applying this category..."
+                                                                            className="w-full min-h-[90px] border rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-tide resize-y"
+                                                                        />
+                                                                    </div>
+                                                                    <div>
+                                                                        <label className="block text-[11px] font-semibold text-slate-600 mb-1">When Not to Use / Exclusion Criteria</label>
+                                                                        <textarea
+                                                                            value={row.exclusion}
+                                                                            onChange={(e) => updateDefinitionMap(categoryDefinitions, onUpdateCategoryDefinitions, row.name, 'exclusion', e.target.value)}
+                                                                            placeholder="Guidelines for when not to apply this category..."
+                                                                            className="w-full min-h-[90px] border rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-tide resize-y"
+                                                                        />
+                                                                    </div>
+                                                                    <div>
+                                                                        <label className="block text-[11px] font-semibold text-slate-600 mb-1">Data Exemplars / Examples</label>
+                                                                        <textarea
+                                                                            value={row.exemplars}
+                                                                            onChange={(e) => updateDefinitionMap(categoryDefinitions, onUpdateCategoryDefinitions, row.name, 'exemplars', e.target.value)}
+                                                                            placeholder="Add core matches and edge cases..."
+                                                                            className="w-full min-h-[90px] border rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-tide resize-y"
+                                                                        />
+                                                                    </div>
+                                                                </div>
+                                                                <div className="mt-3 bg-slate-50 border rounded-lg p-2">
+                                                                    <p className="text-[11px] font-semibold text-slate-500 mb-1">Auto examples from highlighted quotes (max 3)</p>
+                                                                    {row.examples.length === 0 ? <p className="text-xs text-slate-400 italic">No quote examples yet.</p> : row.examples.map((example, idx) => (
+                                                                        <p key={`category_example_${row.name}_${idx}`} className="text-xs italic text-slate-700 mb-1">"{example}"</p>
+                                                                    ))}
+                                                                </div>
+                                                            </>
+                                                        ) : (
+                                                            <div className="space-y-2 text-sm">
+                                                                <div><span className="font-semibold text-slate-700">Definition:</span> <span className="text-slate-600">{row.definition || 'Not provided yet.'}</span></div>
+                                                                <div><span className="font-semibold text-slate-700">When to Use:</span> <span className="text-slate-600">{row.inclusion || 'Not provided yet.'}</span></div>
+                                                                <div><span className="font-semibold text-slate-700">Exclusion Criteria:</span> <span className="text-slate-600">{row.exclusion || 'Not provided yet.'}</span></div>
+                                                                <div><span className="font-semibold text-slate-700">Exemplars:</span> <span className="text-slate-600">{row.exemplars || 'Not provided yet.'}</span></div>
+                                                                <div className="mt-2 bg-slate-50 border rounded-lg p-2">
+                                                                    <p className="text-[11px] font-semibold text-slate-500 mb-1">Auto examples from highlighted quotes (max 3)</p>
+                                                                    {row.examples.length === 0 ? <p className="text-xs text-slate-400 italic">No quote examples yet.</p> : row.examples.map((example, idx) => (
+                                                                        <p key={`category_example_${row.name}_${idx}`} className="text-xs italic text-slate-700 mb-1">"{example}"</p>
+                                                                    ))}
+                                                                </div>
                                                             </div>
-                                                            <div>
-                                                                <label className="block text-[11px] font-semibold text-slate-600 mb-1">Description / When to Use</label>
-                                                                <textarea
-                                                                    value={row.inclusion}
-                                                                    onChange={(e) => updateDefinitionMap(categoryDefinitions, onUpdateCategoryDefinitions, row.name, 'inclusion', e.target.value)}
-                                                                    placeholder="Criteria for applying this category..."
-                                                                    className="w-full min-h-[90px] border rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-tide resize-y"
-                                                                />
-                                                            </div>
-                                                            <div>
-                                                                <label className="block text-[11px] font-semibold text-slate-600 mb-1">When Not to Use / Exclusion Criteria</label>
-                                                                <textarea
-                                                                    value={row.exclusion}
-                                                                    onChange={(e) => updateDefinitionMap(categoryDefinitions, onUpdateCategoryDefinitions, row.name, 'exclusion', e.target.value)}
-                                                                    placeholder="Guidelines for when not to apply this category..."
-                                                                    className="w-full min-h-[90px] border rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-tide resize-y"
-                                                                />
-                                                            </div>
-                                                            <div>
-                                                                <label className="block text-[11px] font-semibold text-slate-600 mb-1">Data Exemplars / Examples</label>
-                                                                <textarea
-                                                                    value={row.exemplars}
-                                                                    onChange={(e) => updateDefinitionMap(categoryDefinitions, onUpdateCategoryDefinitions, row.name, 'exemplars', e.target.value)}
-                                                                    placeholder="Add core matches and edge cases..."
-                                                                    className="w-full min-h-[90px] border rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-tide resize-y"
-                                                                />
-                                                            </div>
-                                                        </div>
-                                                        <div className="mt-3 bg-slate-50 border rounded-lg p-2">
-                                                            <p className="text-[11px] font-semibold text-slate-500 mb-1">Auto examples from highlighted quotes (max 3)</p>
-                                                            {row.examples.length === 0 ? <p className="text-xs text-slate-400 italic">No quote examples yet.</p> : row.examples.map((example, idx) => (
-                                                                <p key={`category_example_${row.name}_${idx}`} className="text-xs italic text-slate-700 mb-1">"{example}"</p>
-                                                            ))}
-                                                        </div>
+                                                        )}
                                                     </td>
                                                 </tr>
                                             ))}
