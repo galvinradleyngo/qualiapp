@@ -2083,8 +2083,8 @@
                         </div>
                     </div>
 
-                    <div className="flex-1 flex overflow-hidden">
-                        <div className="flex-1 flex flex-col border-r relative bg-white">
+                    <div className={`flex-1 flex overflow-hidden ${mode === 'code' ? 'flex-col lg:flex-row' : ''}`}>
+                        <div className="flex-1 min-w-0 flex flex-col border-r relative bg-white">
                             {audioUrl ? (
                                 <div className="p-4 border-b bg-slate-50 z-10 space-y-3">
                                     <div className="flex gap-4 items-center">
@@ -2140,7 +2140,7 @@
                                     </div>
                                 )}
                                 {mode === 'code' && (
-                                    <div ref={textRef} onMouseUp={handleMouseUp} onClick={handleCodeClick} className="code-surface text-lg leading-relaxed whitespace-pre-wrap outline-none pb-32 text-slate-800 p-2">
+                                    <div ref={textRef} onMouseUp={handleMouseUp} onClick={handleCodeClick} className="code-surface max-w-full overflow-x-hidden break-words text-lg leading-relaxed whitespace-pre-wrap outline-none pb-32 text-slate-800 p-2">
                                         {content ? (
                                             <div dangerouslySetInnerHTML={{ __html: renderHighlightedHtml() }} />
                                         ) : <span className="text-slate-400 italic">No text found. Switch to Edit mode to paste your transcript.</span>}
@@ -2193,12 +2193,12 @@
                         </div>
 
                         {mode === 'code' && (
-                            <div className="w-96 bg-slate-50 flex flex-col border-l border-slate-200 z-20 overflow-y-auto">
+                            <div className="w-full lg:w-96 lg:min-w-96 bg-slate-50 flex flex-col border-t lg:border-t-0 lg:border-l border-slate-200 z-20 overflow-y-auto max-h-[48vh] lg:max-h-none">
                                 <div className="p-5 border-b bg-white shrink-0">
                                     <h3 className="font-bold text-lg text-slate-800 mb-2">{editingTagId ? 'Edit Code' : (pendingSelection ? 'Save New Code' : 'Document Codes')}</h3>
                                     {(pendingSelection || editingTagId) ? (
-                                        <form onSubmit={submitTagForm} className={`p-4 rounded-xl border-2 ${editingTagId ? 'bg-orange-50 border-orange-300' : 'bg-teal-50 border-teal-300'}`}>
-                                            <p className="text-xs text-slate-600 mb-3 line-clamp-3 italic bg-white p-2 rounded border">"{pendingSelection ? pendingSelection.text : tags.find(t=>t.id===editingTagId)?.textSnippet}"</p>
+                                        <form onSubmit={submitTagForm} className={`p-4 rounded-xl border-2 overflow-hidden ${editingTagId ? 'bg-orange-50 border-orange-300' : 'bg-teal-50 border-teal-300'}`}>
+                                            <p className="text-xs text-slate-600 mb-3 line-clamp-3 break-words italic bg-white p-2 rounded border">"{pendingSelection ? pendingSelection.text : tags.find(t=>t.id===editingTagId)?.textSnippet}"</p>
 
                                             <datalist id="categories">{existingCategories.map(c => <option key={c} value={c} />)}</datalist>
                                             <datalist id="tags">{existingCodes.map(c => <option key={c} value={c} />)}</datalist>
@@ -2212,6 +2212,21 @@
                                                 placeholder="e.g. Coping"
                                                 className="w-full border border-slate-300 rounded p-2 text-sm mb-3 focus:ring-2 focus:ring-tide outline-none"
                                             />
+                                            <div className="mb-3">
+                                                <p className="text-[10px] uppercase font-bold text-slate-500 mb-1">Common Categories</p>
+                                                <div className="flex flex-wrap gap-1.5 max-h-16 overflow-y-auto">
+                                                    {existingCategories.slice(0, 12).map(category => (
+                                                        <button
+                                                            key={`cat_${category}`}
+                                                            type="button"
+                                                            onClick={() => setTagFormCategory(category)}
+                                                            className="px-2 py-1 rounded-full text-[11px] border border-slate-300 bg-white hover:bg-slate-100 text-slate-700"
+                                                        >
+                                                            {category}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
 
                                             <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1">Specific Code *</label>
                                             <input
@@ -2223,6 +2238,21 @@
                                                 placeholder="e.g. Humor"
                                                 className="w-full border border-slate-300 rounded p-2 text-sm mb-3 focus:ring-2 focus:ring-tide outline-none"
                                             />
+                                            <div className="mb-3">
+                                                <p className="text-[10px] uppercase font-bold text-slate-500 mb-1">Common Codes</p>
+                                                <div className="flex flex-wrap gap-1.5 max-h-16 overflow-y-auto">
+                                                    {existingCodes.slice(0, 16).map(code => (
+                                                        <button
+                                                            key={`code_${code}`}
+                                                            type="button"
+                                                            onClick={() => setTagFormName(code)}
+                                                            className="px-2 py-1 rounded-full text-[11px] border border-teal-200 bg-teal-50 hover:bg-teal-100 text-teal-800"
+                                                        >
+                                                            {code}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
 
                                             <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1">Code Memo</label>
                                             <textarea
@@ -2898,6 +2928,8 @@
 
         function Codebook({ tags, transcripts, participants, artifacts }) {
             const [searchTerm, setSearchTerm] = useState('');
+            const [sortBy, setSortBy] = useState('category');
+            const [sortDirection, setSortDirection] = useState('asc');
             const tableData = useMemo(() => {
                 const participantCodeById = {};
                 (participants || []).forEach(p => { participantCodeById[p.id] = p.pseudonym || p.id; });
@@ -2955,7 +2987,7 @@
                     return acc;
                 }, {}));
 
-                return groupedRows.filter(item => {
+                const filteredRows = groupedRows.filter(item => {
                     const combinedQuotes = item.quotes.join(' ');
                     const combinedMemos = item.memos.join(' ');
                     const query = searchTerm.toLowerCase();
@@ -2963,8 +2995,28 @@
                         item.category.toLowerCase().includes(query) ||
                         combinedQuotes.toLowerCase().includes(query) ||
                         combinedMemos.toLowerCase().includes(query);
-                }).sort((a, b) => a.category.localeCompare(b.category) || a.tagName.localeCompare(b.tagName) || a.transcriptLabel.localeCompare(b.transcriptLabel));
-            }, [tags, transcripts, participants, artifacts, searchTerm]);
+                });
+
+                return filteredRows.sort((a, b) => {
+                    const direction = sortDirection === 'asc' ? 1 : -1;
+                    let primaryComparison = 0;
+
+                    if (sortBy === 'code') {
+                        primaryComparison = a.tagName.localeCompare(b.tagName);
+                    } else {
+                        primaryComparison = a.category.localeCompare(b.category);
+                    }
+
+                    if (primaryComparison !== 0) return primaryComparison * direction;
+
+                    const secondaryComparison = sortBy === 'code'
+                        ? a.category.localeCompare(b.category)
+                        : a.tagName.localeCompare(b.tagName);
+                    if (secondaryComparison !== 0) return secondaryComparison;
+
+                    return a.transcriptLabel.localeCompare(b.transcriptLabel);
+                });
+            }, [tags, transcripts, participants, artifacts, searchTerm, sortBy, sortDirection]);
 
             const uniqueCodeCount = useMemo(() => new Set(tableData.map(t => t.tagName)).size, [tableData]);
 
@@ -2977,7 +3029,25 @@
                                 <p className="text-slate-500 mt-2">{tableData.length} grouped code entries across {uniqueCodeCount} unique codes (transcripts + artifacts).</p>
                             </div>
                         </div>
-                        <input type="text" placeholder="Search categories, codes, memos, or quotes..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full max-w-lg p-3 mb-6 border rounded-xl shadow-sm outline-none focus:ring-2 focus:ring-tide" />
+                        <div className="mb-6 flex flex-col lg:flex-row lg:items-end gap-3">
+                            <input type="text" placeholder="Search categories, codes, memos, or quotes..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full lg:flex-1 p-3 border rounded-xl shadow-sm outline-none focus:ring-2 focus:ring-tide" />
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full lg:w-auto">
+                                <label className="text-xs font-bold uppercase tracking-wide text-slate-500">
+                                    Sort By
+                                    <select value={sortBy} onChange={e => setSortBy(e.target.value)} className="mt-1 w-full sm:w-44 p-3 border rounded-xl bg-white text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-tide">
+                                        <option value="category">Category</option>
+                                        <option value="code">Code</option>
+                                    </select>
+                                </label>
+                                <label className="text-xs font-bold uppercase tracking-wide text-slate-500">
+                                    Direction
+                                    <select value={sortDirection} onChange={e => setSortDirection(e.target.value)} className="mt-1 w-full sm:w-40 p-3 border rounded-xl bg-white text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-tide">
+                                        <option value="asc">A to Z</option>
+                                        <option value="desc">Z to A</option>
+                                    </select>
+                                </label>
+                            </div>
+                        </div>
 
                         <div className="bg-white border rounded-2xl shadow-sm overflow-hidden flex-1 flex flex-col">
                             <div className="overflow-x-auto flex-1">
