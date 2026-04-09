@@ -194,7 +194,7 @@
 
         const offlineDataNotice = 'Offline app: QualiApp runs fully in your browser. All project data is stored only on this device in your browser storage unless you explicitly export a backup file.';
         const appVersionLabel = 'v7.6.0';
-        const appVersionUpdatedAt = '2026-04-08 15:30 UTC';
+        const appVersionUpdatedAt = '2026-04-09 00:00 UTC';
         const appLicenseNote = 'Licensed under Creative Commons Attribution-NonCommercial-ShareAlike (CC BY-NC-SA).';
 
         function AppFooter({ dark = false }) {
@@ -1193,6 +1193,126 @@
                                     categoryDefinitions={categoryDefinitions}
                                     onUpdateCodeDefinitions={setCodeDefinitions}
                                     onUpdateCategoryDefinitions={setCategoryDefinitions}
+                                    onRenameCodeLabel={(oldName, newName) => {
+                                        const previous = String(oldName || '').trim();
+                                        const next = String(newName || '').trim();
+                                        if (!previous || !next || previous === next) return;
+
+                                        setTags((prev) => prev.map((tag) =>
+                                            String(tag.tagName || '').trim() === previous ? { ...tag, tagName: next } : tag
+                                        ));
+
+                                        setObservationTags((prev) => prev.map((tag) =>
+                                            String(tag.tagName || '').trim() === previous ? { ...tag, tagName: next } : tag
+                                        ));
+
+                                        setGlobalArtifacts((prev) => prev.map((artifact) => ({
+                                            ...artifact,
+                                            codes: Array.from(new Set((artifact.codes || []).map((codeName) =>
+                                                String(codeName || '').trim() === previous ? next : codeName
+                                            )))
+                                        })));
+
+                                        setAnalysisCanvases((prev) => prev.map((canvas) => ({
+                                            ...canvas,
+                                            themes: (canvas.themes || []).map((theme) => ({
+                                                ...theme,
+                                                codes: Array.from(new Set((theme.codes || []).map((codeName) =>
+                                                    String(codeName || '').trim() === previous ? next : codeName
+                                                )))
+                                            }))
+                                        })));
+
+                                        setCodeDefinitions((prev) => {
+                                            const current = { ...(prev || {}) };
+                                            if (!(previous in current)) return current;
+                                            const source = current[previous];
+                                            if (next in current) {
+                                                const existing = current[next];
+                                                const sourceRecord = typeof source === 'string'
+                                                    ? { definition: source, inclusion: '', exclusion: '', exemplars: '' }
+                                                    : {
+                                                        definition: source?.definition || '',
+                                                        inclusion: source?.inclusion || '',
+                                                        exclusion: source?.exclusion || '',
+                                                        exemplars: source?.exemplars || ''
+                                                    };
+                                                const existingRecord = typeof existing === 'string'
+                                                    ? { definition: existing, inclusion: '', exclusion: '', exemplars: '' }
+                                                    : {
+                                                        definition: existing?.definition || '',
+                                                        inclusion: existing?.inclusion || '',
+                                                        exclusion: existing?.exclusion || '',
+                                                        exemplars: existing?.exemplars || ''
+                                                    };
+                                                current[next] = {
+                                                    definition: existingRecord.definition || sourceRecord.definition,
+                                                    inclusion: existingRecord.inclusion || sourceRecord.inclusion,
+                                                    exclusion: existingRecord.exclusion || sourceRecord.exclusion,
+                                                    exemplars: existingRecord.exemplars || sourceRecord.exemplars
+                                                };
+                                            } else {
+                                                current[next] = source;
+                                            }
+                                            delete current[previous];
+                                            return current;
+                                        });
+                                    }}
+                                    onRenameCategoryLabel={(oldName, newName) => {
+                                        const previous = String(oldName || '').trim();
+                                        const next = String(newName || '').trim();
+                                        if (!previous || !next || previous === next) return;
+
+                                        const normalizeTagCategory = (value) => String(value || '').trim() || 'Uncategorized';
+                                        const normalizeArtifactCategory = (value) => String(value || '').trim() || 'Artifact';
+
+                                        setTags((prev) => prev.map((tag) =>
+                                            normalizeTagCategory(tag.category) === previous ? { ...tag, category: next } : tag
+                                        ));
+
+                                        setObservationTags((prev) => prev.map((tag) =>
+                                            normalizeTagCategory(tag.category) === previous ? { ...tag, category: next } : tag
+                                        ));
+
+                                        setGlobalArtifacts((prev) => prev.map((artifact) =>
+                                            normalizeArtifactCategory(artifact.folder) === previous ? { ...artifact, folder: next } : artifact
+                                        ));
+
+                                        setCategoryDefinitions((prev) => {
+                                            const current = { ...(prev || {}) };
+                                            if (!(previous in current)) return current;
+                                            const source = current[previous];
+                                            if (next in current) {
+                                                const existing = current[next];
+                                                const sourceRecord = typeof source === 'string'
+                                                    ? { definition: source, inclusion: '', exclusion: '', exemplars: '' }
+                                                    : {
+                                                        definition: source?.definition || '',
+                                                        inclusion: source?.inclusion || '',
+                                                        exclusion: source?.exclusion || '',
+                                                        exemplars: source?.exemplars || ''
+                                                    };
+                                                const existingRecord = typeof existing === 'string'
+                                                    ? { definition: existing, inclusion: '', exclusion: '', exemplars: '' }
+                                                    : {
+                                                        definition: existing?.definition || '',
+                                                        inclusion: existing?.inclusion || '',
+                                                        exclusion: existing?.exclusion || '',
+                                                        exemplars: existing?.exemplars || ''
+                                                    };
+                                                current[next] = {
+                                                    definition: existingRecord.definition || sourceRecord.definition,
+                                                    inclusion: existingRecord.inclusion || sourceRecord.inclusion,
+                                                    exclusion: existingRecord.exclusion || sourceRecord.exclusion,
+                                                    exemplars: existingRecord.exemplars || sourceRecord.exemplars
+                                                };
+                                            } else {
+                                                current[next] = source;
+                                            }
+                                            delete current[previous];
+                                            return current;
+                                        });
+                                    }}
                                 />
                             )}
                         </main>
@@ -2545,16 +2665,42 @@
                     .filter(t => Number.isFinite(t.start) && Number.isFinite(t.end) && t.end > t.start)
                     .sort((a, b) => a.start - b.start);
 
+                const nodeIndex = (node) => {
+                    const parent = node.parentNode;
+                    if (!parent) return 0;
+                    return Array.prototype.indexOf.call(parent.childNodes, node);
+                };
+
                 const locateTextOffset = (target) => {
                     let seen = 0;
-                    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+                    const walker = document.createTreeWalker(
+                        container,
+                        NodeFilter.SHOW_ALL,
+                        {
+                            acceptNode: (node) => {
+                                if (node.nodeType === Node.TEXT_NODE) return NodeFilter.FILTER_ACCEPT;
+                                if (node.nodeType === Node.ELEMENT_NODE && node.nodeName === 'BR') return NodeFilter.FILTER_ACCEPT;
+                                return NodeFilter.FILTER_SKIP;
+                            }
+                        }
+                    );
                     let node;
                     while ((node = walker.nextNode())) {
-                        const len = node.textContent.length;
-                        if (target <= seen + len) return { node, offset: Math.max(0, target - seen) };
-                        seen += len;
+                        if (node.nodeType === Node.TEXT_NODE) {
+                            const len = node.textContent.length;
+                            if (target <= seen + len) return { node, offset: Math.max(0, target - seen) };
+                            seen += len;
+                            continue;
+                        }
+
+                        // Keep newline offsets aligned with ranges that span line breaks.
+                        if (node.nodeName === 'BR') {
+                            if (target === seen) return { node: node.parentNode, offset: nodeIndex(node) };
+                            if (target === seen + 1) return { node: node.parentNode, offset: nodeIndex(node) + 1 };
+                            seen += 1;
+                        }
                     }
-                    return null;
+                    return { node: container, offset: container.childNodes.length };
                 };
 
                 sorted.forEach((tag) => {
@@ -3963,16 +4109,43 @@
                 const sorted = [...tags]
                     .filter(t => Number.isFinite(t.start) && Number.isFinite(t.end) && t.end > t.start)
                     .sort((a, b) => a.start - b.start);
+
+                const nodeIndex = (node) => {
+                    const parent = node.parentNode;
+                    if (!parent) return 0;
+                    return Array.prototype.indexOf.call(parent.childNodes, node);
+                };
+
                 const locateTextOffset = (target) => {
                     let seen = 0;
-                    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+                    const walker = document.createTreeWalker(
+                        container,
+                        NodeFilter.SHOW_ALL,
+                        {
+                            acceptNode: (node) => {
+                                if (node.nodeType === Node.TEXT_NODE) return NodeFilter.FILTER_ACCEPT;
+                                if (node.nodeType === Node.ELEMENT_NODE && node.nodeName === 'BR') return NodeFilter.FILTER_ACCEPT;
+                                return NodeFilter.FILTER_SKIP;
+                            }
+                        }
+                    );
                     let node;
                     while ((node = walker.nextNode())) {
-                        const len = node.textContent.length;
-                        if (target <= seen + len) return { node, offset: Math.max(0, target - seen) };
-                        seen += len;
+                        if (node.nodeType === Node.TEXT_NODE) {
+                            const len = node.textContent.length;
+                            if (target <= seen + len) return { node, offset: Math.max(0, target - seen) };
+                            seen += len;
+                            continue;
+                        }
+
+                        // Keep newline offsets aligned with ranges that span line breaks.
+                        if (node.nodeName === 'BR') {
+                            if (target === seen) return { node: node.parentNode, offset: nodeIndex(node) };
+                            if (target === seen + 1) return { node: node.parentNode, offset: nodeIndex(node) + 1 };
+                            seen += 1;
+                        }
                     }
-                    return null;
+                    return { node: container, offset: container.childNodes.length };
                 };
                 sorted.forEach((tag) => {
                     const startPos = locateTextOffset(tag.start);
@@ -4145,12 +4318,16 @@
             );
         }
 
-        function Codebook({ tags, transcripts, participants, artifacts, observations, observationTags, codeDefinitions, categoryDefinitions, onUpdateCodeDefinitions, onUpdateCategoryDefinitions }) {
+        function Codebook({ tags, transcripts, participants, artifacts, observations, observationTags, codeDefinitions, categoryDefinitions, onUpdateCodeDefinitions, onUpdateCategoryDefinitions, onRenameCodeLabel, onRenameCategoryLabel }) {
             const [searchTerm, setSearchTerm] = useState('');
             const [sortBy, setSortBy] = useState('category');
             const [sortDirection, setSortDirection] = useState('asc');
             const [showExportMenu, setShowExportMenu] = useState(false);
             const [editingRows, setEditingRows] = useState(new Set());
+            const [renamingCodeName, setRenamingCodeName] = useState(null);
+            const [renameCodeValue, setRenameCodeValue] = useState('');
+            const [renamingCategoryName, setRenamingCategoryName] = useState(null);
+            const [renameCategoryValue, setRenameCategoryValue] = useState('');
             const toggleRow = (name) => setEditingRows(prev => {
                 const next = new Set(prev);
                 if (next.has(name)) next.delete(name); else next.add(name);
@@ -4375,6 +4552,64 @@
                 if (hasAnyValue) next[key] = updated;
                 else delete next[key];
                 setter(next);
+            };
+
+            const beginRenameCodeLabel = (currentName) => {
+                setRenamingCodeName(currentName);
+                setRenameCodeValue(currentName);
+            };
+
+            const cancelRenameCodeLabel = () => {
+                setRenamingCodeName(null);
+                setRenameCodeValue('');
+            };
+
+            const commitRenameCodeLabel = () => {
+                if (!renamingCodeName) return;
+                const cleaned = String(renameCodeValue || '').trim();
+                if (!cleaned || cleaned === renamingCodeName) {
+                    cancelRenameCodeLabel();
+                    return;
+                }
+                onRenameCodeLabel(renamingCodeName, cleaned);
+                setEditingRows((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(renamingCodeName)) {
+                        next.delete(renamingCodeName);
+                        next.add(cleaned);
+                    }
+                    return next;
+                });
+                cancelRenameCodeLabel();
+            };
+
+            const beginRenameCategoryLabel = (currentName) => {
+                setRenamingCategoryName(currentName);
+                setRenameCategoryValue(currentName);
+            };
+
+            const cancelRenameCategoryLabel = () => {
+                setRenamingCategoryName(null);
+                setRenameCategoryValue('');
+            };
+
+            const commitRenameCategoryLabel = () => {
+                if (!renamingCategoryName) return;
+                const cleaned = String(renameCategoryValue || '').trim();
+                if (!cleaned || cleaned === renamingCategoryName) {
+                    cancelRenameCategoryLabel();
+                    return;
+                }
+                onRenameCategoryLabel(renamingCategoryName, cleaned);
+                setEditingRows((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(renamingCategoryName)) {
+                        next.delete(renamingCategoryName);
+                        next.add(cleaned);
+                    }
+                    return next;
+                });
+                cancelRenameCategoryLabel();
             };
 
             const exportGroupedCodebookCsv = () => {
@@ -4665,9 +4900,50 @@
                                                 <tr key={`code_row_${row.name}`} className={`align-top hover:bg-slate-50 ${editingRows.has(row.name) ? 'bg-amber-50/30' : ''}`}>
                                                     <td className="p-3">
                                                         <div className="flex items-start gap-1.5">
-                                                            <span className="inline-block max-w-[180px] whitespace-normal break-words leading-tight bg-teal-100 border border-teal-200 text-teal-800 px-3 py-1.5 rounded-xl text-xs font-bold">
-                                                                {row.name}
-                                                            </span>
+                                                            {renamingCodeName === row.name ? (
+                                                                <div className="flex items-center gap-1.5 w-full">
+                                                                    <input
+                                                                        autoFocus
+                                                                        value={renameCodeValue}
+                                                                        onChange={(e) => setRenameCodeValue(e.target.value)}
+                                                                        onKeyDown={(e) => {
+                                                                            if (e.key === 'Enter') commitRenameCodeLabel();
+                                                                            if (e.key === 'Escape') cancelRenameCodeLabel();
+                                                                        }}
+                                                                        className="w-full border border-teal-300 rounded-lg px-2 py-1 text-xs font-semibold text-teal-800 outline-none focus:ring-2 focus:ring-tide"
+                                                                    />
+                                                                    <button
+                                                                        type="button"
+                                                                        title="Save label"
+                                                                        onClick={commitRenameCodeLabel}
+                                                                        className="p-1 rounded border bg-teal-100 border-teal-300 text-teal-700 hover:bg-teal-200"
+                                                                    >
+                                                                        <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+                                                                    </button>
+                                                                    <button
+                                                                        type="button"
+                                                                        title="Cancel rename"
+                                                                        onClick={cancelRenameCodeLabel}
+                                                                        className="p-1 rounded border bg-white border-slate-300 text-slate-500 hover:bg-slate-100"
+                                                                    >
+                                                                        <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                                                                    </button>
+                                                                </div>
+                                                            ) : (
+                                                                <>
+                                                                    <span className="inline-block max-w-[180px] whitespace-normal break-words leading-tight bg-teal-100 border border-teal-200 text-teal-800 px-3 py-1.5 rounded-xl text-xs font-bold">
+                                                                        {row.name}
+                                                                    </span>
+                                                                    <button
+                                                                        type="button"
+                                                                        title="Rename code label"
+                                                                        onClick={() => beginRenameCodeLabel(row.name)}
+                                                                        className="mt-1 p-1 rounded border transition flex-shrink-0 bg-white border-slate-200 text-slate-400 hover:text-teal-700 hover:border-teal-300"
+                                                                    >
+                                                                        <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M13 7L5 15l-2 7 7-2 8-8"/><path d="M15 5l4 4"/></svg>
+                                                                    </button>
+                                                                </>
+                                                            )}
                                                             <button
                                                                 type="button"
                                                                 title={editingRows.has(row.name) ? 'Done editing' : 'Edit this row'}
@@ -4769,7 +5045,48 @@
                                                 <tr key={`category_row_${row.name}`} className={`align-top hover:bg-slate-50 ${editingRows.has(row.name) ? 'bg-amber-50/30' : ''}`}>
                                                     <td className="p-3">
                                                         <div className="flex items-start gap-1.5">
-                                                            <span className="text-[10px] uppercase font-bold text-slate-400 block">{row.name}</span>
+                                                            {renamingCategoryName === row.name ? (
+                                                                <div className="flex items-center gap-1.5 w-full">
+                                                                    <input
+                                                                        autoFocus
+                                                                        value={renameCategoryValue}
+                                                                        onChange={(e) => setRenameCategoryValue(e.target.value)}
+                                                                        onKeyDown={(e) => {
+                                                                            if (e.key === 'Enter') commitRenameCategoryLabel();
+                                                                            if (e.key === 'Escape') cancelRenameCategoryLabel();
+                                                                        }}
+                                                                        className="w-full border border-teal-300 rounded-lg px-2 py-1 text-xs font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-tide"
+                                                                    />
+                                                                    <button
+                                                                        type="button"
+                                                                        title="Save label"
+                                                                        onClick={commitRenameCategoryLabel}
+                                                                        className="p-1 rounded border bg-teal-100 border-teal-300 text-teal-700 hover:bg-teal-200"
+                                                                    >
+                                                                        <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+                                                                    </button>
+                                                                    <button
+                                                                        type="button"
+                                                                        title="Cancel rename"
+                                                                        onClick={cancelRenameCategoryLabel}
+                                                                        className="p-1 rounded border bg-white border-slate-300 text-slate-500 hover:bg-slate-100"
+                                                                    >
+                                                                        <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                                                                    </button>
+                                                                </div>
+                                                            ) : (
+                                                                <>
+                                                                    <span className="text-[10px] uppercase font-bold text-slate-400 block">{row.name}</span>
+                                                                    <button
+                                                                        type="button"
+                                                                        title="Rename category label"
+                                                                        onClick={() => beginRenameCategoryLabel(row.name)}
+                                                                        className="p-1 rounded border transition flex-shrink-0 bg-white border-slate-200 text-slate-400 hover:text-teal-700 hover:border-teal-300"
+                                                                    >
+                                                                        <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M13 7L5 15l-2 7 7-2 8-8"/><path d="M15 5l4 4"/></svg>
+                                                                    </button>
+                                                                </>
+                                                            )}
                                                             <button
                                                                 type="button"
                                                                 title={editingRows.has(row.name) ? 'Done editing' : 'Edit this row'}
