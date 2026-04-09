@@ -2560,12 +2560,35 @@
                 if (!sel.rangeCount) return null;
                 const r = sel.getRangeAt(0);
                 if (r.collapsed || !containerNode.contains(r.startContainer)) return null;
+
+                const normalizedRangeLength = (range) => {
+                    const fragment = range.cloneContents();
+                    let length = 0;
+                    const walker = document.createTreeWalker(
+                        fragment,
+                        NodeFilter.SHOW_ALL,
+                        {
+                            acceptNode: (node) => {
+                                if (node.nodeType === Node.TEXT_NODE) return NodeFilter.FILTER_ACCEPT;
+                                if (node.nodeType === Node.ELEMENT_NODE && node.nodeName === 'BR') return NodeFilter.FILTER_ACCEPT;
+                                return NodeFilter.FILTER_SKIP;
+                            }
+                        }
+                    );
+                    let node;
+                    while ((node = walker.nextNode())) {
+                        if (node.nodeType === Node.TEXT_NODE) length += node.textContent.length;
+                        else if (node.nodeName === 'BR') length += 1;
+                    }
+                    return length;
+                };
+
                 const pre = r.cloneRange();
                 pre.selectNodeContents(containerNode);
                 pre.setEnd(r.startContainer, r.startOffset);
-                const start = pre.toString().length;
+                const start = normalizedRangeLength(pre);
                 pre.setEnd(r.endContainer, r.endOffset);
-                return { start, end: pre.toString().length, text: r.toString() };
+                return { start, end: normalizedRangeLength(pre), text: r.toString() };
             };
 
             const handleMouseUp = () => {
@@ -2655,7 +2678,7 @@
             };
 
             const renderHighlightedHtml = () => {
-                const baseHtml = plainToHtml(content);
+                const baseHtml = contentHtml || plainToHtml(content);
                 if (!baseHtml) return '';
                 if (!tags.length) return baseHtml;
 
@@ -4015,12 +4038,35 @@
                 if (!sel.rangeCount) return null;
                 const r = sel.getRangeAt(0);
                 if (r.collapsed || !containerNode.contains(r.startContainer)) return null;
+
+                const normalizedRangeLength = (range) => {
+                    const fragment = range.cloneContents();
+                    let length = 0;
+                    const walker = document.createTreeWalker(
+                        fragment,
+                        NodeFilter.SHOW_ALL,
+                        {
+                            acceptNode: (node) => {
+                                if (node.nodeType === Node.TEXT_NODE) return NodeFilter.FILTER_ACCEPT;
+                                if (node.nodeType === Node.ELEMENT_NODE && node.nodeName === 'BR') return NodeFilter.FILTER_ACCEPT;
+                                return NodeFilter.FILTER_SKIP;
+                            }
+                        }
+                    );
+                    let node;
+                    while ((node = walker.nextNode())) {
+                        if (node.nodeType === Node.TEXT_NODE) length += node.textContent.length;
+                        else if (node.nodeName === 'BR') length += 1;
+                    }
+                    return length;
+                };
+
                 const pre = r.cloneRange();
                 pre.selectNodeContents(containerNode);
                 pre.setEnd(r.startContainer, r.startOffset);
-                const start = pre.toString().length;
+                const start = normalizedRangeLength(pre);
                 pre.setEnd(r.endContainer, r.endOffset);
-                return { start, end: pre.toString().length, text: r.toString() };
+                return { start, end: normalizedRangeLength(pre), text: r.toString() };
             };
 
             const handleMouseUp = () => {
