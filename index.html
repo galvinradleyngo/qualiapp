@@ -4469,39 +4469,58 @@
                 });
 
                 const groupedRows = Object.values([...transcriptRows, ...artifactRows, ...observationRows].reduce((acc, item) => {
-                    const groupKey = [item.sourceType, item.sourceId, item.tagName].join('::');
+                    const groupKey = [item.category || 'Uncategorized', item.tagName].join('::');
                     if (!acc[groupKey]) {
                         acc[groupKey] = {
                             id: groupKey,
-                            sourceType: item.sourceType,
-                            sourceId: item.sourceId,
                             tagName: item.tagName,
                             category: item.category,
-                            transcriptLabel: item.transcriptLabel,
-                            folder: item.folder,
-                            subfolder: item.subfolder,
                             quoteCount: 0,
+                            sources: [],
                             quotes: [],
                             memos: []
                         };
                     }
 
+                    const hasSource = acc[groupKey].sources.some((source) => source.sourceType === item.sourceType && source.sourceId === item.sourceId);
+                    if (!hasSource) {
+                        acc[groupKey].sources.push({
+                            sourceType: item.sourceType,
+                            sourceId: item.sourceId,
+                            label: item.transcriptLabel,
+                            folder: item.folder,
+                            subfolder: item.subfolder
+                        });
+                    }
+
                     acc[groupKey].quoteCount += 1;
                     if (item.textSnippet && item.textSnippet.trim()) {
-                        acc[groupKey].quotes.push(item.textSnippet.trim());
+                        acc[groupKey].quotes.push({
+                            text: item.textSnippet.trim(),
+                            sourceType: item.sourceType,
+                            label: item.transcriptLabel,
+                            folder: item.folder,
+                            subfolder: item.subfolder
+                        });
                     }
                     if (item.memo && item.memo.trim()) {
-                        acc[groupKey].memos.push(item.memo.trim());
+                        acc[groupKey].memos.push({
+                            text: item.memo.trim(),
+                            sourceType: item.sourceType,
+                            label: item.transcriptLabel
+                        });
                     }
                     return acc;
                 }, {}));
 
                 const filteredRows = groupedRows.filter(item => {
-                    const combinedQuotes = item.quotes.join(' ');
-                    const combinedMemos = item.memos.join(' ');
+                    const combinedQuotes = item.quotes.map(q => q.text).join(' ');
+                    const combinedMemos = item.memos.map(m => m.text).join(' ');
+                    const combinedSources = item.sources.map(s => `${s.sourceType} ${s.label} ${s.folder} ${s.subfolder}`).join(' ');
                     const query = searchTerm.toLowerCase();
                     return item.tagName.toLowerCase().includes(query) ||
                         item.category.toLowerCase().includes(query) ||
+                        combinedSources.toLowerCase().includes(query) ||
                         combinedQuotes.toLowerCase().includes(query) ||
                         combinedMemos.toLowerCase().includes(query);
                 });
@@ -4512,6 +4531,8 @@
 
                     if (sortBy === 'code') {
                         primaryComparison = a.tagName.localeCompare(b.tagName);
+                    } else if (sortBy === 'quoteCount') {
+                        primaryComparison = a.quoteCount - b.quoteCount;
                     } else {
                         primaryComparison = a.category.localeCompare(b.category);
                     }
@@ -4520,16 +4541,21 @@
 
                     const secondaryComparison = sortBy === 'code'
                         ? a.category.localeCompare(b.category)
-                        : a.tagName.localeCompare(b.tagName);
+                        : sortBy === 'quoteCount'
+                            ? a.category.localeCompare(b.category)
+                            : a.tagName.localeCompare(b.tagName);
                     if (secondaryComparison !== 0) return secondaryComparison;
 
-                    return a.transcriptLabel.localeCompare(b.transcriptLabel);
-                });
+                    return a.tagName.localeCompare(b.tagName);
+                }).map((item) => ({
+                    ...item,
+                    sourceCount: (item.sources || []).length
+                }));
             }, [tags, transcripts, participants, artifacts, observations, observationTags, searchTerm, sortBy, sortDirection]);
 
             const uniqueCodeCount = useMemo(() => new Set(tableData.map(t => t.tagName)).size, [tableData]);
             const uniqueCategoryCount = useMemo(() => new Set(tableData.map(t => t.category)).size, [tableData]);
-            const pickExamples = (quotes) => Array.from(new Set((quotes || []).map(q => (q || '').trim()).filter(Boolean))).slice(0, 3);
+            const pickExamples = (quotes) => Array.from(new Set((quotes || []).map(q => (q?.text || q || '').trim()).filter(Boolean))).slice(0, 3);
 
             const toDefinitionRecord = (value) => {
                 if (!value) return { definition: '', inclusion: '', exclusion: '', exemplars: '' };
@@ -4649,17 +4675,21 @@
             };
 
             const exportGroupedCodebookCsv = () => {
-                const lines = ['Category,Code,Source,Folder,Subfolder,Quote Count,Quotes,Memos'];
+                const lines = ['Category,Code,Source,Source Count,Folder,Subfolder,Quote Count,Quotes,Memos'];
                 tableData.forEach((row) => {
+                    const sourceSummary = (row.sources || []).map((s) => `${s.sourceType}: ${s.label}`).join(' | ');
+                    const folderSummary = Array.from(new Set((row.sources || []).map((s) => s.folder).filter(Boolean))).join(' | ');
+                    const subfolderSummary = Array.from(new Set((row.sources || []).map((s) => s.subfolder).filter(Boolean))).join(' | ');
                     lines.push([
                         csvEscape(row.category),
                         csvEscape(row.tagName),
-                        csvEscape(`${row.sourceType}: ${row.transcriptLabel}`),
-                        csvEscape(row.folder),
-                        csvEscape(row.subfolder),
+                        csvEscape(sourceSummary),
+                        csvEscape(row.sourceCount),
+                        csvEscape(folderSummary),
+                        csvEscape(subfolderSummary),
                         csvEscape(row.quoteCount),
-                        csvEscape((row.quotes || []).slice(0, 3).join(' | ')),
-                        csvEscape((row.memos || []).join(' | '))
+                        csvEscape((row.quotes || []).slice(0, 3).map((q) => `[${q.sourceType}] ${q.label}: ${q.text}`).join(' | ')),
+                        csvEscape((row.memos || []).map((m) => `[${m.sourceType}] ${m.label}: ${m.text}`).join(' | '))
                     ].join(','));
                 });
                 downloadCsv(`QualiApp_Codebook_Table_${new Date().toISOString().slice(0, 10)}.csv`, lines);
@@ -4697,13 +4727,17 @@
                 const html = buildApaTableHtml(
                     1,
                     'Grouped Codebook Entries',
-                    ['Category', 'Code', 'Source', 'Quote Count', 'Quote and memo'],
+                    ['Category', 'Code', 'Source', 'Source Count', 'Quote Count', 'Quote and memo'],
                     tableData.map(row => [
                         row.category,
                         row.tagName,
-                        `${row.sourceType}: ${row.transcriptLabel}`,
+                        (row.sources || []).map((s) => `${s.sourceType}: ${s.label}`).join(' | '),
+                        String(row.sourceCount || 0),
                         String(row.quoteCount),
-                        [...(row.quotes || []).slice(0, 3), ...(row.memos || []).slice(0, 2)].join(' | ')
+                        [
+                            ...(row.quotes || []).slice(0, 3).map((q) => `[${q.sourceType}] ${q.label}: ${q.text}`),
+                            ...(row.memos || []).slice(0, 2).map((m) => `[${m.sourceType}] ${m.label}: ${m.text}`)
+                        ].join(' | ')
                     ]),
                     'Quote text may be truncated in export previews.'
                 );
@@ -4749,13 +4783,17 @@
                     buildApaTableHtml(
                         1,
                         'Grouped Codebook Entries',
-                        ['Category', 'Code', 'Source', 'Quote Count', 'Quote and memo'],
+                        ['Category', 'Code', 'Source', 'Source Count', 'Quote Count', 'Quote and memo'],
                         tableData.map(row => [
                             row.category,
                             row.tagName,
-                            `${row.sourceType}: ${row.transcriptLabel}`,
+                            (row.sources || []).map((s) => `${s.sourceType}: ${s.label}`).join(' | '),
+                            String(row.sourceCount || 0),
                             String(row.quoteCount),
-                            [...(row.quotes || []).slice(0, 3), ...(row.memos || []).slice(0, 2)].join(' | ')
+                            [
+                                ...(row.quotes || []).slice(0, 3).map((q) => `[${q.sourceType}] ${q.label}: ${q.text}`),
+                                ...(row.memos || []).slice(0, 2).map((m) => `[${m.sourceType}] ${m.label}: ${m.text}`)
+                            ].join(' | ')
                         ]),
                         'Quote text may be truncated in export previews.'
                     ),
@@ -4842,6 +4880,7 @@
                                         <select value={sortBy} onChange={e => setSortBy(e.target.value)} className="w-full p-3 border rounded-xl bg-white text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-tide">
                                             <option value="category">Category</option>
                                             <option value="code">Code</option>
+                                            <option value="quoteCount">Code Count</option>
                                         </select>
                                     </div>
                                     <div>
@@ -4863,12 +4902,13 @@
                                             <th className="p-4 font-bold w-32">Category</th>
                                             <th className="p-4 font-bold w-40">Code</th>
                                             <th className="p-4 font-bold w-48">Source</th>
+                                            <th className="p-4 font-bold w-28">Source Count</th>
                                             <th className="p-4 font-bold w-28">Quote Count</th>
                                             <th className="p-4 font-bold">Quote & Memo</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y text-sm">
-                                        {tableData.length === 0 ? <tr><td colSpan="5" className="p-12 text-center text-slate-400 italic">No codes match your search.</td></tr> : tableData.map((row) => (
+                                        {tableData.length === 0 ? <tr><td colSpan="6" className="p-12 text-center text-slate-400 italic">No codes match your search.</td></tr> : tableData.map((row) => (
                                             <tr key={row.id} className="hover:bg-slate-50 align-top">
                                                 <td className="p-4 text-slate-500 font-bold uppercase text-[10px]">{row.category}</td>
                                                 <td className="p-4">
@@ -4877,18 +4917,29 @@
                                                     </span>
                                                 </td>
                                                 <td className="p-4 text-slate-700">
-                                                    <span className="font-bold block">{row.transcriptLabel}</span>
-                                                    <span className={`text-[10px] mt-1 inline-block px-2 py-0.5 rounded-full ${row.sourceType === 'Artifact' ? 'bg-amber-100 text-amber-800' : row.sourceType === 'Observation' ? 'bg-violet-100 text-violet-800' : 'bg-slate-100 text-slate-700'}`}>{row.sourceType}</span>
-                                                    <span className="text-xs text-slate-400 mt-1 block">{row.folder} / {row.subfolder}</span>
+                                                    {(row.sources || []).map((source, idx) => (
+                                                        <div key={`${row.id}_source_${idx}`} className="mb-2 last:mb-0">
+                                                            <span className="font-bold block">{source.label}</span>
+                                                            <span className={`text-[10px] mt-1 inline-block px-2 py-0.5 rounded-full ${source.sourceType === 'Artifact' ? 'bg-amber-100 text-amber-800' : source.sourceType === 'Observation' ? 'bg-violet-100 text-violet-800' : 'bg-slate-100 text-slate-700'}`}>{source.sourceType}</span>
+                                                            <span className="text-xs text-slate-400 mt-1 block">{source.folder} / {source.subfolder}</span>
+                                                        </div>
+                                                    ))}
                                                 </td>
+                                                <td className="p-4 text-slate-700 font-semibold">{row.sourceCount}</td>
                                                 <td className="p-4 text-slate-700 font-semibold">{row.quoteCount}</td>
                                                 <td className="p-4">
                                                     {row.quotes.length === 0 && row.memos.length === 0 && <p className="text-sm text-slate-400 italic">No quote text available.</p>}
                                                     {row.quotes.map((quote, quoteIdx) => (
-                                                        <p key={`${row.id}_quote_${quoteIdx}`} className="italic text-slate-700 mb-2 leading-relaxed">"{quote}"</p>
+                                                        <div key={`${row.id}_quote_${quoteIdx}`} className="mb-2">
+                                                            <p className="text-[11px] text-slate-500 font-semibold">[{quote.sourceType}] {quote.label}</p>
+                                                            <p className="italic text-slate-700 leading-relaxed">"{quote.text}"</p>
+                                                        </div>
                                                     ))}
                                                     {row.memos.map((memo, memoIdx) => (
-                                                        <p key={`${row.id}_memo_${memoIdx}`} className="text-sm text-slate-600 mb-2">{memo}</p>
+                                                        <div key={`${row.id}_memo_${memoIdx}`} className="mb-2 text-sm text-slate-600">
+                                                            <p className="text-[11px] text-slate-500 font-semibold">Memo • [{memo.sourceType}] {memo.label}</p>
+                                                            <p>{memo.text}</p>
+                                                        </div>
                                                     ))}
                                                 </td>
                                             </tr>
