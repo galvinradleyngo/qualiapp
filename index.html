@@ -2560,35 +2560,12 @@
                 if (!sel.rangeCount) return null;
                 const r = sel.getRangeAt(0);
                 if (r.collapsed || !containerNode.contains(r.startContainer)) return null;
-
-                const normalizedRangeLength = (range) => {
-                    const fragment = range.cloneContents();
-                    let length = 0;
-                    const walker = document.createTreeWalker(
-                        fragment,
-                        NodeFilter.SHOW_ALL,
-                        {
-                            acceptNode: (node) => {
-                                if (node.nodeType === Node.TEXT_NODE) return NodeFilter.FILTER_ACCEPT;
-                                if (node.nodeType === Node.ELEMENT_NODE && node.nodeName === 'BR') return NodeFilter.FILTER_ACCEPT;
-                                return NodeFilter.FILTER_SKIP;
-                            }
-                        }
-                    );
-                    let node;
-                    while ((node = walker.nextNode())) {
-                        if (node.nodeType === Node.TEXT_NODE) length += node.textContent.length;
-                        else if (node.nodeName === 'BR') length += 1;
-                    }
-                    return length;
-                };
-
                 const pre = r.cloneRange();
                 pre.selectNodeContents(containerNode);
                 pre.setEnd(r.startContainer, r.startOffset);
-                const start = normalizedRangeLength(pre);
+                const start = pre.toString().length;
                 pre.setEnd(r.endContainer, r.endOffset);
-                return { start, end: normalizedRangeLength(pre), text: r.toString() };
+                return { start, end: pre.toString().length, text: r.toString() };
             };
 
             const handleMouseUp = () => {
@@ -2688,14 +2665,10 @@
                     .filter(t => Number.isFinite(t.start) && Number.isFinite(t.end) && t.end > t.start)
                     .sort((a, b) => a.start - b.start);
 
-                const nodeIndex = (node) => {
-                    const parent = node.parentNode;
-                    if (!parent) return 0;
-                    return Array.prototype.indexOf.call(parent.childNodes, node);
-                };
-
                 const locateTextOffset = (target) => {
-                    let seen = 0;
+                    const safeTarget = Math.max(0, target);
+                    const base = document.createRange();
+                    base.selectNodeContents(container);
                     const walker = document.createTreeWalker(
                         container,
                         NodeFilter.SHOW_ALL,
@@ -2710,20 +2683,42 @@
                     let node;
                     while ((node = walker.nextNode())) {
                         if (node.nodeType === Node.TEXT_NODE) {
-                            const len = node.textContent.length;
-                            if (target <= seen + len) return { node, offset: Math.max(0, target - seen) };
-                            seen += len;
+                            const before = base.cloneRange();
+                            before.setEnd(node, 0);
+                            const beforeLen = before.toString().length;
+
+                            const after = base.cloneRange();
+                            after.setEnd(node, node.textContent.length);
+                            const afterLen = after.toString().length;
+
+                            if (safeTarget <= afterLen) {
+                                return {
+                                    node,
+                                    offset: Math.max(0, Math.min(node.textContent.length, safeTarget - beforeLen))
+                                };
+                            }
                             continue;
                         }
-
-                        // Keep newline offsets aligned with ranges that span line breaks.
                         if (node.nodeName === 'BR') {
-                            if (target === seen) return { node: node.parentNode, offset: nodeIndex(node) };
-                            if (target === seen + 1) return { node: node.parentNode, offset: nodeIndex(node) + 1 };
-                            seen += 1;
+                            const parent = node.parentNode;
+                            if (!parent) continue;
+                            const index = Array.prototype.indexOf.call(parent.childNodes, node);
+
+                            const before = base.cloneRange();
+                            before.setEnd(parent, index);
+                            const beforeLen = before.toString().length;
+
+                            const after = base.cloneRange();
+                            after.setEnd(parent, index + 1);
+                            const afterLen = after.toString().length;
+
+                            if (safeTarget <= afterLen) {
+                                if (safeTarget <= beforeLen) return { node: parent, offset: index };
+                                return { node: parent, offset: index + 1 };
+                            }
                         }
                     }
-                    return null;
+                    return { node: container, offset: container.childNodes.length };
                 };
 
                 sorted.forEach((tag) => {
@@ -4038,35 +4033,12 @@
                 if (!sel.rangeCount) return null;
                 const r = sel.getRangeAt(0);
                 if (r.collapsed || !containerNode.contains(r.startContainer)) return null;
-
-                const normalizedRangeLength = (range) => {
-                    const fragment = range.cloneContents();
-                    let length = 0;
-                    const walker = document.createTreeWalker(
-                        fragment,
-                        NodeFilter.SHOW_ALL,
-                        {
-                            acceptNode: (node) => {
-                                if (node.nodeType === Node.TEXT_NODE) return NodeFilter.FILTER_ACCEPT;
-                                if (node.nodeType === Node.ELEMENT_NODE && node.nodeName === 'BR') return NodeFilter.FILTER_ACCEPT;
-                                return NodeFilter.FILTER_SKIP;
-                            }
-                        }
-                    );
-                    let node;
-                    while ((node = walker.nextNode())) {
-                        if (node.nodeType === Node.TEXT_NODE) length += node.textContent.length;
-                        else if (node.nodeName === 'BR') length += 1;
-                    }
-                    return length;
-                };
-
                 const pre = r.cloneRange();
                 pre.selectNodeContents(containerNode);
                 pre.setEnd(r.startContainer, r.startOffset);
-                const start = normalizedRangeLength(pre);
+                const start = pre.toString().length;
                 pre.setEnd(r.endContainer, r.endOffset);
-                return { start, end: normalizedRangeLength(pre), text: r.toString() };
+                return { start, end: pre.toString().length, text: r.toString() };
             };
 
             const handleMouseUp = () => {
@@ -4156,14 +4128,10 @@
                     .filter(t => Number.isFinite(t.start) && Number.isFinite(t.end) && t.end > t.start)
                     .sort((a, b) => a.start - b.start);
 
-                const nodeIndex = (node) => {
-                    const parent = node.parentNode;
-                    if (!parent) return 0;
-                    return Array.prototype.indexOf.call(parent.childNodes, node);
-                };
-
                 const locateTextOffset = (target) => {
-                    let seen = 0;
+                    const safeTarget = Math.max(0, target);
+                    const base = document.createRange();
+                    base.selectNodeContents(container);
                     const walker = document.createTreeWalker(
                         container,
                         NodeFilter.SHOW_ALL,
@@ -4178,20 +4146,42 @@
                     let node;
                     while ((node = walker.nextNode())) {
                         if (node.nodeType === Node.TEXT_NODE) {
-                            const len = node.textContent.length;
-                            if (target <= seen + len) return { node, offset: Math.max(0, target - seen) };
-                            seen += len;
+                            const before = base.cloneRange();
+                            before.setEnd(node, 0);
+                            const beforeLen = before.toString().length;
+
+                            const after = base.cloneRange();
+                            after.setEnd(node, node.textContent.length);
+                            const afterLen = after.toString().length;
+
+                            if (safeTarget <= afterLen) {
+                                return {
+                                    node,
+                                    offset: Math.max(0, Math.min(node.textContent.length, safeTarget - beforeLen))
+                                };
+                            }
                             continue;
                         }
-
-                        // Keep newline offsets aligned with ranges that span line breaks.
                         if (node.nodeName === 'BR') {
-                            if (target === seen) return { node: node.parentNode, offset: nodeIndex(node) };
-                            if (target === seen + 1) return { node: node.parentNode, offset: nodeIndex(node) + 1 };
-                            seen += 1;
+                            const parent = node.parentNode;
+                            if (!parent) continue;
+                            const index = Array.prototype.indexOf.call(parent.childNodes, node);
+
+                            const before = base.cloneRange();
+                            before.setEnd(parent, index);
+                            const beforeLen = before.toString().length;
+
+                            const after = base.cloneRange();
+                            after.setEnd(parent, index + 1);
+                            const afterLen = after.toString().length;
+
+                            if (safeTarget <= afterLen) {
+                                if (safeTarget <= beforeLen) return { node: parent, offset: index };
+                                return { node: parent, offset: index + 1 };
+                            }
                         }
                     }
-                    return null;
+                    return { node: container, offset: container.childNodes.length };
                 };
                 sorted.forEach((tag) => {
                     const startPos = locateTextOffset(tag.start);
