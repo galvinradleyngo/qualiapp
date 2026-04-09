@@ -2655,7 +2655,7 @@
             };
 
             const renderHighlightedHtml = () => {
-                const baseHtml = contentHtml || plainToHtml(content);
+                const baseHtml = plainToHtml(content);
                 if (!baseHtml) return '';
                 if (!tags.length) return baseHtml;
 
@@ -2700,7 +2700,7 @@
                             seen += 1;
                         }
                     }
-                    return { node: container, offset: container.childNodes.length };
+                    return null;
                 };
 
                 sorted.forEach((tag) => {
@@ -4145,7 +4145,7 @@
                             seen += 1;
                         }
                     }
-                    return { node: container, offset: container.childNodes.length };
+                    return null;
                 };
                 sorted.forEach((tag) => {
                     const startPos = locateTextOffset(tag.start);
