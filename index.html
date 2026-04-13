@@ -922,6 +922,61 @@
                 }
             };
 
+            const estimateBackupSize = async () => {
+                try {
+                    // Get all files from the files store
+                    const fileEntries = await dbGetAllEntries('files');
+                    let filesSize = 0;
+                    for (const entry of fileEntries) {
+                        const value = entry.value;
+                        if (!(value instanceof Blob)) continue;
+                        filesSize += value.size;
+                    }
+
+                    // Estimate data size (in JSON format)
+                    const dataPayload = {
+                        transcripts,
+                        transcriptFolders,
+                        tags,
+                        globalArtifacts,
+                        activityTypes,
+                        participants,
+                        analysisCanvases,
+                        sourceFilterPresets,
+                        triangulationSessions,
+                        triangulationAssignmentMeta,
+                        codeDefinitions,
+                        categoryDefinitions,
+                        observations,
+                        observationTags
+                    };
+                    const dataString = JSON.stringify(dataPayload);
+                    const dataSize = new Blob([dataString]).size;
+
+                    // Estimate security section
+                    const securitySize = new Blob([JSON.stringify({
+                        appPin: localStorage.getItem('quali_pin') || null,
+                        participantPinHash: localStorage.getItem(participantPinKey) || null,
+                        recoveryQuestion: localStorage.getItem(recoveryQuestionKey) || null,
+                        recoveryAnswerHash: localStorage.getItem(recoveryAnswerHashKey) || null
+                    })]).size;
+
+                    // Calculate base size
+                    const baseSize = dataSize + securitySize;
+
+                    // Files are serialized as base64 in the backup (1.33x larger)
+                    const serializedFilesSize = filesSize * 1.33;
+
+                    // Add JSON structure overhead and encryption overhead
+                    const totalSize = baseSize + serializedFilesSize + 1000; // 1KB buffer for structure
+
+                    return totalSize;
+                } catch (err) {
+                    console.error('Error estimating backup size:', err);
+                    return 0;
+                }
+            };
+
             const handleBackupDownload = async (backupPassword) => {
                 const fileEntries = await dbGetAllEntries('files');
                 const serializedFiles = [];
@@ -1350,7 +1405,7 @@
                                     onImportReturn={handleImportTriangulationReturn}
                                 />
                             )}
-                            {view === 'backup' && <BackupDashboard onBackup={handleBackupDownload} onRestore={handleRestoreUpload} />}
+                            {view === 'backup' && <BackupDashboard onBackup={handleBackupDownload} onRestore={handleRestoreUpload} estimateBackupSize={estimateBackupSize} />}
                             {view === 'editor' && activeTranscript && (
                                 <Editor
                                     transcript={activeTranscript}
@@ -1545,11 +1600,22 @@
             );
         }
 
-        function BackupDashboard({ onBackup, onRestore }) {
+        function BackupDashboard({ onBackup, onRestore, estimateBackupSize }) {
             const [backupPassword, setBackupPassword] = useState('');
             const [restorePassword, setRestorePassword] = useState('');
             const [restoreFile, setRestoreFile] = useState(null);
             const [message, setMessage] = useState('');
+            const [estimatedSize, setEstimatedSize] = useState(null);
+
+            useEffect(() => {
+                const loadEstimatedSize = async () => {
+                    if (estimateBackupSize) {
+                        const size = await estimateBackupSize();
+                        setEstimatedSize(size);
+                    }
+                };
+                loadEstimatedSize();
+            }, [estimateBackupSize]);
 
             const backupNow = async () => {
                 if (backupPassword.length < 6) return setMessage('Backup password must be at least 6 characters.');
@@ -1584,6 +1650,15 @@
                                 <div>
                                     <h3 className="text-xl font-bold text-ink mb-2">Download Encrypted Backup</h3>
                                     <p className="text-sm text-slate-500 mb-4">Creates a .qbk file with all your data encrypted with AES-256-GCM. Store securely.</p>
+                                    {estimatedSize !== null && (
+                                        <div className="mb-4 p-3 rounded-lg bg-slate-50 border border-slate-200">
+                                            <p className="text-xs font-semibold text-slate-600 uppercase">Estimated File Size</p>
+                                            <p className="text-lg font-bold text-slate-800 mt-1">
+                                                {estimatedSize < 1024 ? `${estimatedSize.toFixed(0)} bytes` : estimatedSize < 1024 * 1024 ? `${(estimatedSize / 1024).toFixed(1)} KB` : `${(estimatedSize / (1024 * 1024)).toFixed(1)} MB`}
+                                            </p>
+                                            <p className="text-xs text-slate-500 mt-1">Plan your storage accordingly</p>
+                                        </div>
+                                    )}
                                 </div>
                                 <div>
                                     <label className="block text-sm font-semibold text-slate-600 mb-2">Backup Password (min 6 chars)</label>
