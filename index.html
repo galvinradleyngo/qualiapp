@@ -3663,14 +3663,20 @@
             const assignedCodes = new Set((activeCanvas?.themes || []).flatMap(t => t.codes));
             const unassigned = codeDetails.filter(c => !assignedCodes.has(c.name));
 
-            const tableRows = useMemo(() => {
-                if (!activeCanvas) return [];
+            const codeDetailByName = useMemo(() => {
                 const detailByCode = {};
-                codeDetails.forEach(c => { detailByCode[c.name] = c; });
+                codeDetails.forEach((c) => {
+                    detailByCode[c.name] = c;
+                });
+                return detailByCode;
+            }, [codeDetails]);
+
+            const buildCanvasTableRows = (canvas) => {
+                if (!canvas) return [];
                 const rows = [];
-                activeCanvas.themes.forEach(theme => {
-                    theme.codes.forEach(codeName => {
-                        const d = detailByCode[codeName] || { count: 0, quotes: [], category: 'Uncategorized' };
+                (canvas.themes || []).forEach((theme) => {
+                    (theme.codes || []).forEach((codeName) => {
+                        const d = codeDetailByName[codeName] || { count: 0, quotes: [], category: 'Uncategorized' };
                         rows.push({
                             theme: theme.name,
                             code: codeName,
@@ -3681,7 +3687,9 @@
                     });
                 });
                 return rows;
-            }, [activeCanvas, codeDetails]);
+            };
+
+            const tableRows = useMemo(() => buildCanvasTableRows(activeCanvas), [activeCanvas, codeDetailByName]);
 
             const exportCanvasCsv = () => {
                 if (!activeCanvas) return;
@@ -3697,6 +3705,25 @@
                     ].join(','));
                 });
                 downloadCsv(`${activeCanvas.name.replace(/\s+/g, '_')}_analysis_table.csv`, lines);
+            };
+
+            const exportAllCanvasTablesCsv = () => {
+                const lines = ['Canvas,Theme,Code,Category,Quote Count,Quotes'];
+                canvases.forEach((canvas) => {
+                    const rows = buildCanvasTableRows(canvas);
+                    rows.forEach((r) => {
+                        const quotes = r.quotes.map(q => `[${q.source}] ${q.ref}: ${q.text}`).join(' || ');
+                        lines.push([
+                            csvEscape(canvas.name),
+                            csvEscape(r.theme),
+                            csvEscape(r.code),
+                            csvEscape(r.category),
+                            csvEscape(r.quoteCount),
+                            csvEscape(quotes)
+                        ].join(','));
+                    });
+                });
+                downloadCsv(`QualiApp_Analysis_Canvas_Tables_${new Date().toISOString().slice(0, 10)}.csv`, lines);
             };
 
             const exportCanvasApaDoc = () => {
@@ -3715,6 +3742,26 @@
                     'Quotes are exported from current folder-filtered analysis rows and may be truncated for long entries.'
                 );
                 downloadWordDoc(`${activeCanvas.name.replace(/\s+/g, '_')}_APA7_analysis_table.doc`, html);
+            };
+
+            const exportAllCanvasApaDoc = () => {
+                const html = canvases.map((canvas, index) => {
+                    const rows = buildCanvasTableRows(canvas);
+                    return buildApaTableHtml(
+                        index + 1,
+                        `${canvas.name} Analysis Table`,
+                        ['Theme', 'Code', 'Category', 'Quote Count', 'Quotes'],
+                        rows.map((row) => [
+                            row.theme,
+                            row.code,
+                            row.category,
+                            String(row.quoteCount),
+                            row.quotes.map(q => `[${q.source}] ${q.ref} (${q.folder}): ${q.text}`).join(' | ')
+                        ]),
+                        'Quotes are exported from current folder-filtered analysis rows and may be truncated for long entries.'
+                    );
+                }).join('');
+                downloadWordDoc(`QualiApp_APA7_All_Analysis_Canvas_Tables_${new Date().toISOString().slice(0, 10)}.doc`, html);
             };
 
             const toggleFolder = (folder) => {
@@ -3883,9 +3930,11 @@
                                                 <div className="absolute right-0 mt-2 w-64 bg-white border border-slate-200 rounded-xl shadow-soft z-30 p-2">
                                                     <p className="px-2 py-1 text-[11px] uppercase font-bold tracking-wide text-slate-500">CSV</p>
                                                     <button type="button" onClick={() => { exportCanvasCsv(); setShowExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm text-slate-700">Canvas table (.csv)</button>
+                                                    <button type="button" onClick={() => { exportAllCanvasTablesCsv(); setShowExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm text-slate-700">All canvas tables (.csv)</button>
                                                     <div className="my-1 border-t" />
                                                     <p className="px-2 py-1 text-[11px] uppercase font-bold tracking-wide text-slate-500">APA7 Word (.doc)</p>
                                                     <button type="button" onClick={() => { exportCanvasApaDoc(); setShowExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm text-slate-700">Canvas table APA7 (.doc)</button>
+                                                    <button type="button" onClick={() => { exportAllCanvasApaDoc(); setShowExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm font-semibold text-ink">All canvas tables APA7 (.doc)</button>
                                                 </div>
                                             )}
                                         </div>
