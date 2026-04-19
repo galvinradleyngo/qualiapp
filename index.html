@@ -836,6 +836,7 @@
                     id: now,
                     title: data.title,
                     folder: targetFolder,
+                    modality: data.modality || '',
                     subfolder: '',
                     content: '',
                     contentHtml: '',
@@ -1709,6 +1710,7 @@
             const [showModal, setShowModal] = useState(false);
             const [title, setTitle] = useState('');
             const [folder, setFolder] = useState('');
+            const [modality, setModality] = useState('');
             const [audioFile, setAudioFile] = useState(null);
             const [selectedParticipantId, setSelectedParticipantId] = useState('');
             const [showParticipantInfo, setShowParticipantInfo] = useState(false);
@@ -1746,10 +1748,11 @@
             const handleSubmit = (e) => {
                 e.preventDefault();
                 if (!title.trim()) return;
-                onCreate({ title: title.trim(), folder, audioFile, participantId: selectedParticipantId || null });
+                onCreate({ title: title.trim(), folder, modality, audioFile, participantId: selectedParticipantId || null });
                 setShowModal(false);
                 setTitle('');
                 setFolder('');
+                setModality('');
                 setAudioFile(null);
                 setSelectedParticipantId('');
                 setShowParticipantInfo(false);
@@ -1975,11 +1978,13 @@
                                                         <>
                                                             <h5 className="font-semibold text-lg">{t.title}</h5>
                                                             <p className="text-xs text-slate-500 mt-1">Folder: {t.folder || 'Uncategorized'}</p>
+                                                            <p className="text-xs text-slate-500 mt-1">Modality: {t.modality || 'Not set'}</p>
                                                         </>
                                                     )}
                                                 </div>
                                                 <p className="text-sm text-slate-500 mt-2">{t.content ? `${t.content.trim().split(/\s+/).length} words` : 'Empty transcript'}</p>
                                                 <div className="mt-3 flex flex-wrap gap-2">
+                                                    {t.modality && <span className="text-xs bg-sky-50 text-sky-700 px-2 py-1 rounded-full capitalize">{t.modality}</span>}
                                                     {t.hasAudio && <span className="text-xs bg-teal-50 text-teal-700 px-2 py-1 rounded-full">Audio</span>}
                                                     {t.notes && <span className="text-xs bg-amber-50 text-amber-700 px-2 py-1 rounded-full">Memo</span>}
                                                     {t.activityLog && t.activityLog.length > 1 && <span className="text-xs bg-emerald-50 text-emerald-700 px-2 py-1 rounded-full">{t.activityLog.length} logs</span>}
@@ -2031,6 +2036,15 @@
                                     <label className="block text-sm font-semibold text-slate-600 mb-1">Folder</label>
                                     <input list="folder_list" value={folder} onChange={e => setFolder(e.target.value)} className="w-full border border-slate-300 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-tide" placeholder="Leave empty for Uncategorized" />
                                     <datalist id="folder_list">{folderList.map(f => <option key={f} value={f} />)}</datalist>
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-semibold text-slate-600 mb-1">Modality</label>
+                                    <select value={modality} onChange={e => setModality(e.target.value)} className="w-full border border-slate-300 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-tide bg-white">
+                                        <option value="">Select later if needed</option>
+                                        <option value="online">Online</option>
+                                        <option value="onsite">Onsite</option>
+                                    </select>
                                 </div>
 
                                 <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg">
@@ -2539,6 +2553,7 @@
             const [content, setContent] = useState(transcript.content || '');
             const [contentHtml, setContentHtml] = useState(transcript.contentHtml || '');
             const [notes, setNotes] = useState(transcript.notes || '');
+            const [modality, setModality] = useState(transcript.modality || '');
             const [saveStatus, setSaveStatus] = useState('saved');
             const [lastSavedAt, setLastSavedAt] = useState(null);
             const [showSavedToast, setShowSavedToast] = useState(false);
@@ -2579,6 +2594,7 @@
                 setContent(nextContent);
                 setContentHtml(transcript.contentHtml || plainToHtml(nextContent));
                 setNotes(transcript.notes || '');
+                setModality(transcript.modality || '');
                 setSaveStatus('saved');
             }, [transcript.id]);
 
@@ -2619,7 +2635,8 @@
                         ...transcript,
                         content: nextPlain,
                         contentHtml: nextHtml,
-                        notes: nextNotes
+                        notes: nextNotes,
+                        modality
                     });
                     setLastSavedAt(new Date());
                     setSaveStatus('saved');
@@ -2658,6 +2675,28 @@
             const handleManualSave = () => {
                 handleSave();
                 setShowSavedToast(true);
+            };
+
+            const handleModalityChange = (nextModality) => {
+                const latestHtml = editableRef.current ? editableRef.current.innerHTML : (contentHtml || plainToHtml(content));
+                const latestPlain = htmlToPlain(latestHtml);
+                setContentHtml(latestHtml);
+                setContent(latestPlain);
+                setModality(nextModality);
+                setSaveStatus('saving');
+                try {
+                    onUpdateTranscript({
+                        ...transcript,
+                        content: latestPlain,
+                        contentHtml: latestHtml,
+                        notes,
+                        modality: nextModality
+                    });
+                    setLastSavedAt(new Date());
+                    setSaveStatus('saved');
+                } catch (_err) {
+                    setSaveStatus('error');
+                }
             };
 
             useEffect(() => {
@@ -2811,7 +2850,7 @@
                     await dbSet('files', `audio_${transcript.id}`, file);
                     const newUrl = URL.createObjectURL(file);
                     setAudioUrl(newUrl);
-                    onUpdateTranscript({ ...transcript, content, contentHtml, notes, hasAudio: true });
+                    onUpdateTranscript({ ...transcript, content, contentHtml, notes, modality, hasAudio: true });
                 } catch (err) {
                     alert('Failed to upload audio file.');
                 } finally {
@@ -2824,7 +2863,7 @@
                 await dbDelete('files', `audio_${transcript.id}`);
                 if (audioUrl) URL.revokeObjectURL(audioUrl);
                 setAudioUrl(null);
-                onUpdateTranscript({ ...transcript, content, contentHtml, notes, hasAudio: false });
+                onUpdateTranscript({ ...transcript, content, contentHtml, notes, modality, hasAudio: false });
             };
 
             const submitActivityLog = (e) => {
@@ -2837,7 +2876,7 @@
                     note: logNote.trim(),
                     timestamp: new Date().toISOString()
                 };
-                onUpdateTranscript({ ...transcript, content, contentHtml, notes, activityLog: [newLog, ...activityLog] });
+                onUpdateTranscript({ ...transcript, content, contentHtml, notes, modality, activityLog: [newLog, ...activityLog] });
                 setLogType('');
                 setLogNote('');
             };
@@ -3051,7 +3090,17 @@
                     <div className="border-b px-6 py-4 flex items-center justify-between bg-white z-10">
                         <div className="flex items-center gap-4">
                             <button onClick={() => { handleSave(); onBack(); }} className="p-2 hover:bg-slate-200 rounded-full font-bold">Back</button>
-                            <h2 className="text-xl font-bold truncate max-w-sm border-l-2 pl-4 border-slate-300" title={transcript.title}>{transcript.title}</h2>
+                            <div className="flex items-center gap-4">
+                                <h2 className="text-xl font-bold truncate max-w-sm border-l-2 pl-4 border-slate-300" title={transcript.title}>{transcript.title}</h2>
+                                <div className="min-w-[180px]">
+                                    <label className="block text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-1">Modality</label>
+                                    <select value={modality} onChange={e => handleModalityChange(e.target.value)} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-tide">
+                                        <option value="">Not set</option>
+                                        <option value="online">Online</option>
+                                        <option value="onsite">Onsite</option>
+                                    </select>
+                                </div>
+                            </div>
                         </div>
                         <div className="flex items-center gap-3">
                             <div className={`flex items-center px-2.5 py-1 rounded-md text-xs font-semibold border ${saveStatusClass}`}>
