@@ -801,10 +801,9 @@
             const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
             const [view, setView] = useState('dashboard');
             const [transcripts, setTranscripts] = useState([]);
-            const [transcriptFolders, setTranscriptFolders] = useState([]);
+            const [folders, setFolders] = useState([]);
             const [tags, setTags] = useState([]);
             const [globalArtifacts, setGlobalArtifacts] = useState([]);
-            const [artifactFolders, setArtifactFolders] = useState([]);
             const [activityTypes, setActivityTypes] = useState(['Edited', 'First Review', 'Coded', 'Member Checked']);
             const [participants, setParticipants] = useState([]);
             const [analysisCanvases, setAnalysisCanvases] = useState([]);
@@ -814,7 +813,6 @@
             const [codeDefinitions, setCodeDefinitions] = useState({});
             const [categoryDefinitions, setCategoryDefinitions] = useState({});
             const [observations, setObservations] = useState([]);
-            const [observationFolders, setObservationFolders] = useState([]);
             const [observationTags, setObservationTags] = useState([]);
             const [activeObservationId, setActiveObservationId] = useState(null);
             const [activeId, setActiveId] = useState(null);
@@ -870,13 +868,17 @@
 
             useEffect(() => {
                 const loadData = async () => {
-                    const keys = ['transcripts','transcript_folders','tags','global_artifacts','artifact_folders','participants','analysis_canvases','source_filter_presets','triangulation_sessions','triangulation_assignment_meta','code_definitions','category_definitions','observations','observation_folders','observation_tags','activityTypes'];
+                    const keys = ['transcripts','folders','transcript_folders','tags','global_artifacts','artifact_folders','participants','analysis_canvases','source_filter_presets','triangulation_sessions','triangulation_assignment_meta','code_definitions','category_definitions','observations','observation_folders','observation_tags','activityTypes'];
                     const d = await dbBatchGet('data', keys);
                     setTranscripts(d['transcripts'] || []);
-                    setTranscriptFolders(d['transcript_folders'] || []);
+                    if (d['folders']) {
+                        setFolders(d['folders']);
+                    } else {
+                        const legacy = [...new Set([...(d['transcript_folders'] || []), ...(d['artifact_folders'] || []), ...(d['observation_folders'] || [])])];
+                        setFolders(legacy);
+                    }
                     setTags(d['tags'] || []);
                     setGlobalArtifacts(d['global_artifacts'] || []);
-                    setArtifactFolders(d['artifact_folders'] || []);
                     setParticipants(d['participants'] || []);
                     setAnalysisCanvases(d['analysis_canvases'] || []);
                     setSourceFilterPresets(d['source_filter_presets'] || []);
@@ -885,7 +887,6 @@
                     setCodeDefinitions(d['code_definitions'] || {});
                     setCategoryDefinitions(d['category_definitions'] || {});
                     setObservations(d['observations'] || []);
-                    setObservationFolders(d['observation_folders'] || []);
                     setObservationTags(d['observation_tags'] || []);
                     if (d['activityTypes']) setActivityTypes(d['activityTypes']);
                     setIsReady(true);
@@ -897,10 +898,9 @@
                 if (isReady && startupState === 'open') {
                     dbBatchSet('data', [
                         ['transcripts', transcripts],
-                        ['transcript_folders', transcriptFolders],
+                        ['folders', folders],
                         ['tags', tags],
                         ['global_artifacts', globalArtifacts],
-                        ['artifact_folders', artifactFolders],
                         ['activityTypes', activityTypes],
                         ['participants', participants],
                         ['analysis_canvases', analysisCanvases],
@@ -910,11 +910,10 @@
                         ['code_definitions', codeDefinitions],
                         ['category_definitions', categoryDefinitions],
                         ['observations', observations],
-                        ['observation_folders', observationFolders],
                         ['observation_tags', observationTags]
                     ]);
                 }
-            }, [transcripts, transcriptFolders, tags, globalArtifacts, artifactFolders, activityTypes, participants, analysisCanvases, sourceFilterPresets, triangulationSessions, triangulationAssignmentMeta, codeDefinitions, categoryDefinitions, observations, observationFolders, observationTags, isReady, startupState]);
+            }, [transcripts, folders, tags, globalArtifacts, activityTypes, participants, analysisCanvases, sourceFilterPresets, triangulationSessions, triangulationAssignmentMeta, codeDefinitions, categoryDefinitions, observations, observationTags, isReady, startupState]);
 
             const handleSaveSourceFilterPreset = (preset) => {
                 const cleanedName = String(preset?.name || '').trim();
@@ -937,7 +936,6 @@
             };
 
             const activeTranscript = transcripts.find(t => t.id === activeId);
-            const folders = [...new Set([...transcriptFolders, ...transcripts.map(t => t.folder).filter(Boolean)])].sort((a, b) => a.localeCompare(b));
             const artifactSuggestionTags = useMemo(
                 () => {
                     const fromCodes = (globalArtifacts || []).flatMap((art) => (art.codes || []).map((codeName) => ({
@@ -995,8 +993,8 @@
                     activityLog: [{ id: now + '_created', type: 'Created', note: 'Transcript initialized', timestamp: new Date().toISOString() }]
                 };
                 if (data.audioFile) await dbSet('files', `audio_${newDoc.id}`, data.audioFile);
-                if (targetFolder !== 'Uncategorized' && !transcriptFolders.includes(targetFolder)) {
-                    setTranscriptFolders([...transcriptFolders, targetFolder]);
+                if (targetFolder !== 'Uncategorized' && !folders.includes(targetFolder)) {
+                    setFolders([...folders, targetFolder]);
                 }
                 setTranscripts([newDoc, ...transcripts]);
                 setActiveId(newDoc.id);
@@ -1005,8 +1003,8 @@
 
             const handleCreateFolder = (folderName) => {
                 const cleaned = folderName.trim();
-                if (!cleaned || cleaned === 'Uncategorized' || transcriptFolders.includes(cleaned)) return;
-                setTranscriptFolders([...transcriptFolders, cleaned]);
+                if (!cleaned || cleaned === 'Uncategorized' || folders.includes(cleaned)) return;
+                setFolders([...folders, cleaned]);
             };
 
             const handleRenameFolder = (oldName, newName) => {
@@ -1018,37 +1016,57 @@
                     return;
                 }
 
-                const allFolderNames = [...new Set([...transcriptFolders, ...transcripts.map(t => t.folder).filter(Boolean)])];
-                const targetExists = allFolderNames.includes(cleaned);
+                const targetExists = folders.includes(cleaned);
                 if (targetExists && !confirm(`Folder "${cleaned}" already exists. Merge "${oldName}" into it?`)) return;
 
-                const nextFolders = transcriptFolders
+                const nextFolders = folders
                     .filter(f => f !== oldName)
                     .concat(targetExists ? [] : [cleaned]);
-                setTranscriptFolders(nextFolders);
+                setFolders(nextFolders);
                 setTranscripts(transcripts.map(t => (t.folder || 'Uncategorized') === oldName ? { ...t, folder: cleaned, subfolder: '' } : t));
+                setGlobalArtifacts(globalArtifacts.map(a => (a.folder || '') === oldName ? { ...a, folder: cleaned } : a));
+                setObservations(observations.map(o => (o.folder || '') === oldName ? { ...o, folder: cleaned } : o));
             };
 
             const handleDeleteFolder = (folderName) => {
                 if (!folderName || folderName === 'Uncategorized') return;
-                const count = transcripts.filter(t => (t.folder || 'Uncategorized') === folderName).length;
-                const ok = count > 0
-                    ? confirm(`Folder "${folderName}" contains ${count} transcript(s). Delete this folder and move them to Uncategorized?`)
+                const tCount = transcripts.filter(t => (t.folder || 'Uncategorized') === folderName).length;
+                const aCount = globalArtifacts.filter(a => (a.folder || '') === folderName).length;
+                const oCount = observations.filter(o => (o.folder || '') === folderName).length;
+                const totalCount = tCount + aCount + oCount;
+                const ok = totalCount > 0
+                    ? confirm(`Folder "${folderName}" contains ${totalCount} item(s). Delete this folder and move them to Uncategorized?`)
                     : confirm(`Delete empty folder "${folderName}"?`);
                 if (!ok) return;
 
-                setTranscriptFolders(transcriptFolders.filter(f => f !== folderName));
-                if (count > 0) {
-                    setTranscripts(transcripts.map(t => (t.folder || 'Uncategorized') === folderName ? { ...t, folder: 'Uncategorized', subfolder: '' } : t));
-                }
+                setFolders(folders.filter(f => f !== folderName));
+                if (tCount > 0) setTranscripts(transcripts.map(t => (t.folder || 'Uncategorized') === folderName ? { ...t, folder: 'Uncategorized', subfolder: '' } : t));
+                if (aCount > 0) setGlobalArtifacts(globalArtifacts.map(a => (a.folder || '') === folderName ? { ...a, folder: '' } : a));
+                if (oCount > 0) setObservations(observations.map(o => (o.folder || '') === folderName ? { ...o, folder: '' } : o));
             };
 
             const handleMoveTranscriptToFolder = (transcriptId, folderName) => {
                 const targetFolder = folderName.trim() || 'Uncategorized';
-                if (targetFolder !== 'Uncategorized' && !transcriptFolders.includes(targetFolder)) {
-                    setTranscriptFolders([...transcriptFolders, targetFolder]);
+                if (targetFolder !== 'Uncategorized' && !folders.includes(targetFolder)) {
+                    setFolders([...folders, targetFolder]);
                 }
                 setTranscripts(transcripts.map(t => t.id === transcriptId ? { ...t, folder: targetFolder, subfolder: '' } : t));
+            };
+
+            const handleMoveArtifactToFolder = (artId, folderName) => {
+                const targetFolder = folderName.trim() || '';
+                if (targetFolder && !folders.includes(targetFolder)) {
+                    setFolders([...folders, targetFolder]);
+                }
+                setGlobalArtifacts(globalArtifacts.map(a => a.id === artId ? { ...a, folder: targetFolder } : a));
+            };
+
+            const handleMoveObservationToFolder = (obsId, folderName) => {
+                const targetFolder = folderName.trim() || '';
+                if (targetFolder && !folders.includes(targetFolder)) {
+                    setFolders([...folders, targetFolder]);
+                }
+                setObservations(observations.map(o => o.id === obsId ? { ...o, folder: targetFolder } : o));
             };
 
             const handleRenameTranscript = (transcriptId, title) => {
@@ -1083,7 +1101,7 @@
                     // Estimate data size (in JSON format)
                     const dataPayload = {
                         transcripts,
-                        transcriptFolders,
+                        folders,
                         tags,
                         globalArtifacts,
                         activityTypes,
@@ -1162,7 +1180,7 @@
                     exportedAt: new Date().toISOString(),
                     data: {
                         transcripts,
-                        transcriptFolders,
+                        folders,
                         tags,
                         globalArtifacts,
                         activityTypes,
@@ -1174,9 +1192,7 @@
                         codeDefinitions,
                         categoryDefinitions,
                         observations,
-                        observationTags,
-                        artifactFolders,
-                        observationFolders
+                        observationTags
                     },
                     files: fileIndex,
                     security: {
@@ -1296,7 +1312,11 @@
                 report('Restoring data…', 55);
                 const d = payload.data || {};
                 setTranscripts(d.transcripts || []);
-                setTranscriptFolders(d.transcriptFolders || []);
+                if (d.folders) {
+                    setFolders(d.folders);
+                } else {
+                    setFolders([...new Set([...(d.transcriptFolders || []), ...(d.artifactFolders || []), ...(d.observationFolders || [])])]);
+                }
                 setTags(d.tags || []);
                 setGlobalArtifacts(d.globalArtifacts || []);
                 setActivityTypes(d.activityTypes || ['Edited', 'First Review', 'Coded', 'Member Checked']);
@@ -1405,13 +1425,12 @@
                         projectFingerprint: fingerprint,
                         data: {
                             transcripts,
-                            transcriptFolders,
+                            folders,
                             tags: [],
                             globalArtifacts: sanitizedArtifacts,
                             activityTypes,
                             participants: sanitizedParticipants,
-                            analysisCanvases: [],
-                            artifactFolders
+                            analysisCanvases: []
                         },
                         files: serializedFiles
                     };
@@ -1434,11 +1453,13 @@
 
                 const d = payload.data || {};
                 setTranscripts(d.transcripts || []);
-                setTranscriptFolders(d.transcriptFolders || []);
+                if (d.folders) {
+                    setFolders(d.folders);
+                } else {
+                    setFolders([...new Set([...(d.transcriptFolders || []), ...(d.artifactFolders || []), ...(d.observationFolders || [])])]);
+                }
                 setTags(d.tags || []);
                 setGlobalArtifacts(d.globalArtifacts || []);
-                setArtifactFolders(d.artifactFolders || []);
-                setObservationFolders(d.observationFolders || []);
                 setActivityTypes(d.activityTypes || ['Edited', 'First Review', 'Coded', 'Member Checked']);
                 setParticipants(d.participants || []);
                 setAnalysisCanvases(d.analysisCanvases || []);
@@ -1648,7 +1669,19 @@
                                     participants={participants}
                                 />
                             )}
-                            {view === 'artifacts' && <ArtifactDashboard artifacts={globalArtifacts} onUpdate={setGlobalArtifacts} artifactFolders={artifactFolders} onFoldersUpdate={setArtifactFolders} suggestedCodes={crossSourceCodes} suggestedCategories={crossSourceCategories} />}
+                            {view === 'artifacts' && (
+                                <ArtifactDashboard
+                                    artifacts={globalArtifacts}
+                                    onUpdate={setGlobalArtifacts}
+                                    folders={folders}
+                                    onCreateFolder={handleCreateFolder}
+                                    onRenameFolder={handleRenameFolder}
+                                    onDeleteFolder={handleDeleteFolder}
+                                    onMoveArtifact={handleMoveArtifactToFolder}
+                                    suggestedCodes={crossSourceCodes}
+                                    suggestedCategories={crossSourceCategories}
+                                />
+                            )}
                             {view === 'observations' && (
                                 <ObservationsView
                                     observations={observations}
@@ -1660,8 +1693,11 @@
                                     onAddObservationTag={(tag) => setObservationTags(prev => [...prev, tag])}
                                     onUpdateObservationTag={(updated) => setObservationTags(prev => prev.map(t => t.id === updated.id ? updated : t))}
                                     onRemoveObservationTag={(id) => setObservationTags(prev => prev.filter(t => t.id !== id))}
-                                    observationFolders={observationFolders}
-                                    onFoldersUpdate={setObservationFolders}
+                                    folders={folders}
+                                    onCreateFolder={handleCreateFolder}
+                                    onRenameFolder={handleRenameFolder}
+                                    onDeleteFolder={handleDeleteFolder}
+                                    onMoveObservation={handleMoveObservationToFolder}
                                 />
                             )}
                             {view === 'participants' && <ParticipantVault participants={participants} onUpdate={setParticipants} />}
@@ -2005,6 +2041,169 @@
             );
         }
 
+        function FolderSidebar({
+            title = 'Folders',
+            allLabel = 'All Items',
+            items = [],
+            folders = [],
+            selectedFolder = 'All',
+            onSelectFolder,
+            onCreateFolder,
+            onRenameFolder,
+            onDeleteFolder,
+            getFolderForItem,
+            dragItemId = null,
+            setDragItemId,
+            onDropItem,
+            emptyHint = '',
+            sticky = true,
+            className = ''
+        }) {
+            const [newFolderName, setNewFolderName] = useState('');
+            const [editingFolderName, setEditingFolderName] = useState(null);
+            const [editingFolderValue, setEditingFolderValue] = useState('');
+            const [hoverFolder, setHoverFolder] = useState('');
+
+            const folderList = ['Uncategorized', ...folders.filter(f => f !== 'Uncategorized').sort((a, b) => a.localeCompare(b))];
+            const folderCounts = items.reduce((acc, item) => {
+                const name = (getFolderForItem(item) || '').trim() || 'Uncategorized';
+                acc[name] = (acc[name] || 0) + 1;
+                return acc;
+            }, {});
+
+            const handleCreateFolder = () => {
+                if (!newFolderName.trim()) return;
+                onCreateFolder(newFolderName.trim());
+                onSelectFolder(newFolderName.trim());
+                setNewFolderName('');
+            };
+
+            const startRenameFolder = (folderName) => {
+                setEditingFolderName(folderName);
+                setEditingFolderValue(folderName);
+            };
+
+            const saveRenameFolder = () => {
+                if (!editingFolderName) return;
+                const oldName = editingFolderName;
+                const newName = editingFolderValue.trim();
+                onRenameFolder(oldName, newName);
+                if (selectedFolder === oldName && newName) onSelectFolder(newName);
+                setEditingFolderName(null);
+                setEditingFolderValue('');
+            };
+
+            const cancelRenameFolder = () => {
+                setEditingFolderName(null);
+                setEditingFolderValue('');
+            };
+
+            return (
+                <aside className={`bg-white/90 border rounded-2xl p-4 shadow-soft space-y-4 ${sticky ? 'lg:sticky lg:top-6' : ''} ${className}`}>
+                    <div className="space-y-2">
+                        <p className="text-xs uppercase tracking-wider font-bold text-slate-500">{title}</p>
+                        <div className="flex gap-2">
+                            <input
+                                value={newFolderName}
+                                onChange={e => setNewFolderName(e.target.value)}
+                                onKeyDown={e => e.key === 'Enter' && handleCreateFolder()}
+                                className="flex-1 border border-slate-300 rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-tide"
+                                placeholder="New folder"
+                            />
+                            <button onClick={handleCreateFolder} className="bg-ink hover:bg-slate-800 text-white px-3 py-2 rounded-lg text-sm font-semibold">Add</button>
+                        </div>
+                    </div>
+
+                    <div className="space-y-2">
+                        <button
+                            onClick={() => onSelectFolder('All')}
+                            className={`w-full text-left px-3 py-2.5 rounded-lg border text-sm font-semibold transition ${selectedFolder === 'All' ? 'bg-ink text-white border-ink' : 'bg-white text-slate-700 border-slate-300 hover:border-slate-400'}`}
+                        >
+                            {allLabel} ({items.length})
+                        </button>
+
+                        {folderList.map(folderName => (
+                            <div
+                                key={folderName}
+                                onDragOver={(e) => {
+                                    e.preventDefault();
+                                    if (!dragItemId) return;
+                                    setHoverFolder(folderName);
+                                }}
+                                onDragLeave={() => setHoverFolder('')}
+                                onDrop={(e) => {
+                                    e.preventDefault();
+                                    if (dragItemId && onDropItem) onDropItem(dragItemId, folderName);
+                                    setHoverFolder('');
+                                    if (setDragItemId) setDragItemId(null);
+                                }}
+                                className={`rounded-lg border p-2 transition ${hoverFolder === folderName ? 'border-ember ring-2 ring-ember/30' : 'border-slate-200'}`}
+                            >
+                                {editingFolderName === folderName ? (
+                                    <div className="space-y-2">
+                                        <input
+                                            autoFocus
+                                            value={editingFolderValue}
+                                            onChange={e => setEditingFolderValue(e.target.value)}
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter') {
+                                                    e.preventDefault();
+                                                    saveRenameFolder();
+                                                }
+                                                if (e.key === 'Escape') cancelRenameFolder();
+                                            }}
+                                            className="w-full border border-slate-300 rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-tide"
+                                        />
+                                        <div className="flex gap-2 justify-end">
+                                            <button onClick={cancelRenameFolder} className="px-2 py-1 rounded bg-slate-100 text-slate-700 text-xs">Cancel</button>
+                                            <button onClick={saveRenameFolder} className="px-2 py-1 rounded bg-tide text-white text-xs">Save</button>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="flex items-center gap-2">
+                                        <button
+                                            onClick={() => onSelectFolder(folderName)}
+                                            className={`flex-1 text-left px-2 py-1.5 rounded text-sm font-semibold transition ${selectedFolder === folderName ? 'bg-tide text-white' : 'text-slate-700 hover:bg-slate-100'}`}
+                                        >
+                                            {folderName} ({folderCounts[folderName] || 0})
+                                        </button>
+                                        {folderName !== 'Uncategorized' && (
+                                            <>
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        startRenameFolder(folderName);
+                                                    }}
+                                                    className="text-slate-400 hover:text-tide text-xs px-1"
+                                                    title="Rename folder"
+                                                >
+                                                    Rename
+                                                </button>
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        onDeleteFolder(folderName);
+                                                    }}
+                                                    className="text-slate-400 hover:text-red-500 text-xs px-1"
+                                                    title="Delete folder"
+                                                >
+                                                    Delete
+                                                </button>
+                                            </>
+                                        )}
+                                    </div>
+                                )}
+                                {hoverFolder === folderName && dragItemId && (
+                                    <p className="mt-2 text-[11px] font-semibold text-ember">Drop here to move item</p>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                    {emptyHint && <p className="text-xs text-slate-500">{emptyHint}</p>}
+                </aside>
+            );
+        }
+
         function Dashboard({ transcripts, folders, onDownloadApp, onCreate, onCreateFolder, onRenameFolder, onDeleteFolder, onMoveTranscript, onRenameTranscript, onOpen, onDelete, participants }) {
             const [showModal, setShowModal] = useState(false);
             const [title, setTitle] = useState('');
@@ -2013,13 +2212,11 @@
             const [audioFile, setAudioFile] = useState(null);
             const [selectedParticipantId, setSelectedParticipantId] = useState('');
             const [showParticipantInfo, setShowParticipantInfo] = useState(false);
-            const [newFolderName, setNewFolderName] = useState('');
             const [selectedFolder, setSelectedFolder] = useState('All');
             const [dragTranscriptId, setDragTranscriptId] = useState(null);
-            const [hoverFolder, setHoverFolder] = useState('');
             const [editingTitleId, setEditingTitleId] = useState(null);
             const [editingTitle, setEditingTitle] = useState('');
-            const [editingFolderName, setEditingFolderName] = useState(null);
+            const [editingFolderId, setEditingFolderId] = useState(null);
             const [editingFolderValue, setEditingFolderValue] = useState('');
             const [moveToast, setMoveToast] = useState('');
 
@@ -2057,33 +2254,6 @@
                 setShowParticipantInfo(false);
             };
 
-            const handleCreateFolder = () => {
-                if (!newFolderName.trim()) return;
-                onCreateFolder(newFolderName.trim());
-                setSelectedFolder(newFolderName.trim());
-                setNewFolderName('');
-            };
-
-            const startRenameFolder = (folderName) => {
-                setEditingFolderName(folderName);
-                setEditingFolderValue(folderName);
-            };
-
-            const saveRenameFolder = () => {
-                if (!editingFolderName) return;
-                const oldName = editingFolderName;
-                const newName = editingFolderValue.trim();
-                onRenameFolder(oldName, newName);
-                if (selectedFolder === oldName && newName) setSelectedFolder(newName);
-                setEditingFolderName(null);
-                setEditingFolderValue('');
-            };
-
-            const cancelRenameFolder = () => {
-                setEditingFolderName(null);
-                setEditingFolderValue('');
-            };
-
             const saveTitleEdit = () => {
                 if (!editingTitleId) return;
                 onRenameTranscript(editingTitleId, editingTitle);
@@ -2103,6 +2273,13 @@
                 if (current === targetFolder) return;
                 onMoveTranscript(transcriptId, targetFolder);
                 showMoveToast(transcriptId, targetFolder);
+            };
+
+            const saveFolderEdit = (transcriptId) => {
+                const target = (editingFolderValue || '').trim() || 'Uncategorized';
+                handleQuickMove(transcriptId, target);
+                setEditingFolderId(null);
+                setEditingFolderValue('');
             };
 
             return (
@@ -2126,110 +2303,25 @@
                         </section>
 
                         <section className="grid lg:grid-cols-[320px,1fr] gap-6 items-start">
-                            <aside className="bg-white/90 border rounded-2xl p-4 shadow-soft space-y-4 lg:sticky lg:top-6">
-                                <div className="space-y-2">
-                                    <p className="text-xs uppercase tracking-wider font-bold text-slate-500">Folders</p>
-                                    <div className="flex gap-2">
-                                        <input
-                                            value={newFolderName}
-                                            onChange={e => setNewFolderName(e.target.value)}
-                                            onKeyDown={e => e.key === 'Enter' && handleCreateFolder()}
-                                            className="flex-1 border border-slate-300 rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-tide"
-                                            placeholder="New folder"
-                                        />
-                                        <button onClick={handleCreateFolder} className="bg-ink hover:bg-slate-800 text-white px-3 py-2 rounded-lg text-sm font-semibold">Add</button>
-                                    </div>
-                                </div>
-
-                                <div className="space-y-2">
-                                    <button
-                                        onClick={() => setSelectedFolder('All')}
-                                        className={`w-full text-left px-3 py-2.5 rounded-lg border text-sm font-semibold transition ${selectedFolder === 'All' ? 'bg-ink text-white border-ink' : 'bg-white text-slate-700 border-slate-300 hover:border-slate-400'}`}
-                                    >
-                                        All Transcripts ({transcripts.length})
-                                    </button>
-
-                                    {folderList.map(folderName => (
-                                        <div
-                                            key={folderName}
-                                            onDragOver={(e) => {
-                                                e.preventDefault();
-                                                setHoverFolder(folderName);
-                                            }}
-                                            onDragLeave={() => setHoverFolder('')}
-                                            onDrop={(e) => {
-                                                e.preventDefault();
-                                                if (dragTranscriptId) {
-                                                    onMoveTranscript(dragTranscriptId, folderName);
-                                                    showMoveToast(dragTranscriptId, folderName);
-                                                }
-                                                setHoverFolder('');
-                                                setDragTranscriptId(null);
-                                            }}
-                                            className={`rounded-lg border p-2 transition ${hoverFolder === folderName ? 'border-ember ring-2 ring-ember/30' : 'border-slate-200'}`}
-                                        >
-                                            {editingFolderName === folderName ? (
-                                                <div className="space-y-2">
-                                                    <input
-                                                        autoFocus
-                                                        value={editingFolderValue}
-                                                        onChange={e => setEditingFolderValue(e.target.value)}
-                                                        onKeyDown={(e) => {
-                                                            if (e.key === 'Enter') {
-                                                                e.preventDefault();
-                                                                saveRenameFolder();
-                                                            }
-                                                            if (e.key === 'Escape') cancelRenameFolder();
-                                                        }}
-                                                        className="w-full border border-slate-300 rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-tide"
-                                                    />
-                                                    <div className="flex gap-2 justify-end">
-                                                        <button onClick={cancelRenameFolder} className="px-2 py-1 rounded bg-slate-100 text-slate-700 text-xs">Cancel</button>
-                                                        <button onClick={saveRenameFolder} className="px-2 py-1 rounded bg-tide text-white text-xs">Save</button>
-                                                    </div>
-                                                </div>
-                                            ) : (
-                                                <div className="flex items-center gap-2">
-                                                    <button
-                                                        onClick={() => setSelectedFolder(folderName)}
-                                                        className={`flex-1 text-left px-2 py-1.5 rounded text-sm font-semibold transition ${selectedFolder === folderName ? 'bg-tide text-white' : 'text-slate-700 hover:bg-slate-100'}`}
-                                                    >
-                                                        {folderName} ({folderCounts[folderName] || 0})
-                                                    </button>
-                                                    {folderName !== 'Uncategorized' && (
-                                                        <>
-                                                            <button
-                                                                onClick={(e) => {
-                                                                    e.stopPropagation();
-                                                                    startRenameFolder(folderName);
-                                                                }}
-                                                                className="text-slate-400 hover:text-tide text-xs px-1"
-                                                                title="Rename folder"
-                                                            >
-                                                                Rename
-                                                            </button>
-                                                            <button
-                                                                onClick={(e) => {
-                                                                    e.stopPropagation();
-                                                                    onDeleteFolder(folderName);
-                                                                }}
-                                                                className="text-slate-400 hover:text-red-500 text-xs px-1"
-                                                                title="Delete folder"
-                                                            >
-                                                                Delete
-                                                            </button>
-                                                        </>
-                                                    )}
-                                                </div>
-                                            )}
-                                            {hoverFolder === folderName && dragTranscriptId && (
-                                                <p className="mt-2 text-[11px] font-semibold text-ember">Drop here to move transcript</p>
-                                            )}
-                                        </div>
-                                    ))}
-                                </div>
-                                <p className="text-xs text-slate-500">Drag a transcript card from the right and drop it onto a folder here.</p>
-                            </aside>
+                            <FolderSidebar
+                                title="Folders"
+                                allLabel="All Transcripts"
+                                items={transcripts}
+                                folders={folders}
+                                selectedFolder={selectedFolder}
+                                onSelectFolder={setSelectedFolder}
+                                onCreateFolder={onCreateFolder}
+                                onRenameFolder={onRenameFolder}
+                                onDeleteFolder={onDeleteFolder}
+                                getFolderForItem={(item) => item.folder}
+                                dragItemId={dragTranscriptId}
+                                setDragItemId={setDragTranscriptId}
+                                onDropItem={(itemId, folderName) => {
+                                    onMoveTranscript(itemId, folderName);
+                                    showMoveToast(itemId, folderName);
+                                }}
+                                emptyHint="Drag a transcript card from the right and drop it onto a folder here."
+                            />
 
                             <div>
                                 {visibleTranscripts.length === 0 ? (
@@ -2243,7 +2335,6 @@
                                                 onDragStart={() => setDragTranscriptId(t.id)}
                                                 onDragEnd={() => {
                                                     setDragTranscriptId(null);
-                                                    setHoverFolder('');
                                                 }}
                                                 className="bg-white p-5 rounded-xl border shadow-sm cursor-pointer relative group transition hover:border-tide"
                                                 onClick={() => editingTitleId !== t.id && onOpen(t.id)}
@@ -2276,7 +2367,37 @@
                                                     ) : (
                                                         <>
                                                             <h5 className="font-semibold text-lg">{t.title}</h5>
-                                                            <p className="text-xs text-slate-500 mt-1">Folder: {t.folder || 'Uncategorized'}</p>
+                                                            <div className="mt-1" onClick={(e) => e.stopPropagation()}>
+                                                                {editingFolderId === t.id ? (
+                                                                    <input
+                                                                        autoFocus
+                                                                        list={`transcript_folder_list_${t.id}`}
+                                                                        value={editingFolderValue}
+                                                                        onChange={(e) => setEditingFolderValue(e.target.value)}
+                                                                        onBlur={() => saveFolderEdit(t.id)}
+                                                                        onKeyDown={(e) => {
+                                                                            if (e.key === 'Enter') saveFolderEdit(t.id);
+                                                                            if (e.key === 'Escape') {
+                                                                                setEditingFolderId(null);
+                                                                                setEditingFolderValue('');
+                                                                            }
+                                                                        }}
+                                                                        className="w-full border border-slate-300 rounded-lg p-1.5 text-xs outline-none focus:ring-2 focus:ring-tide"
+                                                                    />
+                                                                ) : (
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => {
+                                                                            setEditingFolderId(t.id);
+                                                                            setEditingFolderValue(t.folder || '');
+                                                                        }}
+                                                                        className="text-xs px-2 py-1 rounded-full border border-slate-200 hover:bg-slate-100"
+                                                                    >
+                                                                        {t.folder ? `📁 ${t.folder}` : '+ Folder'}
+                                                                    </button>
+                                                                )}
+                                                            </div>
+                                                            <datalist id={`transcript_folder_list_${t.id}`}>{folderList.map(f => <option key={`t_folder_${t.id}_${f}`} value={f === 'Uncategorized' ? '' : f} />)}</datalist>
                                                             <p className="text-xs text-slate-500 mt-1">Modality: {t.modality || 'Not set'}</p>
                                                         </>
                                                     )}
@@ -2396,16 +2517,18 @@
             );
         }
 
-        function ArtifactDashboard({ artifacts, onUpdate, artifactFolders = [], onFoldersUpdate, suggestedCodes = [], suggestedCategories = [] }) {
+        function ArtifactDashboard({ artifacts, onUpdate, folders = [], onCreateFolder, onRenameFolder, onDeleteFolder, onMoveArtifact, suggestedCodes = [], suggestedCategories = [] }) {
             const [editingId, setEditingId] = useState(null);
             const [editNotes, setEditNotes] = useState('');
             const [editCodes, setEditCodes] = useState([]);
             const [newCodeInput, setNewCodeInput] = useState('');
             const [editingArtifactFolder, setEditingArtifactFolder] = useState('');
-            const [newFolderInput, setNewFolderInput] = useState('');
-            const [showNewFolderForm, setShowNewFolderForm] = useState(false);
             const [pendingFile, setPendingFile] = useState(null);
             const [pendingFolder, setPendingFolder] = useState('');
+            const [selectedFolder, setSelectedFolder] = useState('All');
+            const [dragArtifactId, setDragArtifactId] = useState(null);
+            const [editingCardFolderId, setEditingCardFolderId] = useState(null);
+            const [editingCardFolderValue, setEditingCardFolderValue] = useState('');
 
             const handleFileUpload = (e) => {
                 const file = e.target.files[0];
@@ -2421,8 +2544,8 @@
                 await dbSet('files', `global_art_${fileId}`, pendingFile);
                 const newArtifact = { id: fileId, name: pendingFile.name, type: pendingFile.type, date: new Date().toLocaleDateString(), notes: '', codes: [], folder: pendingFolder.trim() };
                 onUpdate([newArtifact, ...artifacts]);
-                if (pendingFolder.trim() && !artifactFolders.includes(pendingFolder.trim())) {
-                    onFoldersUpdate([...artifactFolders, pendingFolder.trim()]);
+                if (pendingFolder.trim() && !folders.includes(pendingFolder.trim())) {
+                    onCreateFolder(pendingFolder.trim());
                 }
                 setPendingFile(null);
                 setPendingFolder('');
@@ -2480,37 +2603,30 @@
                 setEditCodes(editCodes.filter(c => c !== code));
             };
 
-            const setArtifactFolder = (artId, folder) => {
-                onUpdate(artifacts.map(a => a.id === artId ? { ...a, folder: folder || '' } : a));
-            };
-
-            const createNewFolder = () => {
-                const trimmed = newFolderInput.trim();
-                if (!trimmed || artifactFolders.includes(trimmed)) {
-                    alert('Please enter a unique folder name.');
-                    return;
-                }
-                onFoldersUpdate([...artifactFolders, trimmed]);
-                setNewFolderInput('');
-                setShowNewFolderForm(false);
-            };
-
-            const deleteFolder = (folderName) => {
-                if (confirm(`Delete folder "${folderName}"? Artifacts in this folder will move to Uncategorized.`)) {
-                    onFoldersUpdate(artifactFolders.filter(f => f !== folderName));
-                    onUpdate(artifacts.map(a => a.folder === folderName ? { ...a, folder: '' } : a));
-                }
-            };
-
-            const allFolders = [...new Set([...artifactFolders, ...artifacts.map(a => a.folder).filter(Boolean)])];
+            const allFolders = [...new Set([...folders, ...artifacts.map(a => a.folder).filter(Boolean)])];
             const folderSuggestions = [...new Set([...allFolders, ...suggestedCategories].filter(Boolean))].sort((a, b) => a.localeCompare(b));
             const codeSuggestions = [...new Set([...(suggestedCodes || []), ...(editCodes || [])].filter(Boolean))].sort((a, b) => a.localeCompare(b));
-            const artifactsByFolder = artifacts.reduce((acc, art) => {
+            const visibleArtifacts = selectedFolder === 'All'
+                ? artifacts
+                : artifacts.filter(a => (a.folder || 'Uncategorized') === selectedFolder);
+            const artifactsByFolder = visibleArtifacts.reduce((acc, art) => {
                 const folder = art.folder || 'Uncategorized';
                 if (!acc[folder]) acc[folder] = [];
                 acc[folder].push(art);
                 return acc;
             }, {});
+
+            useEffect(() => {
+                const folderList = ['Uncategorized', ...allFolders.filter(f => f !== 'Uncategorized')];
+                if (selectedFolder !== 'All' && !folderList.includes(selectedFolder)) setSelectedFolder('All');
+            }, [selectedFolder, allFolders]);
+
+            const saveCardFolderEdit = (artId) => {
+                const target = (editingCardFolderValue || '').trim();
+                onMoveArtifact(artId, target);
+                setEditingCardFolderId(null);
+                setEditingCardFolderValue('');
+            };
 
             return (
                 <div className="p-8 h-full overflow-y-auto w-full max-w-6xl mx-auto">
@@ -2560,53 +2676,40 @@
                         </div>
                     )}
 
-                    <div className="bg-white border rounded-2xl p-4 shadow-soft mb-6">
-                        <div className="flex justify-between items-center mb-3">
-                            <h3 className="font-bold text-sm">Existing Folders</h3>
-                            <button onClick={() => setShowNewFolderForm(v => !v)} className="text-xs font-semibold text-tide hover:text-teal-700">+ New Folder</button>
-                        </div>
-                        {showNewFolderForm && (
-                            <div className="mb-4 p-3 bg-teal-50 border border-teal-200 rounded-lg space-y-2">
-                                <input
-                                    autoFocus
-                                    type="text"
-                                    value={newFolderInput}
-                                    onChange={e => setNewFolderInput(e.target.value)}
-                                    onKeyPress={e => e.key === 'Enter' && createNewFolder()}
-                                    placeholder="Folder name..."
-                                    className="w-full border rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-tide"
-                                />
-                                <div className="flex gap-2">
-                                    <button onClick={() => { setShowNewFolderForm(false); setNewFolderInput(''); }} className="flex-1 py-1.5 bg-white border rounded-lg text-xs font-semibold text-slate-600 hover:bg-slate-100">Cancel</button>
-                                    <button onClick={createNewFolder} className="flex-1 py-1.5 bg-tide text-white rounded-lg text-xs font-bold hover:bg-teal-600">Create</button>
-                                </div>
-                            </div>
-                        )}
-                        {artifactFolders.length > 0 || allFolders.filter(f => f !== 'Uncategorized').length > 0 ? (
-                            <div className="space-y-2">
-                                {allFolders.filter(f => f !== 'Uncategorized').sort().map(folder => (
-                                    <div key={folder} className="flex items-center justify-between p-2 bg-slate-50 rounded-lg">
-                                        <span className="text-sm text-slate-700">📁 {folder}</span>
-                                        {artifactFolders.includes(folder) && (
-                                            <button onClick={() => deleteFolder(folder)} className="text-xs font-semibold text-red-600 hover:text-red-700">Delete</button>
-                                        )}
-                                    </div>
-                                ))}
-                            </div>
-                        ) : (
-                            <p className="text-sm text-slate-400">No folders yet. Create one or assign artifacts to folders in edit mode.</p>
-                        )}
-                    </div>
+                    <section className="grid lg:grid-cols-[320px,1fr] gap-6 items-start">
+                        <FolderSidebar
+                            title="Folders"
+                            allLabel="All Artifacts"
+                            items={artifacts}
+                            folders={folders}
+                            selectedFolder={selectedFolder}
+                            onSelectFolder={setSelectedFolder}
+                            onCreateFolder={onCreateFolder}
+                            onRenameFolder={onRenameFolder}
+                            onDeleteFolder={onDeleteFolder}
+                            getFolderForItem={(item) => item.folder}
+                            dragItemId={dragArtifactId}
+                            setDragItemId={setDragArtifactId}
+                            onDropItem={(itemId, folderName) => onMoveArtifact(itemId, folderName === 'Uncategorized' ? '' : folderName)}
+                            emptyHint="Drag an artifact card and drop it onto a folder to reassign it."
+                        />
 
-                    {artifacts.length === 0 ? (
-                        <div className="text-center py-20 bg-white rounded-xl border border-dashed text-slate-500">No project artifacts uploaded yet.</div>
+                        <div>
+                    {visibleArtifacts.length === 0 ? (
+                        <div className="text-center py-20 bg-white rounded-xl border border-dashed text-slate-500">No artifacts in this view.</div>
                     ) : (
                         Object.keys(artifactsByFolder).sort().map(folderName => (
                             <div key={folderName} className="mb-8">
                                 <h3 className="text-xl font-bold text-ink mb-4 pb-2 border-b">📁 {folderName}</h3>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             {artifactsByFolder[folderName].map(art => (
-                                <div key={art.id} className={`bg-white rounded-xl border shadow-sm transition ${editingId === art.id ? 'ring-2 ring-tide' : ''}`}>
+                                <div
+                                    key={art.id}
+                                    draggable
+                                    onDragStart={() => setDragArtifactId(art.id)}
+                                    onDragEnd={() => setDragArtifactId(null)}
+                                    className={`bg-white rounded-xl border shadow-sm transition ${editingId === art.id ? 'ring-2 ring-tide' : ''}`}
+                                >
                                     {editingId === art.id ? (
                                         <div className="p-5 space-y-4">
                                             <h4 className="font-semibold text-sm">{art.name}</h4>
@@ -2682,11 +2785,41 @@
                                                     <button onClick={() => deleteArtifact(art.id)} className="text-slate-400 hover:text-red-500 p-1" title="Delete">✕</button>
                                                 </div>
                                             </div>
-                                            {art.folder && (
-                                                <div className="mb-2">
-                                                    <span className="text-[10px] uppercase font-bold text-slate-400">{art.folder}</span>
-                                                </div>
-                                            )}
+                                            <div className="mb-2" onClick={(e) => e.stopPropagation()}>
+                                                {editingCardFolderId === art.id ? (
+                                                    <input
+                                                        autoFocus
+                                                        list={`artifact_folder_list_${art.id}`}
+                                                        value={editingCardFolderValue}
+                                                        onChange={(e) => setEditingCardFolderValue(e.target.value)}
+                                                        onBlur={() => saveCardFolderEdit(art.id)}
+                                                        onKeyDown={(e) => {
+                                                            if (e.key === 'Enter') saveCardFolderEdit(art.id);
+                                                            if (e.key === 'Escape') {
+                                                                setEditingCardFolderId(null);
+                                                                setEditingCardFolderValue('');
+                                                            }
+                                                        }}
+                                                        className="w-full border border-slate-300 rounded-lg p-1.5 text-xs outline-none focus:ring-2 focus:ring-tide"
+                                                    />
+                                                ) : (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setEditingCardFolderId(art.id);
+                                                            setEditingCardFolderValue(art.folder || '');
+                                                        }}
+                                                        className="text-[11px] px-2 py-1 rounded-full border border-slate-200 hover:bg-slate-100"
+                                                    >
+                                                        {art.folder ? `📁 ${art.folder}` : '+ Folder'}
+                                                    </button>
+                                                )}
+                                                <datalist id={`artifact_folder_list_${art.id}`}>
+                                                    {['Uncategorized', ...folderSuggestions.filter(f => f !== 'Uncategorized')].map(f => (
+                                                        <option key={`a_folder_${art.id}_${f}`} value={f === 'Uncategorized' ? '' : f} />
+                                                    ))}
+                                                </datalist>
+                                            </div>
                                             {art.notes && <p className="text-xs text-slate-600 mb-2 line-clamp-2">{art.notes}</p>}
                                             {art.codes && art.codes.length > 0 && (
                                                 <div className="flex flex-wrap gap-1.5 mt-2">
@@ -2703,6 +2836,8 @@
                             </div>
                         ))
                     )}
+                        </div>
+                    </section>
                 </div>
             );
         }
@@ -4884,16 +5019,15 @@
             );
         }
 
-        function ObservationsView({ observations, observationFolders = [], onFoldersUpdate, observationTags, allTags, onAddObservation, onUpdateObservation, onDeleteObservation, onAddObservationTag, onUpdateObservationTag, onRemoveObservationTag }) {
+        function ObservationsView({ observations, folders = [], onCreateFolder, onRenameFolder, onDeleteFolder, onMoveObservation, observationTags, allTags, onAddObservation, onUpdateObservation, onDeleteObservation, onAddObservationTag, onUpdateObservationTag, onRemoveObservationTag }) {
             const [activeObsId, setActiveObsId] = useState(observations[0]?.id || null);
             const [showNewForm, setShowNewForm] = useState(false);
             const [newTitle, setNewTitle] = useState('');
             const [newLocation, setNewLocation] = useState('');
             const [newDate, setNewDate] = useState(() => new Date().toISOString().slice(0, 10));
             const [newObsFolder, setNewObsFolder] = useState('');
-            const [selectedFolder, setSelectedFolder] = useState(null);
-            const [showNewFolderForm, setShowNewFolderForm] = useState(false);
-            const [newFolderName, setNewFolderName] = useState('');
+            const [selectedFolder, setSelectedFolder] = useState('All');
+            const [dragObservationId, setDragObservationId] = useState(null);
 
             const activeObs = observations.find(o => o.id === activeObsId) || null;
             const activeTags = observationTags.filter(t => t.observationId === activeObsId);
@@ -4920,34 +5054,15 @@
                 setNewObsFolder('');
             };
 
-            const createNewFolder = () => {
-                const trimmed = newFolderName.trim();
-                if (!trimmed || observationFolders.includes(trimmed)) {
-                    alert('Please enter a unique folder name.');
-                    return;
-                }
-                onFoldersUpdate([...observationFolders, trimmed]);
-                setNewFolderName('');
-                setShowNewFolderForm(false);
-                setSelectedFolder(trimmed);
-            };
+            const allFolders = [...new Set([...folders, ...observations.map(o => o.folder).filter(Boolean)])];
+            const filteredObservations = selectedFolder === 'All'
+                ? observations
+                : observations.filter(o => (o.folder || 'Uncategorized') === selectedFolder);
 
-            const deleteObsFolder = (folderName) => {
-                if (confirm(`Delete folder "${folderName}"? Observations in this folder will move to All Observations.`)) {
-                    onFoldersUpdate(observationFolders.filter(f => f !== folderName));
-                    observations.forEach(obs => {
-                        if (obs.folder === folderName) {
-                            onUpdateObservation({ ...obs, folder: '' });
-                        }
-                    });
-                    if (selectedFolder === folderName) setSelectedFolder(null);
-                }
-            };
-
-            const allFolders = [...new Set([...observationFolders, ...observations.map(o => o.folder).filter(Boolean)])];
-            const filteredObservations = selectedFolder 
-                ? observations.filter(o => o.folder === selectedFolder)
-                : observations;
+            useEffect(() => {
+                const folderList = ['Uncategorized', ...allFolders.filter(f => f !== 'Uncategorized')];
+                if (selectedFolder !== 'All' && !folderList.includes(selectedFolder)) setSelectedFolder('All');
+            }, [selectedFolder, allFolders]);
 
             return (
                 <div className="flex h-full bg-white overflow-hidden">
@@ -4997,49 +5112,29 @@
                                 </form>
                             )}
                         </div>
-                        {allFolders.length > 0 && (
-                            <div className="border-t bg-white p-3">
-                                <div className="flex items-center justify-between mb-2">
-                                    <p className="text-xs font-bold text-slate-600 uppercase">Folders</p>
-                                    <button onClick={() => setShowNewFolderForm(v => !v)} className="text-xs font-semibold text-tide hover:text-teal-700">+ New</button>
-                                </div>
-                                {showNewFolderForm && (
-                                    <div className="mb-3 p-2 bg-teal-50 border border-teal-200 rounded-lg space-y-2">
-                                        <input
-                                            autoFocus
-                                            type="text"
-                                            value={newFolderName}
-                                            onChange={e => setNewFolderName(e.target.value)}
-                                            onKeyPress={e => e.key === 'Enter' && createNewFolder()}
-                                            placeholder="Folder name..."
-                                            className="w-full border rounded-lg p-2 text-xs outline-none focus:ring-2 focus:ring-tide"
-                                        />
-                                        <div className="flex gap-1">
-                                            <button onClick={() => { setShowNewFolderForm(false); setNewFolderName(''); }} className="flex-1 py-1 bg-white border rounded text-xs font-semibold text-slate-600 hover:bg-slate-100">Cancel</button>
-                                            <button onClick={createNewFolder} className="flex-1 py-1 bg-tide text-white rounded text-xs font-bold hover:bg-teal-600">Create</button>
-                                        </div>
-                                    </div>
-                                )}
-                                <div className="space-y-1">
-                                    <button onClick={() => setSelectedFolder(null)} className={`w-full text-left px-2 py-1.5 rounded text-xs font-semibold transition ${selectedFolder === null ? 'bg-tide text-white' : 'text-slate-700 hover:bg-slate-100'}`}>
-                                        All Observations
-                                    </button>
-                                    {allFolders.sort().map(folder => (
-                                        <div key={folder} className="flex items-center gap-2 group">
-                                            <button onClick={() => setSelectedFolder(folder)} className={`flex-1 text-left px-2 py-1.5 rounded text-xs font-semibold transition ${selectedFolder === folder ? 'bg-tide text-white' : 'text-slate-700 hover:bg-slate-100'}`}>
-                                                📁 {folder}
-                                            </button>
-                                            {observationFolders.includes(folder) && (
-                                                <button onClick={() => deleteObsFolder(folder)} className="text-xs text-red-600 hover:text-red-700 opacity-0 group-hover:opacity-100 transition px-1">×</button>
-                                            )}
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
+                        <div className="border-t bg-white p-3">
+                            <FolderSidebar
+                                title="Folders"
+                                allLabel="All Observations"
+                                items={observations}
+                                folders={folders}
+                                selectedFolder={selectedFolder}
+                                onSelectFolder={setSelectedFolder}
+                                onCreateFolder={onCreateFolder}
+                                onRenameFolder={onRenameFolder}
+                                onDeleteFolder={onDeleteFolder}
+                                getFolderForItem={(item) => item.folder}
+                                dragItemId={dragObservationId}
+                                setDragItemId={setDragObservationId}
+                                onDropItem={(itemId, folderName) => onMoveObservation(itemId, folderName === 'Uncategorized' ? '' : folderName)}
+                                emptyHint="Drag an observation card and drop it onto a folder to reassign it."
+                                sticky={false}
+                                className="shadow-none"
+                            />
+                        </div>
                         <div className="flex-1 overflow-y-auto p-3 space-y-2">
                             {filteredObservations.length === 0 && !showNewForm && (
-                                <p className="text-center text-slate-400 text-sm mt-10 italic">{selectedFolder ? `No observations in ${selectedFolder}.` : 'No observations yet. Click + New to start.'}</p>
+                                <p className="text-center text-slate-400 text-sm mt-10 italic">{selectedFolder !== 'All' ? `No observations in ${selectedFolder}.` : 'No observations yet. Click + New to start.'}</p>
                             )}
                             {filteredObservations.map(obs => {
                                 const tagCount = observationTags.filter(t => t.observationId === obs.id).length;
@@ -5047,6 +5142,9 @@
                                     <button
                                         key={obs.id}
                                         onClick={() => setActiveObsId(obs.id)}
+                                        draggable
+                                        onDragStart={() => setDragObservationId(obs.id)}
+                                        onDragEnd={() => setDragObservationId(null)}
                                         className={`w-full text-left p-3 rounded-xl border transition ${activeObsId === obs.id ? 'bg-tide/10 border-tide ring-1 ring-tide' : 'bg-white border-slate-200 hover:border-tide/50'}`}
                                     >
                                         <p className="font-semibold text-sm text-ink truncate">{obs.title}</p>
