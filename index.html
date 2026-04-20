@@ -2988,29 +2988,34 @@
             };
 
             useEffect(() => {
-                const isTypingTarget = () => {
-                    const active = document.activeElement;
-                    if (!active) return false;
-                    const tag = active.tagName;
-                    return active.isContentEditable || tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
-                };
-
                 const onAudioShortcut = (e) => {
                     if (!audioUrl) return;
-                    if (isTypingTarget()) return;
+                    
+                    const active = document.activeElement;
+                    if (!active) return;
+                    
+                    // Don't trigger if user is typing in editor or inputs
+                    const tagName = active.tagName;
+                    if (tagName === 'INPUT' || tagName === 'TEXTAREA' || tagName === 'SELECT') return;
+                    if (active.isContentEditable && active !== document.body) return;
+                    
+                    // Don't trigger if modifiers are held
                     if (e.metaKey || e.ctrlKey || e.altKey) return;
 
-                    if (e.key === '[') {
+                    // Use e.code for more reliable key detection
+                    const code = e.code;
+                    
+                    if (code === 'BracketLeft') {
                         e.preventDefault();
                         changePlaybackRate('down');
                         return;
                     }
-                    if (e.key === ']') {
+                    if (code === 'BracketRight') {
                         e.preventDefault();
                         changePlaybackRate('up');
                         return;
                     }
-                    if (e.key === '\\') {
+                    if (code === 'Backslash') {
                         e.preventDefault();
                         resetPlaybackRate();
                     }
@@ -3018,7 +3023,7 @@
 
                 window.addEventListener('keydown', onAudioShortcut);
                 return () => window.removeEventListener('keydown', onAudioShortcut);
-            }, [audioUrl, playbackRate, transcript, content, contentHtml, notes, modality]);
+            }, [audioUrl]);
 
             const submitActivityLog = (e) => {
                 e.preventDefault();
