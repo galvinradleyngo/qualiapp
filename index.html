@@ -1111,8 +1111,8 @@
                     // Calculate base size
                     const baseSize = dataSize + securitySize;
 
-                    // Files are serialized as base64 in the backup (1.33x larger)
-                    const serializedFilesSize = filesSize * 1.33;
+                    // Files are serialized as raw binary in v4 backup
+                    const serializedFilesSize = filesSize;
 
                     // Add JSON structure overhead and encryption overhead
                     const totalSize = baseSize + serializedFilesSize + 1000; // 1KB buffer for structure
@@ -1130,27 +1130,35 @@
                 const fileEntries = await dbGetAllEntries('files');
                 const blobEntries = fileEntries.filter(e => e.value instanceof Blob);
                 const CONCURRENCY = 5;
-                const serializedFiles = [];
+                const fileIndex = [];
+                const fileBuffers = [];
+                let binaryOffset = 0;
                 const totalFiles = blobEntries.length;
                 for (let i = 0; i < totalFiles; i += CONCURRENCY) {
                     const chunk = blobEntries.slice(i, i + CONCURRENCY);
                     const results = await Promise.all(chunk.map(async (entry) => {
                         const value = entry.value;
+                        const buf = new Uint8Array(await value.arrayBuffer());
                         return {
                             key: String(entry.key),
                             type: value.type || 'application/octet-stream',
                             name: value.name || null,
                             lastModified: value.lastModified || null,
-                            bytes: await blobToBase64(value)
+                            buf
                         };
                     }));
-                    serializedFiles.push(...results);
-                    const filePct = Math.min(50, Math.round(5 + ((i + chunk.length) / Math.max(totalFiles, 1)) * 45));
-                    report(`Serializing files… (${Math.min(i + chunk.length, totalFiles)}/${totalFiles})`, filePct);
+                    for (const r of results) {
+                        fileIndex.push({ key: r.key, type: r.type, name: r.name, lastModified: r.lastModified, offset: binaryOffset, length: r.buf.byteLength });
+                        fileBuffers.push(r.buf);
+                        binaryOffset += r.buf.byteLength;
+                    }
+                    const filePct = Math.min(45, Math.round(5 + ((i + chunk.length) / Math.max(totalFiles, 1)) * 40));
+                    report(`Reading files… (${Math.min(i + chunk.length, totalFiles)}/${totalFiles})`, filePct);
                 }
 
-                report('Building payload…', 55);
-                const payload = {
+                report('Building payload…', 50);
+                await yieldToMain();
+                const meta = {
                     exportedAt: new Date().toISOString(),
                     data: {
                         transcripts,
@@ -1170,7 +1178,7 @@
                         artifactFolders,
                         observationFolders
                     },
-                    files: serializedFiles,
+                    files: fileIndex,
                     security: {
                         appPin: localStorage.getItem('quali_pin') || null,
                         participantPinHash: localStorage.getItem(participantPinKey) || null,
@@ -1179,14 +1187,25 @@
                     }
                 };
 
-                report('Encrypting…', 65);
+                report('Packing binary…', 55);
                 await yieldToMain();
-                const jsonString = JSON.stringify(payload);
-                await yieldToMain();
+                const metaBytes = new TextEncoder().encode(JSON.stringify(meta));
+                const totalLen = 4 + metaBytes.byteLength + binaryOffset;
+                const archive = new Uint8Array(totalLen);
+                archive[0] = (metaBytes.byteLength >>> 24) & 0xFF;
+                archive[1] = (metaBytes.byteLength >>> 16) & 0xFF;
+                archive[2] = (metaBytes.byteLength >>> 8) & 0xFF;
+                archive[3] = metaBytes.byteLength & 0xFF;
+                archive.set(metaBytes, 4);
+                let writeOffset = 4 + metaBytes.byteLength;
+                for (const buf of fileBuffers) {
+                    archive.set(buf, writeOffset);
+                    writeOffset += buf.byteLength;
+                }
 
-                report('Compressing…', 68);
+                report('Compressing…', 62);
                 await yieldToMain();
-                const compressed = await gzipCompress(new TextEncoder().encode(jsonString));
+                const compressed = await gzipCompress(archive);
 
                 report('Encrypting…', 75);
                 await yieldToMain();
@@ -1198,11 +1217,12 @@
                 report('Saving file…', 93);
                 await yieldToMain();
                 const envelope = JSON.stringify({
-                    version: 3,
+                    version: 4,
                     algorithm: 'AES-GCM-256',
                     kdf: 'PBKDF2-SHA256-150000',
                     compressed: true,
                     chunked: true,
+                    binary: true,
                     salt: toBase64(salt),
                     chunks: chunks
                 });
@@ -1231,8 +1251,7 @@
                     payload = await decryptPayload(encrypted, backupPassword);
                 } else {
                     const parsed = JSON.parse(new TextDecoder().decode(bytes));
-                    if (parsed.version === 3 && parsed.chunked) {
-                        // v3: chunked decrypt then decompress
+                    if ((parsed.version === 4 || parsed.version === 3) && parsed.chunked) {
                         report('Decrypting…', 15);
                         await yieldToMain();
                         const compressedBytes = await decryptChunked(parsed.chunks, parsed.salt, backupPassword, (done, total) => {
@@ -1241,8 +1260,20 @@
                         });
                         report('Decompressing…', 40);
                         await yieldToMain();
-                        const jsonBytes = await gzipDecompress(compressedBytes);
-                        payload = JSON.parse(new TextDecoder().decode(jsonBytes));
+                        const decompressed = await gzipDecompress(compressedBytes);
+                        if (parsed.version === 4 && parsed.binary) {
+                            const metaLen = (decompressed[0] << 24) | (decompressed[1] << 16) | (decompressed[2] << 8) | decompressed[3];
+                            const metaJson = new TextDecoder().decode(decompressed.slice(4, 4 + metaLen));
+                            const meta = JSON.parse(metaJson);
+                            const binaryStart = 4 + metaLen;
+                            meta.files = (meta.files || []).map(f => {
+                                const raw = decompressed.slice(binaryStart + f.offset, binaryStart + f.offset + f.length);
+                                return { key: f.key, type: f.type, name: f.name, lastModified: f.lastModified, rawBytes: raw };
+                            });
+                            payload = meta;
+                        } else {
+                            payload = JSON.parse(new TextDecoder().decode(decompressed));
+                        }
                     } else if (parsed.version === 2 && parsed.compressed) {
                         // v2: single-shot decrypt then decompress
                         report('Decrypting…', 15);
@@ -1288,7 +1319,7 @@
                 const totalFiles = (payload.files || []).length;
                 for (let i = 0; i < totalFiles; i++) {
                     const f = payload.files[i];
-                    const fileBytes = fromBase64(f.bytes);
+                    const fileBytes = f.rawBytes ? f.rawBytes : new Uint8Array(fromBase64(f.bytes));
                     const blob = f.name
                         ? new File([fileBytes], f.name, { type: f.type || 'application/octet-stream', lastModified: f.lastModified || Date.now() })
                         : new Blob([fileBytes], { type: f.type || 'application/octet-stream' });
