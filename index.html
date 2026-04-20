@@ -227,6 +227,21 @@
             };
         };
 
+        const encryptBytes = async (bytes, password) => {
+            const salt = crypto.getRandomValues(new Uint8Array(16));
+            const iv = crypto.getRandomValues(new Uint8Array(12));
+            const key = await deriveKey(password, salt, ['encrypt']);
+            const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, bytes);
+            return { salt, iv, ciphertext };
+        };
+
+        const decryptBytes = async (ciphertext, salt, iv, password) => {
+            const key = await deriveKey(password, salt, ['decrypt']);
+            return new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ciphertext));
+        };
+
+        const yieldToMain = () => new Promise(r => setTimeout(r, 0));
+
         const gzipCompress = async (uint8Array) => {
             const cs = new CompressionStream('gzip');
             const writer = cs.writable.getWriter();
@@ -1135,14 +1150,30 @@
                 };
 
                 report('Encrypting…', 65);
-                const encrypted = await encryptPayload(payload, backupPassword);
+                await yieldToMain();
+                const jsonString = JSON.stringify(payload);
+                await yieldToMain();
 
-                report('Compressing…', 75);
-                const jsonBytes = new TextEncoder().encode(JSON.stringify(encrypted));
-                const compressed = await gzipCompress(jsonBytes);
+                report('Compressing…', 70);
+                await yieldToMain();
+                const compressed = await gzipCompress(new TextEncoder().encode(jsonString));
 
-                report('Saving file…', 95);
-                const blob = new Blob([compressed], { type: 'application/gzip' });
+                report('Encrypting compressed data…', 80);
+                await yieldToMain();
+                const { salt, iv, ciphertext } = await encryptBytes(compressed, backupPassword);
+
+                report('Saving file…', 92);
+                await yieldToMain();
+                const envelope = JSON.stringify({
+                    version: 2,
+                    algorithm: 'AES-GCM-256',
+                    kdf: 'PBKDF2-SHA256-150000',
+                    compressed: true,
+                    salt: toBase64(salt),
+                    iv: toBase64(iv),
+                    data: toBase64(ciphertext)
+                });
+                const blob = new Blob([envelope], { type: 'application/json' });
                 const a = document.createElement('a');
                 a.href = URL.createObjectURL(blob);
                 a.download = `QualiApp_Backup_${new Date().toISOString().slice(0, 10)}.qbk`;
@@ -1157,18 +1188,34 @@
                 const arrayBuf = await file.arrayBuffer();
                 const bytes = new Uint8Array(arrayBuf);
 
-                let encrypted;
-                // Detect gzip: magic bytes 0x1F 0x8B
+                let payload;
+                // Detect gzip (v1 wrapped in outer gzip): magic bytes 0x1F 0x8B
                 if (bytes.length >= 2 && bytes[0] === 0x1F && bytes[1] === 0x8B) {
-                    report('Decompressing…', 15);
+                    report('Decompressing…', 10);
                     const decompressed = await gzipDecompress(bytes);
-                    encrypted = JSON.parse(new TextDecoder().decode(decompressed));
+                    const encrypted = JSON.parse(new TextDecoder().decode(decompressed));
+                    report('Decrypting…', 30);
+                    payload = await decryptPayload(encrypted, backupPassword);
                 } else {
-                    encrypted = JSON.parse(new TextDecoder().decode(bytes));
+                    const parsed = JSON.parse(new TextDecoder().decode(bytes));
+                    if (parsed.version === 2 && parsed.compressed) {
+                        // v2: decrypt then decompress
+                        report('Decrypting…', 15);
+                        await yieldToMain();
+                        const salt = new Uint8Array(fromBase64(parsed.salt));
+                        const iv = new Uint8Array(fromBase64(parsed.iv));
+                        const ciphertext = fromBase64(parsed.data);
+                        const compressedBytes = await decryptBytes(ciphertext, salt, iv, backupPassword);
+                        report('Decompressing…', 35);
+                        await yieldToMain();
+                        const jsonBytes = await gzipDecompress(compressedBytes);
+                        payload = JSON.parse(new TextDecoder().decode(jsonBytes));
+                    } else {
+                        // v1 plain JSON
+                        report('Decrypting…', 30);
+                        payload = await decryptPayload(parsed, backupPassword);
+                    }
                 }
-
-                report('Decrypting…', 35);
-                const payload = await decryptPayload(encrypted, backupPassword);
 
                 report('Restoring data…', 55);
                 const d = payload.data || {};
