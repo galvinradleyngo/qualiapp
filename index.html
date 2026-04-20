@@ -47,6 +47,26 @@
             color: #9ca3af;
             opacity: 0.85;
         }
+
+        .qa-timecode-bookmark {
+            display: inline-block;
+            padding: 0 0.4rem;
+            margin: 0 0.15rem;
+            border-radius: 0.45rem;
+            border: 1px solid #cbd5e1;
+            background: #eff6ff;
+            color: #1e3a8a;
+            font-size: 0.82em;
+            font-weight: 600;
+            cursor: pointer;
+            user-select: none;
+            white-space: nowrap;
+        }
+
+        .qa-timecode-bookmark:hover {
+            background: #dbeafe;
+            border-color: #93c5fd;
+        }
     </style>
 </head>
 <body class="bg-mist text-ink font-sans">
@@ -2686,6 +2706,79 @@
                 setShowSavedToast(true);
             };
 
+            const formatTimecode = (seconds) => {
+                const safeSeconds = Math.max(0, Math.floor(Number(seconds) || 0));
+                const hours = Math.floor(safeSeconds / 3600);
+                const minutes = Math.floor((safeSeconds % 3600) / 60);
+                const secs = safeSeconds % 60;
+                if (hours > 0) {
+                    return `${hours}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+                }
+                return `${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+            };
+
+            const playFromTimecode = (timeSeconds) => {
+                if (!audioRef.current) return;
+                const safeSeconds = Math.max(0, Number(timeSeconds) || 0);
+                audioRef.current.currentTime = safeSeconds;
+                const playAttempt = audioRef.current.play();
+                if (playAttempt && typeof playAttempt.catch === 'function') {
+                    playAttempt.catch(() => {});
+                }
+            };
+
+            const insertBookmarkAtCurrentTime = () => {
+                if (!audioUrl || !audioRef.current) {
+                    alert('Attach audio before adding bookmarks.');
+                    return;
+                }
+                if (!editableRef.current) return;
+
+                const currentTime = audioRef.current.currentTime || 0;
+                const label = formatTimecode(currentTime);
+                const bookmark = document.createElement('span');
+                bookmark.className = 'qa-timecode-bookmark';
+                bookmark.setAttribute('data-time-sec', currentTime.toFixed(2));
+                bookmark.setAttribute('contenteditable', 'false');
+                bookmark.setAttribute('title', `Play from ${label}`);
+                bookmark.textContent = `[${label}]`;
+
+                const selection = window.getSelection();
+                const range = selection && selection.rangeCount ? selection.getRangeAt(0) : null;
+                const isInsideEditor = range && editableRef.current.contains(range.commonAncestorContainer);
+
+                if (!isInsideEditor) {
+                    editableRef.current.appendChild(document.createTextNode(' '));
+                    editableRef.current.appendChild(bookmark);
+                    editableRef.current.appendChild(document.createTextNode(' '));
+                } else {
+                    range.deleteContents();
+                    const spaceBefore = document.createTextNode(' ');
+                    const spaceAfter = document.createTextNode(' ');
+                    range.insertNode(spaceAfter);
+                    range.insertNode(bookmark);
+                    range.insertNode(spaceBefore);
+
+                    selection.removeAllRanges();
+                    const nextRange = document.createRange();
+                    nextRange.setStartAfter(spaceAfter);
+                    nextRange.collapse(true);
+                    selection.addRange(nextRange);
+                }
+
+                handleEditableInput();
+            };
+
+            const handleTimecodeBookmarkClick = (e) => {
+                const target = e.target.closest('span.qa-timecode-bookmark');
+                if (!target) return false;
+                e.preventDefault();
+                const timeSeconds = Number(target.getAttribute('data-time-sec'));
+                if (!Number.isFinite(timeSeconds)) return true;
+                playFromTimecode(timeSeconds);
+                return true;
+            };
+
             const handleModalityChange = (nextModality) => {
                 const latestHtml = editableRef.current ? editableRef.current.innerHTML : (contentHtml || plainToHtml(content));
                 const latestPlain = htmlToPlain(latestHtml);
@@ -3135,6 +3228,7 @@
             };
 
             const handleCodeClick = (e) => {
+                if (handleTimecodeBookmarkClick(e)) return;
                 const target = e.target.closest('mark[data-tag-id]');
                 if (!target) return;
                 const tagId = target.getAttribute('data-tag-id');
@@ -3251,6 +3345,15 @@
                                             >
                                                 Tag Interviewer (;)
                                             </button>
+                                            <button
+                                                type="button"
+                                                onClick={insertBookmarkAtCurrentTime}
+                                                className={`px-3 py-1.5 rounded border text-sm font-semibold ${audioUrl ? 'bg-blue-100 border-blue-300 text-blue-900 hover:bg-blue-200' : 'bg-slate-100 border-slate-300 text-slate-500 cursor-not-allowed'}`}
+                                                title={audioUrl ? 'Insert clickable time bookmark at current playback time' : 'Attach audio to enable bookmarks'}
+                                                disabled={!audioUrl}
+                                            >
+                                                Add Bookmark
+                                            </button>
                                             <span className="text-xs text-slate-500">Use Bold or tag interviewer questions/comments. Shortcut: Cmd/Ctrl + ; for interviewer tag.</span>
                                         </div>
                                         <div
@@ -3258,6 +3361,7 @@
                                             contentEditable
                                             suppressContentEditableWarning
                                             onInput={handleEditableInput}
+                                            onClick={handleTimecodeBookmarkClick}
                                             onBlur={handleSave}
                                             className="w-full h-full min-h-[500px] outline-none text-lg leading-relaxed text-slate-800 p-3 border-dashed border-2 border-slate-200 rounded-xl bg-slate-50 focus-within:bg-white focus-within:border-amber-400 transition whitespace-pre-wrap"
                                         />
