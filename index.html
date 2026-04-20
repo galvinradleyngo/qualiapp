@@ -82,16 +82,20 @@
 
         const normalizeRecoveryAnswer = (value) => String(value || '').trim().toLowerCase();
 
-        const openDB = () => new Promise((resolve, reject) => {
-            const req = indexedDB.open(dbName, 1);
-            req.onupgradeneeded = (e) => {
-                const db = e.target.result;
-                if (!db.objectStoreNames.contains('data')) db.createObjectStore('data');
-                if (!db.objectStoreNames.contains('files')) db.createObjectStore('files');
-            };
-            req.onsuccess = () => resolve(req.result);
-            req.onerror = () => reject(req.error);
-        });
+        let _dbCache = null;
+        const openDB = () => {
+            if (_dbCache) return Promise.resolve(_dbCache);
+            return new Promise((resolve, reject) => {
+                const req = indexedDB.open(dbName, 1);
+                req.onupgradeneeded = (e) => {
+                    const db = e.target.result;
+                    if (!db.objectStoreNames.contains('data')) db.createObjectStore('data');
+                    if (!db.objectStoreNames.contains('files')) db.createObjectStore('files');
+                };
+                req.onsuccess = () => { _dbCache = req.result; _dbCache.onclose = () => { _dbCache = null; }; resolve(_dbCache); };
+                req.onerror = () => reject(req.error);
+            });
+        };
 
         const dbGet = async (store, key) => {
             const db = await openDB();
@@ -141,6 +145,33 @@
                     cursor.continue();
                 };
                 req.onerror = () => reject(req.error);
+            });
+        };
+
+        const dbBatchGet = async (store, keys) => {
+            const db = await openDB();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(store, 'readonly');
+                const os = tx.objectStore(store);
+                const results = {};
+                let pending = keys.length;
+                if (pending === 0) return resolve(results);
+                keys.forEach((key) => {
+                    const req = os.get(key);
+                    req.onsuccess = () => { results[key] = req.result; if (--pending === 0) resolve(results); };
+                    req.onerror = () => reject(req.error);
+                });
+            });
+        };
+
+        const dbBatchSet = async (store, entries) => {
+            const db = await openDB();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(store, 'readwrite');
+                const os = tx.objectStore(store);
+                entries.forEach(([key, val]) => os.put(val, key));
+                tx.oncomplete = () => resolve();
+                tx.onerror = () => reject(tx.error);
             });
         };
 
@@ -710,11 +741,12 @@
                     const savedRecoveryQuestion = localStorage.getItem(recoveryQuestionKey);
                     const savedRecoveryAnswerHash = localStorage.getItem(recoveryAnswerHashKey);
                     const hasRecovery = !!(savedRecoveryQuestion && savedRecoveryAnswerHash);
-                    const existingTranscripts = await dbGet('data', 'transcripts') || [];
-                    const existingTags = await dbGet('data', 'tags') || [];
-                    const existingArtifacts = await dbGet('data', 'global_artifacts') || [];
-                    const existingParticipants = await dbGet('data', 'participants') || [];
-                    const existingCanvases = await dbGet('data', 'analysis_canvases') || [];
+                    const batch = await dbBatchGet('data', ['transcripts', 'tags', 'global_artifacts', 'participants', 'analysis_canvases']);
+                    const existingTranscripts = batch['transcripts'] || [];
+                    const existingTags = batch['tags'] || [];
+                    const existingArtifacts = batch['global_artifacts'] || [];
+                    const existingParticipants = batch['participants'] || [];
+                    const existingCanvases = batch['analysis_canvases'] || [];
                     const hasProjectData = existingTranscripts.length > 0 || existingTags.length > 0 || existingArtifacts.length > 0 || existingParticipants.length > 0 || existingCanvases.length > 0;
 
                     setHasAppPassword(!!savedPin);
@@ -753,23 +785,24 @@
 
             useEffect(() => {
                 const loadData = async () => {
-                    setTranscripts(await dbGet('data', 'transcripts') || []);
-                    setTranscriptFolders(await dbGet('data', 'transcript_folders') || []);
-                    setTags(await dbGet('data', 'tags') || []);
-                    setGlobalArtifacts(await dbGet('data', 'global_artifacts') || []);
-                    setArtifactFolders(await dbGet('data', 'artifact_folders') || []);
-                    setParticipants(await dbGet('data', 'participants') || []);
-                    setAnalysisCanvases(await dbGet('data', 'analysis_canvases') || []);
-                    setSourceFilterPresets(await dbGet('data', 'source_filter_presets') || []);
-                    setTriangulationSessions(await dbGet('data', 'triangulation_sessions') || []);
-                    setTriangulationAssignmentMeta(await dbGet('data', 'triangulation_assignment_meta') || null);
-                    setCodeDefinitions(await dbGet('data', 'code_definitions') || {});
-                    setCategoryDefinitions(await dbGet('data', 'category_definitions') || {});
-                    setObservations(await dbGet('data', 'observations') || []);
-                    setObservationFolders(await dbGet('data', 'observation_folders') || []);
-                    setObservationTags(await dbGet('data', 'observation_tags') || []);
-                    const savedActivityTypes = await dbGet('data', 'activityTypes');
-                    if (savedActivityTypes) setActivityTypes(savedActivityTypes);
+                    const keys = ['transcripts','transcript_folders','tags','global_artifacts','artifact_folders','participants','analysis_canvases','source_filter_presets','triangulation_sessions','triangulation_assignment_meta','code_definitions','category_definitions','observations','observation_folders','observation_tags','activityTypes'];
+                    const d = await dbBatchGet('data', keys);
+                    setTranscripts(d['transcripts'] || []);
+                    setTranscriptFolders(d['transcript_folders'] || []);
+                    setTags(d['tags'] || []);
+                    setGlobalArtifacts(d['global_artifacts'] || []);
+                    setArtifactFolders(d['artifact_folders'] || []);
+                    setParticipants(d['participants'] || []);
+                    setAnalysisCanvases(d['analysis_canvases'] || []);
+                    setSourceFilterPresets(d['source_filter_presets'] || []);
+                    setTriangulationSessions(d['triangulation_sessions'] || []);
+                    setTriangulationAssignmentMeta(d['triangulation_assignment_meta'] || null);
+                    setCodeDefinitions(d['code_definitions'] || {});
+                    setCategoryDefinitions(d['category_definitions'] || {});
+                    setObservations(d['observations'] || []);
+                    setObservationFolders(d['observation_folders'] || []);
+                    setObservationTags(d['observation_tags'] || []);
+                    if (d['activityTypes']) setActivityTypes(d['activityTypes']);
                     setIsReady(true);
                 };
                 if (startupState === 'open') loadData();
@@ -777,22 +810,24 @@
 
             useEffect(() => {
                 if (isReady && startupState === 'open') {
-                    dbSet('data', 'transcripts', transcripts);
-                    dbSet('data', 'transcript_folders', transcriptFolders);
-                    dbSet('data', 'tags', tags);
-                    dbSet('data', 'global_artifacts', globalArtifacts);
-                    dbSet('data', 'artifact_folders', artifactFolders);
-                    dbSet('data', 'activityTypes', activityTypes);
-                    dbSet('data', 'participants', participants);
-                    dbSet('data', 'analysis_canvases', analysisCanvases);
-                    dbSet('data', 'source_filter_presets', sourceFilterPresets);
-                    dbSet('data', 'triangulation_sessions', triangulationSessions);
-                    dbSet('data', 'triangulation_assignment_meta', triangulationAssignmentMeta);
-                    dbSet('data', 'code_definitions', codeDefinitions);
-                    dbSet('data', 'category_definitions', categoryDefinitions);
-                    dbSet('data', 'observations', observations);
-                    dbSet('data', 'observation_folders', observationFolders);
-                    dbSet('data', 'observation_tags', observationTags);
+                    dbBatchSet('data', [
+                        ['transcripts', transcripts],
+                        ['transcript_folders', transcriptFolders],
+                        ['tags', tags],
+                        ['global_artifacts', globalArtifacts],
+                        ['artifact_folders', artifactFolders],
+                        ['activityTypes', activityTypes],
+                        ['participants', participants],
+                        ['analysis_canvases', analysisCanvases],
+                        ['source_filter_presets', sourceFilterPresets],
+                        ['triangulation_sessions', triangulationSessions],
+                        ['triangulation_assignment_meta', triangulationAssignmentMeta],
+                        ['code_definitions', codeDefinitions],
+                        ['category_definitions', categoryDefinitions],
+                        ['observations', observations],
+                        ['observation_folders', observationFolders],
+                        ['observation_tags', observationTags]
+                    ]);
                 }
             }, [transcripts, transcriptFolders, tags, globalArtifacts, artifactFolders, activityTypes, participants, analysisCanvases, sourceFilterPresets, triangulationSessions, triangulationAssignmentMeta, codeDefinitions, categoryDefinitions, observations, observationFolders, observationTags, isReady, startupState]);
 
@@ -1006,17 +1041,22 @@
 
             const handleBackupDownload = async (backupPassword) => {
                 const fileEntries = await dbGetAllEntries('files');
+                const blobEntries = fileEntries.filter(e => e.value instanceof Blob);
+                const CONCURRENCY = 5;
                 const serializedFiles = [];
-                for (const entry of fileEntries) {
-                    const value = entry.value;
-                    if (!(value instanceof Blob)) continue;
-                    serializedFiles.push({
-                        key: String(entry.key),
-                        type: value.type || 'application/octet-stream',
-                        name: value.name || null,
-                        lastModified: value.lastModified || null,
-                        bytes: await blobToBase64(value)
-                    });
+                for (let i = 0; i < blobEntries.length; i += CONCURRENCY) {
+                    const chunk = blobEntries.slice(i, i + CONCURRENCY);
+                    const results = await Promise.all(chunk.map(async (entry) => {
+                        const value = entry.value;
+                        return {
+                            key: String(entry.key),
+                            type: value.type || 'application/octet-stream',
+                            name: value.name || null,
+                            lastModified: value.lastModified || null,
+                            bytes: await blobToBase64(value)
+                        };
+                    }));
+                    serializedFiles.push(...results);
                 }
 
                 const payload = {
