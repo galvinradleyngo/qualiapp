@@ -227,6 +227,46 @@
             };
         };
 
+        const gzipCompress = async (uint8Array) => {
+            const cs = new CompressionStream('gzip');
+            const writer = cs.writable.getWriter();
+            writer.write(uint8Array);
+            writer.close();
+            const reader = cs.readable.getReader();
+            const chunks = [];
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                chunks.push(value);
+            }
+            let totalLen = 0;
+            for (const c of chunks) totalLen += c.byteLength;
+            const out = new Uint8Array(totalLen);
+            let offset = 0;
+            for (const c of chunks) { out.set(c, offset); offset += c.byteLength; }
+            return out;
+        };
+
+        const gzipDecompress = async (uint8Array) => {
+            const ds = new DecompressionStream('gzip');
+            const writer = ds.writable.getWriter();
+            writer.write(uint8Array);
+            writer.close();
+            const reader = ds.readable.getReader();
+            const chunks = [];
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                chunks.push(value);
+            }
+            let totalLen = 0;
+            for (const c of chunks) totalLen += c.byteLength;
+            const out = new Uint8Array(totalLen);
+            let offset = 0;
+            for (const c of chunks) { out.set(c, offset); offset += c.byteLength; }
+            return out;
+        };
+
         const decryptPayload = async (encryptedBlob, password) => {
             const dec = new TextDecoder();
             const salt = new Uint8Array(fromBase64(encryptedBlob.salt));
@@ -1039,12 +1079,15 @@
                 }
             };
 
-            const handleBackupDownload = async (backupPassword) => {
+            const handleBackupDownload = async (backupPassword, onProgress) => {
+                const report = (step, pct) => { if (onProgress) onProgress({ step, pct }); };
+                report('Reading files…', 5);
                 const fileEntries = await dbGetAllEntries('files');
                 const blobEntries = fileEntries.filter(e => e.value instanceof Blob);
                 const CONCURRENCY = 5;
                 const serializedFiles = [];
-                for (let i = 0; i < blobEntries.length; i += CONCURRENCY) {
+                const totalFiles = blobEntries.length;
+                for (let i = 0; i < totalFiles; i += CONCURRENCY) {
                     const chunk = blobEntries.slice(i, i + CONCURRENCY);
                     const results = await Promise.all(chunk.map(async (entry) => {
                         const value = entry.value;
@@ -1057,8 +1100,11 @@
                         };
                     }));
                     serializedFiles.push(...results);
+                    const filePct = Math.min(50, Math.round(5 + ((i + chunk.length) / Math.max(totalFiles, 1)) * 45));
+                    report(`Serializing files… (${Math.min(i + chunk.length, totalFiles)}/${totalFiles})`, filePct);
                 }
 
+                report('Building payload…', 55);
                 const payload = {
                     exportedAt: new Date().toISOString(),
                     data: {
@@ -1088,20 +1134,43 @@
                     }
                 };
 
+                report('Encrypting…', 65);
                 const encrypted = await encryptPayload(payload, backupPassword);
-                const blob = new Blob([JSON.stringify(encrypted, null, 2)], { type: 'application/json' });
+
+                report('Compressing…', 75);
+                const jsonBytes = new TextEncoder().encode(JSON.stringify(encrypted));
+                const compressed = await gzipCompress(jsonBytes);
+
+                report('Saving file…', 95);
+                const blob = new Blob([compressed], { type: 'application/gzip' });
                 const a = document.createElement('a');
                 a.href = URL.createObjectURL(blob);
                 a.download = `QualiApp_Backup_${new Date().toISOString().slice(0, 10)}.qbk`;
                 a.click();
                 URL.revokeObjectURL(a.href);
+                report('Done', 100);
             };
 
-            const handleRestoreUpload = async (file, backupPassword) => {
-                const text = await file.text();
-                const encrypted = JSON.parse(text);
+            const handleRestoreUpload = async (file, backupPassword, onProgress) => {
+                const report = (step, pct) => { if (onProgress) onProgress({ step, pct }); };
+                report('Reading file…', 5);
+                const arrayBuf = await file.arrayBuffer();
+                const bytes = new Uint8Array(arrayBuf);
+
+                let encrypted;
+                // Detect gzip: magic bytes 0x1F 0x8B
+                if (bytes.length >= 2 && bytes[0] === 0x1F && bytes[1] === 0x8B) {
+                    report('Decompressing…', 15);
+                    const decompressed = await gzipDecompress(bytes);
+                    encrypted = JSON.parse(new TextDecoder().decode(decompressed));
+                } else {
+                    encrypted = JSON.parse(new TextDecoder().decode(bytes));
+                }
+
+                report('Decrypting…', 35);
                 const payload = await decryptPayload(encrypted, backupPassword);
 
+                report('Restoring data…', 55);
                 const d = payload.data || {};
                 setTranscripts(d.transcripts || []);
                 setTranscriptFolders(d.transcriptFolders || []);
@@ -1122,15 +1191,23 @@
                 setView('dashboard');
                 setStartupState('open');
 
+                report('Restoring files…', 65);
                 await dbClear('files');
-                for (const f of (payload.files || [])) {
-                    const bytes = fromBase64(f.bytes);
+                const totalFiles = (payload.files || []).length;
+                for (let i = 0; i < totalFiles; i++) {
+                    const f = payload.files[i];
+                    const fileBytes = fromBase64(f.bytes);
                     const blob = f.name
-                        ? new File([bytes], f.name, { type: f.type || 'application/octet-stream', lastModified: f.lastModified || Date.now() })
-                        : new Blob([bytes], { type: f.type || 'application/octet-stream' });
+                        ? new File([fileBytes], f.name, { type: f.type || 'application/octet-stream', lastModified: f.lastModified || Date.now() })
+                        : new Blob([fileBytes], { type: f.type || 'application/octet-stream' });
                     await dbSet('files', f.key, blob);
+                    if ((i + 1) % 5 === 0 || i === totalFiles - 1) {
+                        const filePct = Math.round(65 + ((i + 1) / Math.max(totalFiles, 1)) * 25);
+                        report(`Restoring files… (${i + 1}/${totalFiles})`, filePct);
+                    }
                 }
 
+                report('Restoring settings…', 95);
                 if (payload.security) {
                     if (payload.security.appPin) localStorage.setItem('quali_pin', payload.security.appPin);
                     if (payload.security.participantPinHash) localStorage.setItem(participantPinKey, payload.security.participantPinHash);
@@ -1140,6 +1217,7 @@
                     setHasRecoverySetup(!!(localStorage.getItem(recoveryQuestionKey) && localStorage.getItem(recoveryAnswerHashKey)));
                     setShowRecoveryPrompt(!!localStorage.getItem('quali_pin') && !(localStorage.getItem(recoveryQuestionKey) && localStorage.getItem(recoveryAnswerHashKey)));
                 }
+                report('Done', 100);
             };
 
             const handleSetAppPassword = async (password) => {
@@ -1680,6 +1758,7 @@
             const [restoreFile, setRestoreFile] = useState(null);
             const [message, setMessage] = useState('');
             const [estimatedSize, setEstimatedSize] = useState(null);
+            const [progress, setProgress] = useState(null);
 
             useEffect(() => {
                 const loadEstimatedSize = async () => {
@@ -1693,21 +1772,33 @@
 
             const backupNow = async () => {
                 if (backupPassword.length < 6) return setMessage('Backup password must be at least 6 characters.');
-                await onBackup(backupPassword);
-                setMessage('Encrypted backup downloaded. Keep the password safe.');
-                setBackupPassword('');
+                setProgress({ step: 'Starting backup…', pct: 0 });
+                setMessage('');
+                try {
+                    await onBackup(backupPassword, (p) => setProgress(p));
+                    setMessage('Encrypted backup downloaded. Keep the password safe.');
+                    setBackupPassword('');
+                } catch (err) {
+                    setMessage('Backup failed: ' + (err.message || 'Unknown error'));
+                } finally {
+                    setTimeout(() => setProgress(null), 1500);
+                }
             };
 
             const restoreNow = async () => {
                 if (!restoreFile) return setMessage('Choose a backup file first.');
                 if (!restorePassword) return setMessage('Enter backup password.');
+                setProgress({ step: 'Starting restore…', pct: 0 });
+                setMessage('');
                 try {
-                    await onRestore(restoreFile, restorePassword);
+                    await onRestore(restoreFile, restorePassword, (p) => setProgress(p));
                     setMessage('Backup restored successfully.');
                     setRestorePassword('');
                     setRestoreFile(null);
                 } catch (err) {
                     setMessage('Restore failed. Wrong password or invalid backup file.');
+                } finally {
+                    setTimeout(() => setProgress(null), 1500);
                 }
             };
 
@@ -1738,7 +1829,7 @@
                                     <label className="block text-sm font-semibold text-slate-600 mb-2">Backup Password (min 6 chars)</label>
                                     <input type="password" value={backupPassword} onChange={e => setBackupPassword(e.target.value)} placeholder="Enter a strong backup password" className="w-full border rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-tide" />
                                 </div>
-                                <button onClick={backupNow} className="w-full bg-tide hover:bg-teal-600 text-white px-4 py-3 rounded-lg font-bold transition">Download .qbk Backup</button>
+                                <button onClick={backupNow} disabled={!!progress} className={`w-full px-4 py-3 rounded-lg font-bold transition ${progress ? 'bg-slate-300 text-slate-500 cursor-not-allowed' : 'bg-tide hover:bg-teal-600 text-white'}`}>Download .qbk Backup</button>
                             </div>
 
                             <div className="bg-white border rounded-2xl p-6 shadow-soft space-y-4">
@@ -1754,9 +1845,21 @@
                                     <label className="block text-sm font-semibold text-slate-600 mb-2">Backup Password</label>
                                     <input type="password" value={restorePassword} onChange={e => setRestorePassword(e.target.value)} placeholder="Enter the backup password" className="w-full border rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-ember" />
                                 </div>
-                                <button onClick={restoreNow} className="w-full bg-ember hover:bg-orange-700 text-white px-4 py-3 rounded-lg font-bold transition">Restore Instance</button>
+                                <button onClick={restoreNow} disabled={!!progress} className={`w-full px-4 py-3 rounded-lg font-bold transition ${progress ? 'bg-slate-300 text-slate-500 cursor-not-allowed' : 'bg-ember hover:bg-orange-700 text-white'}`}>Restore Instance</button>
                             </div>
                         </div>
+
+                        {progress && (
+                            <div className="bg-white border rounded-2xl p-5 shadow-soft">
+                                <div className="flex items-center justify-between mb-2">
+                                    <p className="text-sm font-semibold text-slate-700">{progress.step}</p>
+                                    <p className="text-sm font-bold text-tide">{progress.pct}%</p>
+                                </div>
+                                <div className="w-full bg-slate-200 rounded-full h-3 overflow-hidden">
+                                    <div className="bg-tide h-3 rounded-full transition-all duration-300 ease-out" style={{ width: `${progress.pct}%` }}></div>
+                                </div>
+                            </div>
+                        )}
 
                         {message && (
                             <div className={`p-4 rounded-2xl border ${message.includes('failed') || message.includes('Wrong') ? 'bg-red-50 border-red-200 text-red-700' : 'bg-green-50 border-green-200 text-green-700'}`}>
