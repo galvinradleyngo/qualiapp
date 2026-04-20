@@ -688,6 +688,7 @@
             const [transcriptFolders, setTranscriptFolders] = useState([]);
             const [tags, setTags] = useState([]);
             const [globalArtifacts, setGlobalArtifacts] = useState([]);
+            const [artifactFolders, setArtifactFolders] = useState([]);
             const [activityTypes, setActivityTypes] = useState(['Edited', 'First Review', 'Coded', 'Member Checked']);
             const [participants, setParticipants] = useState([]);
             const [analysisCanvases, setAnalysisCanvases] = useState([]);
@@ -697,6 +698,7 @@
             const [codeDefinitions, setCodeDefinitions] = useState({});
             const [categoryDefinitions, setCategoryDefinitions] = useState({});
             const [observations, setObservations] = useState([]);
+            const [observationFolders, setObservationFolders] = useState([]);
             const [observationTags, setObservationTags] = useState([]);
             const [activeObservationId, setActiveObservationId] = useState(null);
             const [activeId, setActiveId] = useState(null);
@@ -755,6 +757,7 @@
                     setTranscriptFolders(await dbGet('data', 'transcript_folders') || []);
                     setTags(await dbGet('data', 'tags') || []);
                     setGlobalArtifacts(await dbGet('data', 'global_artifacts') || []);
+                    setArtifactFolders(await dbGet('data', 'artifact_folders') || []);
                     setParticipants(await dbGet('data', 'participants') || []);
                     setAnalysisCanvases(await dbGet('data', 'analysis_canvases') || []);
                     setSourceFilterPresets(await dbGet('data', 'source_filter_presets') || []);
@@ -763,6 +766,7 @@
                     setCodeDefinitions(await dbGet('data', 'code_definitions') || {});
                     setCategoryDefinitions(await dbGet('data', 'category_definitions') || {});
                     setObservations(await dbGet('data', 'observations') || []);
+                    setObservationFolders(await dbGet('data', 'observation_folders') || []);
                     setObservationTags(await dbGet('data', 'observation_tags') || []);
                     const savedActivityTypes = await dbGet('data', 'activityTypes');
                     if (savedActivityTypes) setActivityTypes(savedActivityTypes);
@@ -777,6 +781,7 @@
                     dbSet('data', 'transcript_folders', transcriptFolders);
                     dbSet('data', 'tags', tags);
                     dbSet('data', 'global_artifacts', globalArtifacts);
+                    dbSet('data', 'artifact_folders', artifactFolders);
                     dbSet('data', 'activityTypes', activityTypes);
                     dbSet('data', 'participants', participants);
                     dbSet('data', 'analysis_canvases', analysisCanvases);
@@ -786,9 +791,10 @@
                     dbSet('data', 'code_definitions', codeDefinitions);
                     dbSet('data', 'category_definitions', categoryDefinitions);
                     dbSet('data', 'observations', observations);
+                    dbSet('data', 'observation_folders', observationFolders);
                     dbSet('data', 'observation_tags', observationTags);
                 }
-            }, [transcripts, transcriptFolders, tags, globalArtifacts, activityTypes, participants, analysisCanvases, sourceFilterPresets, triangulationSessions, triangulationAssignmentMeta, codeDefinitions, categoryDefinitions, observations, observationTags, isReady, startupState]);
+            }, [transcripts, transcriptFolders, tags, globalArtifacts, artifactFolders, activityTypes, participants, analysisCanvases, sourceFilterPresets, triangulationSessions, triangulationAssignmentMeta, codeDefinitions, categoryDefinitions, observations, observationFolders, observationTags, isReady, startupState]);
 
             const handleSaveSourceFilterPreset = (preset) => {
                 const cleanedName = String(preset?.name || '').trim();
@@ -1029,7 +1035,9 @@
                         codeDefinitions,
                         categoryDefinitions,
                         observations,
-                        observationTags
+                        observationTags,
+                        artifactFolders,
+                        observationFolders
                     },
                     files: serializedFiles,
                     security: {
@@ -1161,7 +1169,8 @@
                             globalArtifacts: sanitizedArtifacts,
                             activityTypes,
                             participants: sanitizedParticipants,
-                            analysisCanvases: []
+                            analysisCanvases: [],
+                            artifactFolders
                         },
                         files: serializedFiles
                     };
@@ -1187,6 +1196,8 @@
                 setTranscriptFolders(d.transcriptFolders || []);
                 setTags(d.tags || []);
                 setGlobalArtifacts(d.globalArtifacts || []);
+                setArtifactFolders(d.artifactFolders || []);
+                setObservationFolders(d.observationFolders || []);
                 setActivityTypes(d.activityTypes || ['Edited', 'First Review', 'Coded', 'Member Checked']);
                 setParticipants(d.participants || []);
                 setAnalysisCanvases(d.analysisCanvases || []);
@@ -1396,7 +1407,7 @@
                                     participants={participants}
                                 />
                             )}
-                            {view === 'artifacts' && <ArtifactDashboard artifacts={globalArtifacts} onUpdate={setGlobalArtifacts} suggestedCodes={crossSourceCodes} suggestedCategories={crossSourceCategories} />}
+                            {view === 'artifacts' && <ArtifactDashboard artifacts={globalArtifacts} onUpdate={setGlobalArtifacts} artifactFolders={artifactFolders} onFoldersUpdate={setArtifactFolders} suggestedCodes={crossSourceCodes} suggestedCategories={crossSourceCategories} />}
                             {view === 'observations' && (
                                 <ObservationsView
                                     observations={observations}
@@ -1408,6 +1419,8 @@
                                     onAddObservationTag={(tag) => setObservationTags(prev => [...prev, tag])}
                                     onUpdateObservationTag={(updated) => setObservationTags(prev => prev.map(t => t.id === updated.id ? updated : t))}
                                     onRemoveObservationTag={(id) => setObservationTags(prev => prev.filter(t => t.id !== id))}
+                                    observationFolders={observationFolders}
+                                    onFoldersUpdate={setObservationFolders}
                                 />
                             )}
                             {view === 'participants' && <ParticipantVault participants={participants} onUpdate={setParticipants} />}
@@ -2117,12 +2130,14 @@
             );
         }
 
-        function ArtifactDashboard({ artifacts, onUpdate, suggestedCodes = [], suggestedCategories = [] }) {
+        function ArtifactDashboard({ artifacts, onUpdate, artifactFolders = [], onFoldersUpdate, suggestedCodes = [], suggestedCategories = [] }) {
             const [editingId, setEditingId] = useState(null);
             const [editNotes, setEditNotes] = useState('');
             const [editCodes, setEditCodes] = useState([]);
             const [newCodeInput, setNewCodeInput] = useState('');
             const [editingArtifactFolder, setEditingArtifactFolder] = useState('');
+            const [newFolderInput, setNewFolderInput] = useState('');
+            const [showNewFolderForm, setShowNewFolderForm] = useState(false);
 
             const handleFileUpload = async (e) => {
                 const file = e.target.files[0];
@@ -2184,8 +2199,26 @@
                 onUpdate(artifacts.map(a => a.id === artId ? { ...a, folder: folder || '' } : a));
             };
 
-            const folders = [...new Set(artifacts.map(a => a.folder).filter(Boolean))];
-            const folderSuggestions = [...new Set([...folders, ...suggestedCategories].filter(Boolean))].sort((a, b) => a.localeCompare(b));
+            const createNewFolder = () => {
+                const trimmed = newFolderInput.trim();
+                if (!trimmed || artifactFolders.includes(trimmed)) {
+                    alert('Please enter a unique folder name.');
+                    return;
+                }
+                onFoldersUpdate([...artifactFolders, trimmed]);
+                setNewFolderInput('');
+                setShowNewFolderForm(false);
+            };
+
+            const deleteFolder = (folderName) => {
+                if (confirm(`Delete folder "${folderName}"? Artifacts in this folder will move to Uncategorized.`)) {
+                    onFoldersUpdate(artifactFolders.filter(f => f !== folderName));
+                    onUpdate(artifacts.map(a => a.folder === folderName ? { ...a, folder: '' } : a));
+                }
+            };
+
+            const allFolders = [...new Set([...artifactFolders, ...artifacts.map(a => a.folder).filter(Boolean)])];
+            const folderSuggestions = [...new Set([...allFolders, ...suggestedCategories].filter(Boolean))].sort((a, b) => a.localeCompare(b));
             const codeSuggestions = [...new Set([...(suggestedCodes || []), ...(editCodes || [])].filter(Boolean))].sort((a, b) => a.localeCompare(b));
             const artifactsByFolder = artifacts.reduce((acc, art) => {
                 const folder = art.folder || 'Uncategorized';
@@ -2208,11 +2241,40 @@
                     </div>
 
                     <div className="bg-white border rounded-2xl p-4 shadow-soft mb-6">
-                        <h3 className="font-bold text-sm mb-2">Existing Folders</h3>
-                        {folders.length > 0 ? (
-                            <p className="text-sm text-slate-600">{folders.join(', ')}</p>
+                        <div className="flex justify-between items-center mb-3">
+                            <h3 className="font-bold text-sm">Existing Folders</h3>
+                            <button onClick={() => setShowNewFolderForm(v => !v)} className="text-xs font-semibold text-tide hover:text-teal-700">+ New Folder</button>
+                        </div>
+                        {showNewFolderForm && (
+                            <div className="mb-4 p-3 bg-teal-50 border border-teal-200 rounded-lg space-y-2">
+                                <input
+                                    autoFocus
+                                    type="text"
+                                    value={newFolderInput}
+                                    onChange={e => setNewFolderInput(e.target.value)}
+                                    onKeyPress={e => e.key === 'Enter' && createNewFolder()}
+                                    placeholder="Folder name..."
+                                    className="w-full border rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-tide"
+                                />
+                                <div className="flex gap-2">
+                                    <button onClick={() => { setShowNewFolderForm(false); setNewFolderInput(''); }} className="flex-1 py-1.5 bg-white border rounded-lg text-xs font-semibold text-slate-600 hover:bg-slate-100">Cancel</button>
+                                    <button onClick={createNewFolder} className="flex-1 py-1.5 bg-tide text-white rounded-lg text-xs font-bold hover:bg-teal-600">Create</button>
+                                </div>
+                            </div>
+                        )}
+                        {artifactFolders.length > 0 || allFolders.filter(f => f !== 'Uncategorized').length > 0 ? (
+                            <div className="space-y-2">
+                                {allFolders.filter(f => f !== 'Uncategorized').sort().map(folder => (
+                                    <div key={folder} className="flex items-center justify-between p-2 bg-slate-50 rounded-lg">
+                                        <span className="text-sm text-slate-700">📁 {folder}</span>
+                                        {artifactFolders.includes(folder) && (
+                                            <button onClick={() => deleteFolder(folder)} className="text-xs font-semibold text-red-600 hover:text-red-700">Delete</button>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
                         ) : (
-                            <p className="text-sm text-slate-400">No folders yet. Assign artifacts to folders in edit mode.</p>
+                            <p className="text-sm text-slate-400">No folders yet. Create one or assign artifacts to folders in edit mode.</p>
                         )}
                     </div>
 
@@ -4502,12 +4564,16 @@
             );
         }
 
-        function ObservationsView({ observations, observationTags, allTags, onAddObservation, onUpdateObservation, onDeleteObservation, onAddObservationTag, onUpdateObservationTag, onRemoveObservationTag }) {
+        function ObservationsView({ observations, observationFolders = [], onFoldersUpdate, observationTags, allTags, onAddObservation, onUpdateObservation, onDeleteObservation, onAddObservationTag, onUpdateObservationTag, onRemoveObservationTag }) {
             const [activeObsId, setActiveObsId] = useState(observations[0]?.id || null);
             const [showNewForm, setShowNewForm] = useState(false);
             const [newTitle, setNewTitle] = useState('');
             const [newLocation, setNewLocation] = useState('');
             const [newDate, setNewDate] = useState(() => new Date().toISOString().slice(0, 10));
+            const [newObsFolder, setNewObsFolder] = useState('');
+            const [selectedFolder, setSelectedFolder] = useState(null);
+            const [showNewFolderForm, setShowNewFolderForm] = useState(false);
+            const [newFolderName, setNewFolderName] = useState('');
 
             const activeObs = observations.find(o => o.id === activeObsId) || null;
             const activeTags = observationTags.filter(t => t.observationId === activeObsId);
@@ -4520,6 +4586,7 @@
                     title: newTitle.trim(),
                     location: newLocation.trim(),
                     date: newDate,
+                    folder: newObsFolder,
                     content: '',
                     notes: '',
                     createdAt: new Date().toISOString()
@@ -4530,7 +4597,37 @@
                 setNewTitle('');
                 setNewLocation('');
                 setNewDate(new Date().toISOString().slice(0, 10));
+                setNewObsFolder('');
             };
+
+            const createNewFolder = () => {
+                const trimmed = newFolderName.trim();
+                if (!trimmed || observationFolders.includes(trimmed)) {
+                    alert('Please enter a unique folder name.');
+                    return;
+                }
+                onFoldersUpdate([...observationFolders, trimmed]);
+                setNewFolderName('');
+                setShowNewFolderForm(false);
+                setSelectedFolder(trimmed);
+            };
+
+            const deleteObsFolder = (folderName) => {
+                if (confirm(`Delete folder "${folderName}"? Observations in this folder will move to All Observations.`)) {
+                    onFoldersUpdate(observationFolders.filter(f => f !== folderName));
+                    observations.forEach(obs => {
+                        if (obs.folder === folderName) {
+                            onUpdateObservation({ ...obs, folder: '' });
+                        }
+                    });
+                    if (selectedFolder === folderName) setSelectedFolder(null);
+                }
+            };
+
+            const allFolders = [...new Set([...observationFolders, ...observations.map(o => o.folder).filter(Boolean)])];
+            const filteredObservations = selectedFolder 
+                ? observations.filter(o => o.folder === selectedFolder)
+                : observations;
 
             return (
                 <div className="flex h-full bg-white overflow-hidden">
@@ -4564,6 +4661,15 @@
                                         onChange={e => setNewDate(e.target.value)}
                                         className="w-full border rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-tide"
                                     />
+                                    <input
+                                        type="text"
+                                        list="obs_folders_list"
+                                        value={newObsFolder}
+                                        onChange={e => setNewObsFolder(e.target.value)}
+                                        placeholder="Folder (optional)"
+                                        className="w-full border rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-tide"
+                                    />
+                                    <datalist id="obs_folders_list">{allFolders.map(f => <option key={f} value={f} />)}</datalist>
                                     <div className="flex gap-2">
                                         <button type="button" onClick={() => setShowNewForm(false)} className="flex-1 py-1.5 bg-white border rounded-lg text-xs font-semibold text-slate-600">Cancel</button>
                                         <button type="submit" className="flex-1 py-1.5 bg-tide text-white rounded-lg text-xs font-bold">Create</button>
@@ -4571,11 +4677,51 @@
                                 </form>
                             )}
                         </div>
+                        {allFolders.length > 0 && (
+                            <div className="border-t bg-white p-3">
+                                <div className="flex items-center justify-between mb-2">
+                                    <p className="text-xs font-bold text-slate-600 uppercase">Folders</p>
+                                    <button onClick={() => setShowNewFolderForm(v => !v)} className="text-xs font-semibold text-tide hover:text-teal-700">+ New</button>
+                                </div>
+                                {showNewFolderForm && (
+                                    <div className="mb-3 p-2 bg-teal-50 border border-teal-200 rounded-lg space-y-2">
+                                        <input
+                                            autoFocus
+                                            type="text"
+                                            value={newFolderName}
+                                            onChange={e => setNewFolderName(e.target.value)}
+                                            onKeyPress={e => e.key === 'Enter' && createNewFolder()}
+                                            placeholder="Folder name..."
+                                            className="w-full border rounded-lg p-2 text-xs outline-none focus:ring-2 focus:ring-tide"
+                                        />
+                                        <div className="flex gap-1">
+                                            <button onClick={() => { setShowNewFolderForm(false); setNewFolderName(''); }} className="flex-1 py-1 bg-white border rounded text-xs font-semibold text-slate-600 hover:bg-slate-100">Cancel</button>
+                                            <button onClick={createNewFolder} className="flex-1 py-1 bg-tide text-white rounded text-xs font-bold hover:bg-teal-600">Create</button>
+                                        </div>
+                                    </div>
+                                )}
+                                <div className="space-y-1">
+                                    <button onClick={() => setSelectedFolder(null)} className={`w-full text-left px-2 py-1.5 rounded text-xs font-semibold transition ${selectedFolder === null ? 'bg-tide text-white' : 'text-slate-700 hover:bg-slate-100'}`}>
+                                        All Observations
+                                    </button>
+                                    {allFolders.sort().map(folder => (
+                                        <div key={folder} className="flex items-center gap-2 group">
+                                            <button onClick={() => setSelectedFolder(folder)} className={`flex-1 text-left px-2 py-1.5 rounded text-xs font-semibold transition ${selectedFolder === folder ? 'bg-tide text-white' : 'text-slate-700 hover:bg-slate-100'}`}>
+                                                📁 {folder}
+                                            </button>
+                                            {observationFolders.includes(folder) && (
+                                                <button onClick={() => deleteObsFolder(folder)} className="text-xs text-red-600 hover:text-red-700 opacity-0 group-hover:opacity-100 transition px-1">×</button>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
                         <div className="flex-1 overflow-y-auto p-3 space-y-2">
-                            {observations.length === 0 && !showNewForm && (
-                                <p className="text-center text-slate-400 text-sm mt-10 italic">No observations yet. Click + New to start.</p>
+                            {filteredObservations.length === 0 && !showNewForm && (
+                                <p className="text-center text-slate-400 text-sm mt-10 italic">{selectedFolder ? `No observations in ${selectedFolder}.` : 'No observations yet. Click + New to start.'}</p>
                             )}
-                            {observations.map(obs => {
+                            {filteredObservations.map(obs => {
                                 const tagCount = observationTags.filter(t => t.observationId === obs.id).length;
                                 return (
                                     <button
