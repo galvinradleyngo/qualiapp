@@ -227,12 +227,42 @@
             };
         };
 
-        const encryptBytes = async (bytes, password) => {
+        const encryptBytes = async (bytes, password, onChunkProgress) => {
+            const CHUNK_SIZE = 8 * 1024 * 1024; // 8MB chunks
             const salt = crypto.getRandomValues(new Uint8Array(16));
-            const iv = crypto.getRandomValues(new Uint8Array(12));
             const key = await deriveKey(password, salt, ['encrypt']);
-            const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, bytes);
-            return { salt, iv, ciphertext };
+            const totalChunks = Math.ceil(bytes.byteLength / CHUNK_SIZE) || 1;
+            const encryptedChunks = [];
+            for (let i = 0; i < totalChunks; i++) {
+                const start = i * CHUNK_SIZE;
+                const end = Math.min(start + CHUNK_SIZE, bytes.byteLength);
+                const chunkData = bytes.slice(start, end);
+                const iv = crypto.getRandomValues(new Uint8Array(12));
+                const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, chunkData);
+                encryptedChunks.push({ iv: toBase64(iv), data: toBase64(ciphertext) });
+                if (onChunkProgress) onChunkProgress(i + 1, totalChunks);
+                await yieldToMain();
+            }
+            return { salt, chunks: encryptedChunks };
+        };
+
+        const decryptChunked = async (chunks, salt, password, onChunkProgress) => {
+            const key = await deriveKey(password, new Uint8Array(fromBase64(salt)), ['decrypt']);
+            const parts = [];
+            let totalLen = 0;
+            for (let i = 0; i < chunks.length; i++) {
+                const iv = new Uint8Array(fromBase64(chunks[i].iv));
+                const ciphertext = fromBase64(chunks[i].data);
+                const plain = new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ciphertext));
+                parts.push(plain);
+                totalLen += plain.byteLength;
+                if (onChunkProgress) onChunkProgress(i + 1, chunks.length);
+                await yieldToMain();
+            }
+            const out = new Uint8Array(totalLen);
+            let offset = 0;
+            for (const p of parts) { out.set(p, offset); offset += p.byteLength; }
+            return out;
         };
 
         const decryptBytes = async (ciphertext, salt, iv, password) => {
@@ -1154,24 +1184,27 @@
                 const jsonString = JSON.stringify(payload);
                 await yieldToMain();
 
-                report('Compressing…', 70);
+                report('Compressing…', 68);
                 await yieldToMain();
                 const compressed = await gzipCompress(new TextEncoder().encode(jsonString));
 
-                report('Encrypting compressed data…', 80);
+                report('Encrypting…', 75);
                 await yieldToMain();
-                const { salt, iv, ciphertext } = await encryptBytes(compressed, backupPassword);
+                const { salt, chunks } = await encryptBytes(compressed, backupPassword, (done, total) => {
+                    const pct = Math.round(75 + (done / total) * 15);
+                    report(`Encrypting… (${done}/${total})`, pct);
+                });
 
-                report('Saving file…', 92);
+                report('Saving file…', 93);
                 await yieldToMain();
                 const envelope = JSON.stringify({
-                    version: 2,
+                    version: 3,
                     algorithm: 'AES-GCM-256',
                     kdf: 'PBKDF2-SHA256-150000',
                     compressed: true,
+                    chunked: true,
                     salt: toBase64(salt),
-                    iv: toBase64(iv),
-                    data: toBase64(ciphertext)
+                    chunks: chunks
                 });
                 const blob = new Blob([envelope], { type: 'application/json' });
                 const a = document.createElement('a');
@@ -1198,8 +1231,20 @@
                     payload = await decryptPayload(encrypted, backupPassword);
                 } else {
                     const parsed = JSON.parse(new TextDecoder().decode(bytes));
-                    if (parsed.version === 2 && parsed.compressed) {
-                        // v2: decrypt then decompress
+                    if (parsed.version === 3 && parsed.chunked) {
+                        // v3: chunked decrypt then decompress
+                        report('Decrypting…', 15);
+                        await yieldToMain();
+                        const compressedBytes = await decryptChunked(parsed.chunks, parsed.salt, backupPassword, (done, total) => {
+                            const pct = Math.round(15 + (done / total) * 20);
+                            report(`Decrypting… (${done}/${total})`, pct);
+                        });
+                        report('Decompressing…', 40);
+                        await yieldToMain();
+                        const jsonBytes = await gzipDecompress(compressedBytes);
+                        payload = JSON.parse(new TextDecoder().decode(jsonBytes));
+                    } else if (parsed.version === 2 && parsed.compressed) {
+                        // v2: single-shot decrypt then decompress
                         report('Decrypting…', 15);
                         await yieldToMain();
                         const salt = new Uint8Array(fromBase64(parsed.salt));
