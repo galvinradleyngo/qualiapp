@@ -2609,6 +2609,7 @@
             const htmlToPlain = (value) => {
                 const tmp = document.createElement('div');
                 tmp.innerHTML = value || '';
+                tmp.querySelectorAll('br').forEach(br => { br.replaceWith('\n'); });
                 return (tmp.innerText || '').replace(/\r/g, '');
             };
 
@@ -4675,7 +4676,12 @@
 
             const escapeHtml = (v) => String(v || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;');
             const plainToHtml = (v) => escapeHtml(v).replace(/\n/g, '<br>');
-            const htmlToPlain = (v) => { const d = document.createElement('div'); d.innerHTML = v || ''; return (d.innerText || '').replace(/\r/g, ''); };
+            const htmlToPlain = (v) => { 
+                const d = document.createElement('div'); 
+                d.innerHTML = v || ''; 
+                d.querySelectorAll('br').forEach(br => { br.replaceWith('\n'); });
+                return (d.innerText || '').replace(/\r/g, ''); 
+            };
 
             useEffect(() => {
                 setContent(observation.content || '');
