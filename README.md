@@ -1,31 +1,33 @@
-# QualiApp Local Run
+# QualiApp — Offline Qualitative Studio
 
-Open this app through a local HTTP server (not `file://`) to avoid browser security issues.
+## Quick Start
 
-## Quick Start (macOS/Linux)
-
-1. Open a terminal in this folder.
-2. Run:
+### macOS / Linux
 
 ```bash
-chmod +x ./serve-local.sh
 ./serve-local.sh
 ```
 
-3. Open:
+### Windows
 
-```text
-http://localhost:8080
+Double-click **`install.bat`** — or if you have Python:
+
+```cmd
+python -m http.server 8080
 ```
 
-## Custom Port
+Then open **http://localhost:8080** in your browser.
 
-```bash
-./serve-local.sh 5173
-```
+---
 
-Then open `http://localhost:5173`.
+## Offline use
 
-## Why this is needed
+Open the app **once while online**. The browser caches all scripts automatically. After that, the app works fully offline — just keep using `./serve-local.sh` as normal.
 
-Opening `index.html` directly as `file://...` can break app behavior due to browser origin/security restrictions.
+---
+
+## Why a local server?
+
+Opening `index.html` directly as `file://` breaks browser security restrictions. The local server is a tiny built-in Python server — no extra software needed.
+
+
