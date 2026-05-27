@@ -283,23 +283,9 @@ c.useEffect=function(a,b){return g.current.useEffect(a,b)};c.useId=function(){re
 c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=function(a,b,c){return g.current.useSyncExternalStore(a,b,c)};c.useTransition=function(){return g.current.useTransition()};c.version="18.3.1"});
 })();
 </script>
-    <!-- Offline-first build: runtime libraries are embedded above. -->
-    <script src="./vendor/react-dom.production.min.js"></script>
-    <script src="./vendor/babel.min.js"></script>
-    <script>
-        if (!window.ReactDOM || !window.Babel) {
-            document.body.innerHTML = `
-                <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:2rem;background:#f8fafc;color:#102a43;font-family:sans-serif;">
-                    <div style="max-width:42rem;background:#fff;border:1px solid #cbd5e1;border-radius:1rem;padding:1.5rem;box-shadow:0 10px 35px rgba(16,42,67,.12);">
-                        <h1 style="margin:0 0 .75rem;font-size:1.5rem;line-height:1.2;">QualiApp runtime is missing</h1>
-                        <p style="margin:0 0 .75rem;line-height:1.5;">This page needs ReactDOM and Babel to compile the JSX app. Restore the local files under <code>vendor/</code> before opening the app offline.</p>
-                        <p style="margin:0;line-height:1.5;">Recommended run: <code>./serve-local.sh</code></p>
-                    </div>
-                </div>
-            `;
-            throw new Error('QualiApp runtime is missing');
-        }
-    </script>
+    <!-- Offline-first: load from local vendor/ when available, fall back to CDN -->
+    <script src="./vendor/react-dom.production.min.js" onerror="this.onerror=null;this.src='https://unpkg.com/react-dom@18/umd/react-dom.production.min.js'"></script>
+    <script src="./vendor/babel.min.js" onerror="this.onerror=null;this.src='https://unpkg.com/@babel/standalone/babel.min.js'"></script>
     <script>
         tailwind.config = {
             theme: {
