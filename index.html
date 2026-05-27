@@ -1023,7 +1023,8 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
             const allItemIds = useMemo(() => groups.flatMap((group) => group.items.map((item) => item.filterId)), [groups]);
             const [presetName, setPresetName] = useState('');
             const [selectedPresetId, setSelectedPresetId] = useState('');
-            const [isExpanded, setIsExpanded] = useState(true);
+            const [isExpanded, setIsExpanded] = useState(false);
+            const [expandedGroups, setExpandedGroups] = useState(() => new Set());
             const [confirmDialog, setConfirmDialog] = useState({
                 open: false,
                 title: '',
@@ -1064,6 +1065,15 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                 }
             }, [presets, selectedPresetId]);
 
+            useEffect(() => {
+                const initialExpanded = new Set(
+                    groups
+                        .filter((group) => group.items.length <= 6)
+                        .map((group) => group.type)
+                );
+                setExpandedGroups(initialExpanded);
+            }, [groups]);
+
             const handleManualToggleItem = (filterId) => {
                 setSelectedPresetId('');
                 onToggleItem(filterId);
@@ -1090,6 +1100,15 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                 const preset = presets.find((entry) => entry.id === presetId);
                 if (!preset) return;
                 onApplyPreset(resolveSourceFilterPresetSelection(preset, allItemIds));
+            };
+
+            const toggleGroupDetail = (groupType) => {
+                setExpandedGroups((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(groupType)) next.delete(groupType);
+                    else next.add(groupType);
+                    return next;
+                });
             };
 
             const handleSavePreset = () => {
@@ -1189,6 +1208,11 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                                         </select>
                                         <button type="button" onClick={handleDeletePreset} disabled={!selectedPresetId} className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50">Delete</button>
                                     </div>
+                                    <p className="mt-1.5 text-xs text-slate-500">
+                                        {selectedPresetId
+                                            ? 'Saved group active. Manual toggles switch this back to custom selection.'
+                                            : 'Custom selection active. Save it to reuse later.'}
+                                    </p>
                                 </div>
                                 <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-3">
                                     <label className="block text-xs font-bold uppercase tracking-wide text-slate-500 mb-1.5">Save Current Checks As</label>
@@ -1196,12 +1220,26 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                                         <input value={presetName} onChange={(e) => setPresetName(e.target.value)} placeholder="e.g. Interviews only" className="flex-1 rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-tide" />
                                         <button type="button" onClick={handleSavePreset} className="rounded-xl bg-ink px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800">Save Group</button>
                                     </div>
+                                    <p className="mt-1.5 text-xs text-slate-500">Saving with an existing name prompts overwrite confirmation.</p>
                                 </div>
+                            </div>
+
+                            <div className="mb-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                                {groups.map((group) => {
+                                    const groupSelectedCount = group.items.filter((item) => selectedSet.has(item.filterId)).length;
+                                    return (
+                                        <div key={`${group.type}_summary`} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                                            <p className="text-xs font-semibold text-slate-600">{group.label}</p>
+                                            <p className="text-xs text-slate-500 mt-0.5">{groupSelectedCount} selected of {group.items.length}</p>
+                                        </div>
+                                    );
+                                })}
                             </div>
 
                             <div className="grid gap-4 lg:grid-cols-3">
                                 {groups.map((group) => {
                                     const groupSelectedCount = group.items.filter((item) => selectedSet.has(item.filterId)).length;
+                                    const groupDetailOpen = expandedGroups.has(group.type);
                                     return (
                                         <div key={group.type} className="rounded-2xl border border-slate-200 bg-slate-50/70 p-3">
                                             <div className="flex items-center justify-between gap-3 mb-3">
@@ -1211,27 +1249,38 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                                                     </span>
                                                     <p className="text-xs text-slate-500 mt-1">{groupSelectedCount} of {group.items.length} included</p>
                                                 </div>
-                                                <button type="button" onClick={() => handleManualToggleGroup(group.type)} className="text-[11px] font-semibold text-tide hover:text-teal-700">
-                                                    {groupSelectedCount === group.items.length ? 'Clear Group' : 'Select Group'}
-                                                </button>
+                                                <div className="flex flex-col items-end gap-1">
+                                                    <button type="button" onClick={() => handleManualToggleGroup(group.type)} className="text-[11px] font-semibold text-tide hover:text-teal-700">
+                                                        {groupSelectedCount === group.items.length ? 'Clear Group' : 'Select Group'}
+                                                    </button>
+                                                    <button type="button" onClick={() => toggleGroupDetail(group.type)} className="text-[11px] font-semibold text-slate-500 hover:text-slate-700">
+                                                        {groupDetailOpen ? 'Hide Items' : 'Show Items'}
+                                                    </button>
+                                                </div>
                                             </div>
-                                            <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
-                                                {group.items.map((item) => (
-                                                    <label key={item.filterId} className="flex items-start gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2 cursor-pointer hover:border-slate-300">
-                                                        <input
-                                                            type="checkbox"
-                                                            checked={selectedSet.has(item.filterId)}
-                                                            onChange={() => handleManualToggleItem(item.filterId)}
-                                                            className="mt-0.5 h-4 w-4 rounded border-slate-300 text-tide focus:ring-tide"
-                                                        />
-                                                        <span className="min-w-0">
-                                                            <span className="block text-sm font-medium text-slate-800 break-words">{item.label}</span>
-                                                            {item.meta && <span className="block text-xs text-slate-500 mt-0.5 break-words">{item.meta}</span>}
-                                                        </span>
-                                                    </label>
-                                                ))}
-                                                {group.items.length === 0 && <p className="text-xs text-slate-400 italic">No items available.</p>}
-                                            </div>
+                                            {groupDetailOpen ? (
+                                                <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                                                    {group.items.map((item) => (
+                                                        <label key={item.filterId} className="flex items-start gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2 cursor-pointer hover:border-slate-300">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={selectedSet.has(item.filterId)}
+                                                                onChange={() => handleManualToggleItem(item.filterId)}
+                                                                className="mt-0.5 h-4 w-4 rounded border-slate-300 text-tide focus:ring-tide"
+                                                            />
+                                                            <span className="min-w-0">
+                                                                <span className="block text-sm font-medium text-slate-800 break-words">{item.label}</span>
+                                                                {item.meta && <span className="block text-xs text-slate-500 mt-0.5 break-words">{item.meta}</span>}
+                                                            </span>
+                                                        </label>
+                                                    ))}
+                                                    {group.items.length === 0 && <p className="text-xs text-slate-400 italic">No items available.</p>}
+                                                </div>
+                                            ) : (
+                                                <p className="text-xs text-slate-500 rounded-xl border border-dashed border-slate-300 bg-white px-3 py-2">
+                                                    Items hidden for compact view. Select “Show Items” to edit individual sources.
+                                                </p>
+                                            )}
                                         </div>
                                     );
                                 })}
@@ -1266,12 +1315,16 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
 
         function LockScreen({ onUnlock }) {
             const [password, setPassword] = useState('');
-            const [error, setError] = useState('');
+            const [status, setStatus] = useState({ tone: '', message: '' });
             const [showRecovery, setShowRecovery] = useState(false);
             const [recoveryQuestion, setRecoveryQuestion] = useState('');
             const [recoveryAnswer, setRecoveryAnswer] = useState('');
             const [newPassword, setNewPassword] = useState('');
             const [confirmNewPassword, setConfirmNewPassword] = useState('');
+
+            const setErrorStatus = (message) => setStatus({ tone: 'error', message });
+            const setSuccessStatus = (message) => setStatus({ tone: 'success', message });
+            const clearStatus = () => setStatus({ tone: '', message: '' });
 
             const handleSubmit = async (e) => {
                 e.preventDefault();
@@ -1279,7 +1332,7 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                 const idbPin = await dbGet('data', secAppPinIdbKey);
                 if (idbPin) {
                     if (await secPbkdf2Verify(password, idbPin.hash, idbPin.salt)) { onUnlock(); return; }
-                    setError('Incorrect password.');
+                    setErrorStatus('Incorrect password. Please try again.');
                     return;
                 }
                 // Fall back to legacy btoa format, then auto-migrate to PBKDF2+IDB
@@ -1291,7 +1344,7 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                     onUnlock();
                     return;
                 }
-                setError('Incorrect password.');
+                setErrorStatus('Incorrect password. Please try again.');
             };
 
             useEffect(() => {
@@ -1304,15 +1357,15 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
 
             const handleResetFromRecovery = async () => {
                 if (!recoveryQuestion) {
-                    setError('Recovery is not configured on this device.');
+                    setErrorStatus('Recovery is not configured on this device.');
                     return;
                 }
                 if (newPassword.length < 4) {
-                    setError('New password must be at least 4 characters.');
+                    setErrorStatus('New password must be at least 4 characters.');
                     return;
                 }
                 if (newPassword !== confirmNewPassword) {
-                    setError('New password and confirmation do not match.');
+                    setErrorStatus('New password and confirmation do not match.');
                     return;
                 }
                 // Verify recovery answer — try IDB PBKDF2 first, fall back to legacy SHA-256
@@ -1322,19 +1375,19 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                     recoveryValid = await secPbkdf2Verify(normalizeRecoveryAnswer(recoveryAnswer), idbRecovery.answerHash, idbRecovery.answerSalt);
                 } else {
                     const savedHash = localStorage.getItem(recoveryAnswerHashKey);
-                    if (!savedHash) { setError('Recovery is not configured on this device.'); return; }
+                    if (!savedHash) { setErrorStatus('Recovery is not configured on this device.'); return; }
                     const answerHash = await stringHash(normalizeRecoveryAnswer(recoveryAnswer));
                     recoveryValid = answerHash === savedHash;
                 }
                 if (!recoveryValid) {
-                    setError('Recovery answer is incorrect.');
+                    setErrorStatus('Recovery answer is incorrect.');
                     return;
                 }
                 // Write new password as PBKDF2 in IDB
                 const newPin = await secPbkdf2Hash(newPassword);
                 await dbSet('data', secAppPinIdbKey, newPin);
                 localStorage.removeItem('quali_pin');
-                setError('Password reset successful. You can now unlock.');
+                setSuccessStatus('Password reset successful. You can now unlock with your new password.');
                 setShowRecovery(false);
                 setRecoveryAnswer('');
                 setNewPassword('');
@@ -1351,11 +1404,19 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                                 type="password"
                                 autoFocus
                                 value={password}
-                                onChange={e => setPassword(e.target.value)}
+                                onChange={e => {
+                                    setPassword(e.target.value);
+                                    if (status.message) clearStatus();
+                                }}
                                 className="w-full p-3 rounded-lg bg-slate-800 border border-slate-700 text-center text-xl mb-4 focus:outline-none focus:ring-2 focus:ring-tide"
                                 placeholder="Enter password"
                             />
-                            {error && <p className="text-red-300 text-sm mb-4">{error}</p>}
+                            {status.message && (
+                                <p className={`text-sm mb-4 ${status.tone === 'success' ? 'text-emerald-300' : 'text-red-300'}`}>
+                                    {status.message}
+                                </p>
+                            )}
+                            <p className="text-[11px] text-slate-400 mb-4">Password and recovery credentials are stored only in this browser on this device.</p>
                             <button type="submit" className="w-full bg-tide hover:bg-teal-600 text-white font-bold py-3 rounded-lg transition">
                                 Unlock
                             </button>
@@ -1374,24 +1435,34 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                                     <input
                                         type="text"
                                         value={recoveryAnswer}
-                                        onChange={(e) => setRecoveryAnswer(e.target.value)}
+                                        onChange={(e) => {
+                                            setRecoveryAnswer(e.target.value);
+                                            if (status.message) clearStatus();
+                                        }}
                                         placeholder="Recovery answer"
                                         className="w-full p-2 rounded bg-slate-900 border border-slate-600 text-sm"
                                     />
                                     <input
                                         type="password"
                                         value={newPassword}
-                                        onChange={(e) => setNewPassword(e.target.value)}
+                                        onChange={(e) => {
+                                            setNewPassword(e.target.value);
+                                            if (status.message) clearStatus();
+                                        }}
                                         placeholder="New password"
                                         className="w-full p-2 rounded bg-slate-900 border border-slate-600 text-sm"
                                     />
                                     <input
                                         type="password"
                                         value={confirmNewPassword}
-                                        onChange={(e) => setConfirmNewPassword(e.target.value)}
+                                        onChange={(e) => {
+                                            setConfirmNewPassword(e.target.value);
+                                            if (status.message) clearStatus();
+                                        }}
                                         placeholder="Confirm new password"
                                         className="w-full p-2 rounded bg-slate-900 border border-slate-600 text-sm"
                                     />
+                                    <p className="text-[11px] text-slate-400">Recovery resets local access on this device only. Exported backup files are not changed by this action.</p>
                                     <button type="button" onClick={handleResetFromRecovery} className="w-full bg-amber-600 hover:bg-amber-700 text-white font-semibold py-2 rounded">
                                         Reset Password
                                     </button>
@@ -1412,9 +1483,11 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
             const [recoveryQuestion, setRecoveryQuestion] = useState('');
             const [recoveryAnswer, setRecoveryAnswer] = useState('');
             const [setupError, setSetupError] = useState('');
+            const [setupNotice, setSetupNotice] = useState('');
 
             const beginNewProjectSetup = async () => {
                 setSetupError('');
+                setSetupNotice('');
                 if (passwordInput.length < 4) {
                     setSetupError('Password must be at least 4 characters.');
                     return;
@@ -1427,6 +1500,8 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                     setSetupError('Recovery question and answer are required.');
                     return;
                 }
+
+                setSetupNotice('Security profile verified. Saving locally...');
 
                 await onConfigureNewProjectSecurity({
                     password: passwordInput,
@@ -1459,11 +1534,11 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                         <div className="max-w-5xl mx-auto grid lg:grid-cols-[1.2fr,1fr] gap-6 pt-8">
                             <section className="bg-white border rounded-2xl p-8 shadow-soft">
                                 <h1 className="text-4xl font-display">Welcome to QualiApp</h1>
-                                <p className="text-slate-500 mt-3">Start a new project or restore an existing backup. New projects now begin with quick password and recovery setup.</p>
+                                <p className="text-slate-500 mt-3">Start a new project or restore an existing backup. New projects begin with a local password and local recovery setup.</p>
 
                                 <div className="mt-6 p-4 rounded-xl bg-teal-50 border-2 border-teal-200 text-teal-900">
                                     <p className="text-sm font-semibold">Your data stays on your device.</p>
-                                    <p className="text-sm mt-1">QualiApp works entirely offline in your browser. Transcript and coding data are saved locally in this browser on this device unless you choose to export a backup file.</p>
+                                    <p className="text-sm mt-1">QualiApp works entirely offline in your browser. Transcript and coding data are saved locally in this browser on this device unless you export a backup file.</p>
                                 </div>
 
                                 <div className="mt-8 flex flex-col sm:flex-row gap-3">
@@ -1479,6 +1554,7 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                             <section className="bg-white border rounded-2xl p-6 shadow-soft space-y-4">
                                 <h2 className="text-2xl font-display">Simple Onboarding</h2>
                                 <p className="text-sm text-slate-500">1) Start New Project 2) Set password 3) Add recovery question 4) Begin coding.</p>
+                                <p className="text-xs text-slate-500">Security credentials are stored locally on this device and are not sent to a server.</p>
                                 <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
                                     <p>Password set: {hasPassword ? 'Yes' : 'No'}</p>
                                     <p>Recovery set: {hasRecovery ? 'Yes' : 'No'}</p>
@@ -1517,6 +1593,7 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                                         <button onClick={() => setShowSetupSecurity(false)} className="text-slate-400 hover:text-slate-700 text-xl" aria-label="Close security setup dialog">×</button>
                                     </div>
                                     <p className="text-sm text-slate-500">Set a password now, then add a recovery question in case you forget it.</p>
+                                    <p className="text-xs text-slate-500">This security profile is stored only in this browser on this device.</p>
                                     <input
                                         type="password"
                                         value={passwordInput}
@@ -1546,6 +1623,7 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                                         className="w-full border rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-ink"
                                     />
                                     {setupError && <p className="text-sm text-red-600">{setupError}</p>}
+                                    {setupNotice && !setupError && <p className="text-sm text-emerald-600">{setupNotice}</p>}
                                     <div className="flex justify-end gap-2">
                                         <button onClick={() => setShowSetupSecurity(false)} className="px-4 py-2 rounded-lg bg-slate-100 text-slate-700 font-semibold">Cancel</button>
                                         <button onClick={beginNewProjectSetup} className="px-4 py-2 rounded-lg bg-tide text-white font-semibold hover:bg-teal-600">Save and Start</button>
@@ -3132,6 +3210,34 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
             if (startupState === 'locked') return <LockScreen onUnlock={() => setStartupState('open')} />;
             if (!isReady) return <div className="h-screen w-screen bg-hero flex flex-col"><div className="flex-1 flex items-center justify-center">Loading...</div><AppFooter /></div>;
 
+            const navSections = [
+                {
+                    title: 'Data',
+                    items: [
+                        { key: 'dashboard', label: 'Transcripts', shortLabel: 'TR' },
+                        { key: 'artifacts', label: 'Project Artifacts', shortLabel: 'AR' },
+                        { key: 'observations', label: 'Onsite Observations', shortLabel: 'OB' },
+                        { key: 'participants', label: 'Participant Coding', shortLabel: 'PC' }
+                    ]
+                },
+                {
+                    title: 'Analysis',
+                    items: [
+                        { key: 'analysis', label: 'Analysis Canvas', shortLabel: 'AN' },
+                        { key: 'codebook', label: 'Codebook', shortLabel: 'CB' },
+                        { key: 'triangulation', label: 'Triangulation', shortLabel: 'TG' }
+                    ]
+                },
+                {
+                    title: 'System',
+                    items: [
+                        { key: 'backup', label: 'Backup & Restore', shortLabel: 'BK' }
+                    ]
+                }
+            ];
+
+            const quickJumpItems = navSections.flatMap((section) => section.items);
+
             return (
                 <div className="h-screen bg-hero relative flex flex-col">
                     <div className="flex flex-1 min-h-0">
@@ -3157,15 +3263,17 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                             </div>
                             {!isSidebarCollapsed && (
                                 <>
-                            <nav className="flex-1 px-4 py-4 space-y-2 text-sm">
-                                <NavButton active={view === 'dashboard'} label="Transcripts" onClick={() => setView('dashboard')} />
-                                <NavButton active={view === 'artifacts'} label="Project Artifacts" onClick={() => setView('artifacts')} />
-                                <NavButton active={view === 'observations'} label="Onsite Observations" onClick={() => setView('observations')} />
-                                <NavButton active={view === 'participants'} label="Participant Coding" onClick={() => setView('participants')} />
-                                <NavButton active={view === 'analysis'} label="Analysis Canvas" onClick={() => setView('analysis')} />
-                                <NavButton active={view === 'codebook'} label="Codebook" onClick={() => setView('codebook')} />
-                                <NavButton active={view === 'triangulation'} label="Triangulation" onClick={() => setView('triangulation')} />
-                                <NavButton active={view === 'backup'} label="Backup & Restore" onClick={() => setView('backup')} />
+                            <nav className="flex-1 px-4 py-4 space-y-4 text-sm">
+                                {navSections.map((section) => (
+                                    <div key={section.title}>
+                                        <p className="px-2 text-[10px] uppercase tracking-[0.12em] text-slate-500 font-semibold mb-1.5">{section.title}</p>
+                                        <div className="space-y-1.5">
+                                            {section.items.map((item) => (
+                                                <NavButton key={item.key} active={view === item.key} label={item.label} onClick={() => setView(item.key)} />
+                                            ))}
+                                        </div>
+                                    </div>
+                                ))}
                             </nav>
                             <div className="p-4 border-t border-slate-700/60 space-y-2">
                                 {hasAppPassword ? (
@@ -3198,6 +3306,22 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                                 )}
                             </div>
                                 </>
+                            )}
+                            {isSidebarCollapsed && (
+                                <div className="flex-1 px-2 py-4 space-y-2 overflow-y-auto">
+                                    {quickJumpItems.map((item) => (
+                                        <button
+                                            key={`collapsed_${item.key}`}
+                                            type="button"
+                                            onClick={() => setView(item.key)}
+                                            className={`w-full h-10 rounded-lg text-xs font-semibold transition ${view === item.key ? 'bg-tide text-white' : 'bg-slate-800 text-slate-200 hover:bg-slate-700'}`}
+                                            title={item.label}
+                                            aria-label={`Go to ${item.label}`}
+                                        >
+                                            {item.shortLabel}
+                                        </button>
+                                    ))}
+                                </div>
                             )}
                         </aside>
 
@@ -3580,7 +3704,7 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
             return (
                 <button
                     onClick={onClick}
-                    className={`w-full text-left px-4 py-3 rounded-xl transition font-medium ${active ? 'bg-tide text-white shadow' : 'hover:bg-slate-800 text-slate-200'}`}
+                    className={`w-full text-left px-4 py-3 rounded-xl border transition font-medium ${active ? 'bg-tide text-white border-teal-300 shadow-soft ring-1 ring-teal-200/70' : 'border-transparent hover:bg-slate-800 text-slate-200'}`}
                 >
                     {label}
                 </button>
