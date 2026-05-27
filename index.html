@@ -4024,65 +4024,117 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
             const [editCodes, setEditCodes] = useState([]);
             const [newCodeInput, setNewCodeInput] = useState('');
             const [editingArtifactFolder, setEditingArtifactFolder] = useState('');
-            const [pendingFile, setPendingFile] = useState(null);
+            const [pendingFiles, setPendingFiles] = useState([]);
             const [pendingName, setPendingName] = useState('');
             const [pendingFolder, setPendingFolder] = useState('');
             const [selectedFolder, setSelectedFolder] = useState('All');
             const [dragArtifactId, setDragArtifactId] = useState(null);
             const [editingCardFolderId, setEditingCardFolderId] = useState(null);
             const [editingCardFolderValue, setEditingCardFolderValue] = useState('');
+            const [editPendingFiles, setEditPendingFiles] = useState([]);
+            const [previewState, setPreviewState] = useState(null);
+            const [previewObjectUrl, setPreviewObjectUrl] = useState('');
+            const [previewCommentDraft, setPreviewCommentDraft] = useState('');
+            const [isPreviewLoading, setIsPreviewLoading] = useState(false);
+
+            const getArtifactFiles = (artifact) => {
+                if (Array.isArray(artifact.files) && artifact.files.length > 0) return artifact.files;
+                return [{
+                    id: `${artifact.id}_legacy`,
+                    key: `global_art_${artifact.id}`,
+                    name: artifact.name,
+                    type: artifact.type || '',
+                    size: 0,
+                    lastModified: null
+                }];
+            };
+
+            const isPreviewable = (entry) => {
+                const type = String(entry?.type || '').toLowerCase();
+                const name = String(entry?.name || '').toLowerCase();
+                return type.startsWith('image/') || type === 'application/pdf' || name.endsWith('.pdf');
+            };
 
             const handleFileUpload = (e) => {
-                const file = e.target.files[0];
-                if (!file) return;
-                setPendingFile(file);
-                setPendingName(file.name || '');
+                const incoming = Array.from(e.target.files || []);
+                if (!incoming.length) return;
+                setPendingFiles(incoming);
+                setPendingName(incoming.length === 1 ? (incoming[0].name || '') : `Artifact (${incoming.length} files)`);
                 setPendingFolder('');
                 e.target.value = '';
             };
 
             const confirmUpload = async () => {
-                if (!pendingFile) return;
-                const fileId = Date.now().toString();
-                const storedFile = pendingFile.type && pendingFile.type.startsWith('image/')
-                    ? await compressImage(pendingFile)
-                    : pendingFile;
-                await dbSet('files', `global_art_${fileId}`, storedFile);
+                if (!pendingFiles.length) return;
+                const artifactId = Date.now().toString();
+                const storedEntries = [];
+
+                for (let i = 0; i < pendingFiles.length; i++) {
+                    const raw = pendingFiles[i];
+                    const storedFile = raw.type && raw.type.startsWith('image/')
+                        ? await compressImage(raw)
+                        : raw;
+                    const key = `global_art_${artifactId}_${i + 1}`;
+                    await dbSet('files', key, storedFile);
+                    storedEntries.push({
+                        id: `${artifactId}_${i + 1}`,
+                        key,
+                        name: raw.name,
+                        type: storedFile.type || raw.type || 'application/octet-stream',
+                        size: storedFile.size || raw.size || 0,
+                        lastModified: raw.lastModified || Date.now()
+                    });
+                }
+
                 const customName = String(pendingName || '').trim();
-                const artifactName = customName || pendingFile.name;
-                const newArtifact = { id: fileId, name: artifactName, type: storedFile.type || pendingFile.type, date: new Date().toLocaleDateString(), notes: '', codes: [], folder: pendingFolder.trim() };
+                const artifactName = customName || (pendingFiles[0]?.name || `Artifact ${artifactId}`);
+                const defaultType = storedEntries[0]?.type || pendingFiles[0]?.type || '';
+                const newArtifact = {
+                    id: artifactId,
+                    name: artifactName,
+                    type: defaultType,
+                    date: new Date().toLocaleDateString(),
+                    notes: '',
+                    comments: '',
+                    codes: [],
+                    folder: pendingFolder.trim(),
+                    files: storedEntries
+                };
                 onUpdate([newArtifact, ...artifacts]);
+
                 if (pendingFolder.trim() && !folders.includes(pendingFolder.trim())) {
                     onCreateFolder(pendingFolder.trim());
                 }
-                setPendingFile(null);
+                setPendingFiles([]);
                 setPendingName('');
                 setPendingFolder('');
             };
 
             const cancelUpload = () => {
-                setPendingFile(null);
+                setPendingFiles([]);
                 setPendingName('');
                 setPendingFolder('');
             };
 
-            const downloadArtifact = async (art) => {
-                const file = await dbGet('files', `global_art_${art.id}`);
-                if (file) {
-                    const url = URL.createObjectURL(file);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = art.name;
-                    a.click();
-                    URL.revokeObjectURL(url);
-                }
+            const downloadArtifactFile = async (entry) => {
+                const file = await dbGet('files', entry.key);
+                if (!file) return;
+                const url = URL.createObjectURL(file);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = entry.name || 'artifact_file';
+                a.click();
+                URL.revokeObjectURL(url);
             };
 
-            const deleteArtifact = async (artId) => {
-                if (confirm('Delete this project artifact forever?')) {
-                    await dbDelete('files', `global_art_${artId}`);
-                    onUpdate(artifacts.filter(a => a.id !== artId));
+            const deleteArtifact = async (art) => {
+                if (!confirm('Delete this project artifact forever?')) return;
+                const entries = getArtifactFiles(art);
+                for (const entry of entries) {
+                    await dbDelete('files', entry.key);
                 }
+                await dbDelete('files', `global_art_${art.id}`);
+                onUpdate(artifacts.filter(a => a.id !== art.id));
             };
 
             const openEditArtifact = (art) => {
@@ -4091,15 +4143,50 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                 setEditCodes(art.codes || []);
                 setEditingArtifactFolder(art.folder || '');
                 setNewCodeInput('');
+                setEditPendingFiles([]);
             };
 
-            const saveArtifactEdit = () => {
+            const saveArtifactEdit = async () => {
                 if (!editingId) return;
-                onUpdate(artifacts.map(a => a.id === editingId ? { ...a, folder: editingArtifactFolder, notes: editNotes, codes: editCodes } : a));
+                const targetArtifact = artifacts.find((a) => a.id === editingId);
+                if (!targetArtifact) return;
+
+                const currentFiles = getArtifactFiles(targetArtifact);
+                const extraFiles = [];
+                if (editPendingFiles.length > 0) {
+                    for (let i = 0; i < editPendingFiles.length; i++) {
+                        const raw = editPendingFiles[i];
+                        const storedFile = raw.type && raw.type.startsWith('image/')
+                            ? await compressImage(raw)
+                            : raw;
+                        const key = `global_art_${editingId}_${Date.now()}_${i + 1}`;
+                        await dbSet('files', key, storedFile);
+                        extraFiles.push({
+                            id: `${editingId}_${Date.now()}_${i + 1}`,
+                            key,
+                            name: raw.name,
+                            type: storedFile.type || raw.type || 'application/octet-stream',
+                            size: storedFile.size || raw.size || 0,
+                            lastModified: raw.lastModified || Date.now()
+                        });
+                    }
+                }
+
+                const mergedFiles = [...currentFiles, ...extraFiles];
+                onUpdate(artifacts.map(a => a.id === editingId ? {
+                    ...a,
+                    folder: editingArtifactFolder,
+                    notes: editNotes,
+                    codes: editCodes,
+                    files: mergedFiles,
+                    type: mergedFiles[0]?.type || a.type
+                } : a));
+
                 setEditingId(null);
                 setEditNotes('');
                 setEditCodes([]);
                 setEditingArtifactFolder('');
+                setEditPendingFiles([]);
             };
 
             const addCodeToArtifact = () => {
@@ -4112,7 +4199,6 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
             const clearAllArtifactCodes = () => {
                 if (!editCodes.length && !newCodeInput.trim()) return;
                 if (!confirm('Clear all codes from this artifact?')) return;
-
                 setEditCodes([]);
                 setNewCodeInput('');
             };
@@ -4120,6 +4206,43 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
             const removeCodeFromArtifact = (code) => {
                 setEditCodes(editCodes.filter(c => c !== code));
             };
+
+            const openPreview = async (artifact, entry) => {
+                if (!isPreviewable(entry)) return;
+                setPreviewState({ artifactId: artifact.id, fileEntry: entry });
+                setPreviewCommentDraft(artifact.comments || artifact.notes || '');
+                setIsPreviewLoading(true);
+                try {
+                    const file = await dbGet('files', entry.key);
+                    if (!file) {
+                        setPreviewObjectUrl('');
+                        return;
+                    }
+                    const url = URL.createObjectURL(file);
+                    setPreviewObjectUrl(url);
+                } finally {
+                    setIsPreviewLoading(false);
+                }
+            };
+
+            const closePreview = () => {
+                setPreviewState(null);
+                setPreviewCommentDraft('');
+                setIsPreviewLoading(false);
+                if (previewObjectUrl) URL.revokeObjectURL(previewObjectUrl);
+                setPreviewObjectUrl('');
+            };
+
+            const savePreviewComment = () => {
+                if (!previewState?.artifactId) return;
+                onUpdate(artifacts.map(a => a.id === previewState.artifactId ? { ...a, comments: previewCommentDraft } : a));
+            };
+
+            useEffect(() => {
+                return () => {
+                    if (previewObjectUrl) URL.revokeObjectURL(previewObjectUrl);
+                };
+            }, [previewObjectUrl]);
 
             const allFolders = [...new Set([...folders, ...artifacts.map(a => a.folder).filter(Boolean)])];
             const folderSuggestions = [...new Set([...allFolders, ...suggestedCategories].filter(Boolean))].sort((a, b) => a.localeCompare(b));
@@ -4154,15 +4277,20 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                             <p className="text-slate-500 mt-1">Store literature, IRB docs, or non-transcript materials organized by folders. Add notes and codes for analysis reference.</p>
                         </div>
                         <label className="bg-ink hover:bg-slate-800 text-white px-5 py-2.5 rounded-lg shadow-sm cursor-pointer transition">
-                            Upload Document
-                            <input type="file" className="hidden" onChange={handleFileUpload} />
+                            Upload Documents
+                            <input type="file" multiple className="hidden" onChange={handleFileUpload} />
                         </label>
                     </div>
 
-                    {pendingFile && (
+                    {pendingFiles.length > 0 && (
                         <div className="bg-white border rounded-2xl p-5 shadow-soft mb-6">
-                            <h3 className="font-bold text-sm mb-3">New Artifact: <span className="font-normal text-slate-600">{pendingFile.name}</span></h3>
+                            <h3 className="font-bold text-sm mb-3">New Artifact ({pendingFiles.length} file{pendingFiles.length > 1 ? 's' : ''})</h3>
                             <div className="space-y-3">
+                                <ul className="text-xs text-slate-600 bg-slate-50 border rounded-lg p-3 max-h-28 overflow-y-auto">
+                                    {pendingFiles.map((file, idx) => (
+                                        <li key={`pending_file_${idx}`}>• {file.name}</li>
+                                    ))}
+                                </ul>
                                 <div>
                                     <label className="block text-xs font-bold text-slate-600 mb-1">Artifact Name</label>
                                     <input
@@ -4223,150 +4351,185 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                         />
 
                         <div>
-                    {visibleArtifacts.length === 0 ? (
-                        <div className="text-center py-20 bg-white rounded-xl border border-dashed text-slate-500">No artifacts in this view.</div>
-                    ) : (
-                        Object.keys(artifactsByFolder).sort().map(folderName => (
-                            <div key={folderName} className="mb-8">
-                                <h3 className="text-xl font-bold text-ink mb-4 pb-2 border-b">📁 {folderName}</h3>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {artifactsByFolder[folderName].map(art => (
-                                <div
-                                    key={art.id}
-                                    draggable
-                                    onDragStart={() => setDragArtifactId(art.id)}
-                                    onDragEnd={() => setDragArtifactId(null)}
-                                    className={`bg-white rounded-xl border shadow-sm transition ${editingId === art.id ? 'ring-2 ring-tide' : ''}`}
-                                >
-                                    {editingId === art.id ? (
-                                        <div className="p-5 space-y-4">
-                                            <h4 className="font-semibold text-sm">{art.name}</h4>
-                                            <div>
-                                                <label className="block text-xs font-bold text-slate-600 mb-1">Folder</label>
-                                                <input type="text" list="folder_list" value={editingArtifactFolder} onChange={e => setEditingArtifactFolder(e.target.value)} placeholder="Create or select category/folder" className="w-full border rounded-lg p-2 text-sm focus:ring-2 focus:ring-tide outline-none" />
-                                                <datalist id="folder_list">{folderSuggestions.map(f => <option key={f} value={f} />)}</datalist>
-                                                <div className="mt-2">
-                                                    <p className="text-[10px] uppercase font-bold text-slate-500 mb-1">Common Categories</p>
-                                                    <div className="flex flex-wrap gap-1.5 max-h-16 overflow-y-auto">
-                                                        {folderSuggestions.slice(0, 12).map(category => (
-                                                            <button
-                                                                key={`artifact_cat_${category}`}
-                                                                type="button"
-                                                                onClick={() => setEditingArtifactFolder(category)}
-                                                                className="px-2 py-1 rounded-full text-[11px] border border-slate-300 bg-white hover:bg-slate-100 text-slate-700"
-                                                            >
-                                                                {category}
-                                                            </button>
-                                                        ))}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            <div>
-                                                <label className="block text-xs font-bold text-slate-600 mb-1">Notes</label>
-                                                <textarea value={editNotes} onChange={e => setEditNotes(e.target.value)} className="w-full border rounded-lg p-2 text-sm resize-none focus:ring-2 focus:ring-tide outline-none" rows="3" placeholder="Add notes about this artifact..." />
-                                            </div>
-                                            <div>
-                                                <label className="block text-xs font-bold text-slate-600 mb-1">Codes</label>
-                                                <div className="flex gap-2 mb-2">
-                                                    <input type="text" list="artifact_code_suggestions" value={newCodeInput} onChange={e => setNewCodeInput(e.target.value)} onKeyPress={e => e.key === 'Enter' && addCodeToArtifact()} placeholder="Type code name..." className="flex-1 border rounded p-1.5 text-sm focus:ring-2 focus:ring-tide outline-none" />
-                                                    <datalist id="artifact_code_suggestions">{codeSuggestions.map(c => <option key={c} value={c} />)}</datalist>
-                                                    <button type="button" onClick={addCodeToArtifact} className="bg-tide hover:bg-teal-600 text-white px-3 rounded text-sm font-semibold">Add</button>
-                                                    <button type="button" onClick={clearAllArtifactCodes} className="border border-red-200 text-red-700 hover:bg-red-50 px-3 rounded text-sm font-semibold">Clear Codes</button>
-                                                </div>
-                                                <div className="mb-2">
-                                                    <p className="text-[10px] uppercase font-bold text-slate-500 mb-1">Common Codes</p>
-                                                    <div className="flex flex-wrap gap-1.5 max-h-16 overflow-y-auto">
-                                                        {codeSuggestions.slice(0, 16).map(code => (
-                                                            <button
-                                                                key={`artifact_code_${code}`}
-                                                                type="button"
-                                                                onClick={() => { if (!editCodes.includes(code)) setEditCodes(prev => [...prev, code]); }}
-                                                                className={`px-2 py-1 rounded-full text-[11px] border transition ${editCodes.includes(code) ? 'border-teal-400 bg-teal-200 text-teal-900 font-bold' : 'border-teal-200 bg-teal-50 hover:bg-teal-100 text-teal-800'}`}
-                                                            >
-                                                                {editCodes.includes(code) ? '✓ ' : ''}{code}
-                                                            </button>
-                                                        ))}
-                                                    </div>
-                                                </div>
-                                                <div className="flex flex-wrap gap-2">
-                                                    {editCodes.map(code => (
-                                                        <span key={code} className="inline-flex items-center gap-1 bg-teal-100 text-teal-900 px-2 py-1 rounded text-xs">
-                                                            {code}
-                                                            <button onClick={() => removeCodeFromArtifact(code)} className="text-teal-700 hover:text-red-600">×</button>
-                                                        </span>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                            <div className="flex gap-2 justify-end pt-2">
-                                                <button onClick={() => setEditingId(null)} className="px-3 py-1.5 bg-slate-100 text-slate-600 rounded text-sm font-semibold hover:bg-slate-200">Cancel</button>
-                                                <button onClick={saveArtifactEdit} className="px-3 py-1.5 bg-tide hover:bg-teal-600 text-white rounded text-sm font-semibold">Save</button>
-                                            </div>
-                                        </div>
-                                    ) : (
-                                        <div className="p-5 group">
-                                            <div className="flex justify-between items-start mb-2">
-                                                <div className="overflow-hidden cursor-pointer hover:text-tide flex-1" onClick={() => downloadArtifact(art)}>
-                                                    <h4 className="font-semibold text-sm truncate" title={art.name}>{art.name}</h4>
-                                                    <p className="text-xs text-slate-400">{art.date}</p>
-                                                </div>
-                                                <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition">
-                                                    <button onClick={() => openEditArtifact(art)} className="text-slate-400 hover:text-tide p-1" title="Edit">✎</button>
-                                                    <button onClick={() => deleteArtifact(art.id)} className="text-slate-400 hover:text-red-500 p-1" title="Delete">✕</button>
-                                                </div>
-                                            </div>
-                                            <div className="mb-2" onClick={(e) => e.stopPropagation()}>
-                                                {editingCardFolderId === art.id ? (
-                                                    <input
-                                                        autoFocus
-                                                        list={`artifact_folder_list_${art.id}`}
-                                                        value={editingCardFolderValue}
-                                                        onChange={(e) => setEditingCardFolderValue(e.target.value)}
-                                                        onBlur={() => saveCardFolderEdit(art.id)}
-                                                        onKeyDown={(e) => {
-                                                            if (e.key === 'Enter') saveCardFolderEdit(art.id);
-                                                            if (e.key === 'Escape') {
-                                                                setEditingCardFolderId(null);
-                                                                setEditingCardFolderValue('');
-                                                            }
-                                                        }}
-                                                        className="w-full border border-slate-300 rounded-lg p-1.5 text-xs outline-none focus:ring-2 focus:ring-tide"
-                                                    />
-                                                ) : (
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => {
-                                                            setEditingCardFolderId(art.id);
-                                                            setEditingCardFolderValue(art.folder || '');
-                                                        }}
-                                                        className="text-[11px] px-2 py-1 rounded-full border border-slate-200 hover:bg-slate-100"
+                            {visibleArtifacts.length === 0 ? (
+                                <div className="text-center py-20 bg-white rounded-xl border border-dashed text-slate-500">No artifacts in this view.</div>
+                            ) : (
+                                Object.keys(artifactsByFolder).sort().map(folderName => (
+                                    <div key={folderName} className="mb-8">
+                                        <h3 className="text-xl font-bold text-ink mb-4 pb-2 border-b">📁 {folderName}</h3>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            {artifactsByFolder[folderName].map(art => {
+                                                const artFiles = getArtifactFiles(art);
+                                                return (
+                                                    <div
+                                                        key={art.id}
+                                                        draggable
+                                                        onDragStart={() => setDragArtifactId(art.id)}
+                                                        onDragEnd={() => setDragArtifactId(null)}
+                                                        className={`bg-white rounded-xl border shadow-sm transition ${editingId === art.id ? 'ring-2 ring-tide' : ''}`}
                                                     >
-                                                        {art.folder ? `📁 ${art.folder}` : '+ Folder'}
-                                                    </button>
-                                                )}
-                                                <datalist id={`artifact_folder_list_${art.id}`}>
-                                                    {['Uncategorized', ...folderSuggestions.filter(f => f !== 'Uncategorized')].map(f => (
-                                                        <option key={`a_folder_${art.id}_${f}`} value={f === 'Uncategorized' ? '' : f} />
-                                                    ))}
-                                                </datalist>
-                                            </div>
-                                            {art.notes && <p className="text-xs text-slate-600 mb-2 line-clamp-2">{art.notes}</p>}
-                                            {art.codes && art.codes.length > 0 && (
-                                                <div className="flex flex-wrap gap-1.5 mt-2">
-                                                    {art.codes.map(code => (
-                                                        <span key={code} className="inline-block bg-teal-100 border border-teal-200 text-teal-800 px-2.5 py-1 rounded-xl text-xs font-bold">{code}</span>
-                                                    ))}
-                                                </div>
-                                            )}
+                                                        {editingId === art.id ? (
+                                                            <div className="p-5 space-y-4">
+                                                                <h4 className="font-semibold text-sm">{art.name}</h4>
+                                                                <div>
+                                                                    <label className="block text-xs font-bold text-slate-600 mb-1">Folder</label>
+                                                                    <input type="text" list="folder_list" value={editingArtifactFolder} onChange={e => setEditingArtifactFolder(e.target.value)} placeholder="Create or select category/folder" className="w-full border rounded-lg p-2 text-sm focus:ring-2 focus:ring-tide outline-none" />
+                                                                    <datalist id="folder_list">{folderSuggestions.map(f => <option key={f} value={f} />)}</datalist>
+                                                                </div>
+                                                                <div>
+                                                                    <label className="block text-xs font-bold text-slate-600 mb-1">Attach More Files</label>
+                                                                    <input type="file" multiple onChange={(e) => setEditPendingFiles(Array.from(e.target.files || []))} className="w-full border rounded-lg p-2 text-xs" />
+                                                                    {editPendingFiles.length > 0 && (
+                                                                        <p className="text-[11px] text-slate-500 mt-1">{editPendingFiles.length} file{editPendingFiles.length > 1 ? 's' : ''} will be added on Save.</p>
+                                                                    )}
+                                                                </div>
+                                                                <div>
+                                                                    <label className="block text-xs font-bold text-slate-600 mb-1">Notes</label>
+                                                                    <textarea value={editNotes} onChange={e => setEditNotes(e.target.value)} className="w-full border rounded-lg p-2 text-sm resize-none focus:ring-2 focus:ring-tide outline-none" rows="3" placeholder="Add notes about this artifact..." />
+                                                                </div>
+                                                                <div>
+                                                                    <label className="block text-xs font-bold text-slate-600 mb-1">Codes</label>
+                                                                    <div className="flex gap-2 mb-2">
+                                                                        <input type="text" list="artifact_code_suggestions" value={newCodeInput} onChange={e => setNewCodeInput(e.target.value)} onKeyPress={e => e.key === 'Enter' && addCodeToArtifact()} placeholder="Type code name..." className="flex-1 border rounded p-1.5 text-sm focus:ring-2 focus:ring-tide outline-none" />
+                                                                        <datalist id="artifact_code_suggestions">{codeSuggestions.map(c => <option key={c} value={c} />)}</datalist>
+                                                                        <button type="button" onClick={addCodeToArtifact} className="bg-tide hover:bg-teal-600 text-white px-3 rounded text-sm font-semibold">Add</button>
+                                                                        <button type="button" onClick={clearAllArtifactCodes} className="border border-red-200 text-red-700 hover:bg-red-50 px-3 rounded text-sm font-semibold">Clear Codes</button>
+                                                                    </div>
+                                                                    <div className="flex flex-wrap gap-2">
+                                                                        {editCodes.map(code => (
+                                                                            <span key={code} className="inline-flex items-center gap-1 bg-teal-100 text-teal-900 px-2 py-1 rounded text-xs">
+                                                                                {code}
+                                                                                <button onClick={() => removeCodeFromArtifact(code)} className="text-teal-700 hover:text-red-600">×</button>
+                                                                            </span>
+                                                                        ))}
+                                                                    </div>
+                                                                </div>
+                                                                <div className="flex gap-2 justify-end pt-2">
+                                                                    <button onClick={() => setEditingId(null)} className="px-3 py-1.5 bg-slate-100 text-slate-600 rounded text-sm font-semibold hover:bg-slate-200">Cancel</button>
+                                                                    <button onClick={saveArtifactEdit} className="px-3 py-1.5 bg-tide hover:bg-teal-600 text-white rounded text-sm font-semibold">Save</button>
+                                                                </div>
+                                                            </div>
+                                                        ) : (
+                                                            <div className="p-5 group">
+                                                                <div className="flex justify-between items-start mb-2">
+                                                                    <div className="overflow-hidden flex-1">
+                                                                        <h4 className="font-semibold text-sm truncate" title={art.name}>{art.name}</h4>
+                                                                        <p className="text-xs text-slate-400">{art.date}</p>
+                                                                    </div>
+                                                                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition">
+                                                                        <button onClick={() => openEditArtifact(art)} className="text-slate-400 hover:text-tide p-1" title="Edit">✎</button>
+                                                                        <button onClick={() => deleteArtifact(art)} className="text-slate-400 hover:text-red-500 p-1" title="Delete">✕</button>
+                                                                    </div>
+                                                                </div>
+                                                                <div className="mb-2" onClick={(e) => e.stopPropagation()}>
+                                                                    {editingCardFolderId === art.id ? (
+                                                                        <input
+                                                                            autoFocus
+                                                                            list={`artifact_folder_list_${art.id}`}
+                                                                            value={editingCardFolderValue}
+                                                                            onChange={(e) => setEditingCardFolderValue(e.target.value)}
+                                                                            onBlur={() => saveCardFolderEdit(art.id)}
+                                                                            onKeyDown={(e) => {
+                                                                                if (e.key === 'Enter') saveCardFolderEdit(art.id);
+                                                                                if (e.key === 'Escape') {
+                                                                                    setEditingCardFolderId(null);
+                                                                                    setEditingCardFolderValue('');
+                                                                                }
+                                                                            }}
+                                                                            className="w-full border border-slate-300 rounded-lg p-1.5 text-xs outline-none focus:ring-2 focus:ring-tide"
+                                                                        />
+                                                                    ) : (
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => {
+                                                                                setEditingCardFolderId(art.id);
+                                                                                setEditingCardFolderValue(art.folder || '');
+                                                                            }}
+                                                                            className="text-[11px] px-2 py-1 rounded-full border border-slate-200 hover:bg-slate-100"
+                                                                        >
+                                                                            {art.folder ? `📁 ${art.folder}` : '+ Folder'}
+                                                                        </button>
+                                                                    )}
+                                                                    <datalist id={`artifact_folder_list_${art.id}`}>
+                                                                        {['Uncategorized', ...folderSuggestions.filter(f => f !== 'Uncategorized')].map(f => (
+                                                                            <option key={`a_folder_${art.id}_${f}`} value={f === 'Uncategorized' ? '' : f} />
+                                                                        ))}
+                                                                    </datalist>
+                                                                </div>
+
+                                                                <div className="mb-2 rounded-lg border bg-slate-50 p-2">
+                                                                    <p className="text-[11px] font-semibold text-slate-600 mb-1">Files ({artFiles.length})</p>
+                                                                    <div className="space-y-1.5 max-h-32 overflow-y-auto">
+                                                                        {artFiles.map((entry) => (
+                                                                            <div key={entry.id} className="flex items-center justify-between gap-2 text-xs">
+                                                                                <span className="truncate text-slate-700" title={entry.name}>{entry.name}</span>
+                                                                                <div className="flex gap-1">
+                                                                                    <button type="button" onClick={() => downloadArtifactFile(entry)} className="px-2 py-0.5 border rounded hover:bg-slate-100">Download</button>
+                                                                                    {isPreviewable(entry) && (
+                                                                                        <button type="button" onClick={() => openPreview(art, entry)} className="px-2 py-0.5 border rounded bg-teal-50 text-teal-800 border-teal-200 hover:bg-teal-100">Preview</button>
+                                                                                    )}
+                                                                                </div>
+                                                                            </div>
+                                                                        ))}
+                                                                    </div>
+                                                                </div>
+
+                                                                {art.notes && <p className="text-xs text-slate-600 mb-2 line-clamp-2">{art.notes}</p>}
+                                                                {art.codes && art.codes.length > 0 && (
+                                                                    <div className="flex flex-wrap gap-1.5 mt-2">
+                                                                        {art.codes.map(code => (
+                                                                            <span key={code} className="inline-block bg-teal-100 border border-teal-200 text-teal-800 px-2.5 py-1 rounded-xl text-xs font-bold">{code}</span>
+                                                                        ))}
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                );
+                                            })}
                                         </div>
-                                    )}
-                                </div>
-                            ))}
-                        </div>
-                            </div>
-                        ))
-                    )}
+                                    </div>
+                                ))
+                            )}
                         </div>
                     </section>
+
+                    {previewState && (
+                        <div className="fixed inset-0 z-50 bg-black/50 p-4 sm:p-8">
+                            <div className="h-full w-full max-w-6xl mx-auto bg-white rounded-2xl shadow-soft border flex flex-col">
+                                <div className="flex items-center justify-between px-5 py-3 border-b">
+                                    <h3 className="font-semibold text-sm truncate pr-4">Preview: {previewState.fileEntry.name}</h3>
+                                    <button type="button" onClick={closePreview} className="px-3 py-1.5 rounded bg-slate-100 text-slate-700 text-sm font-semibold hover:bg-slate-200">Close</button>
+                                </div>
+                                <div className="flex-1 min-h-0 grid lg:grid-cols-[1fr,320px]">
+                                    <div className="p-4 border-r min-h-0 overflow-auto">
+                                        {isPreviewLoading ? (
+                                            <p className="text-sm text-slate-500">Loading preview...</p>
+                                        ) : (!previewObjectUrl ? (
+                                            <p className="text-sm text-red-600">Preview unavailable. File may be missing.</p>
+                                        ) : (
+                                            (String(previewState.fileEntry.type || '').startsWith('image/') ? (
+                                                <img src={previewObjectUrl} alt={previewState.fileEntry.name} className="max-h-[72vh] mx-auto rounded border" />
+                                            ) : (
+                                                <iframe src={previewObjectUrl} title={previewState.fileEntry.name} className="w-full h-[72vh] border rounded" />
+                                            ))
+                                        ))}
+                                    </div>
+                                    <div className="p-4 bg-slate-50 flex flex-col">
+                                        <label className="text-xs font-bold text-slate-600 mb-1">Comments</label>
+                                        <textarea
+                                            value={previewCommentDraft}
+                                            onChange={(e) => setPreviewCommentDraft(e.target.value)}
+                                            rows="12"
+                                            placeholder="Add comments about this file preview..."
+                                            className="w-full border rounded-lg p-2 text-sm resize-none focus:ring-2 focus:ring-tide outline-none"
+                                        />
+                                        <button type="button" onClick={savePreviewComment} className="mt-3 px-4 py-2 bg-tide hover:bg-teal-600 text-white rounded-lg text-sm font-semibold">Save Comments</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
             );
         }
