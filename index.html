@@ -6636,14 +6636,16 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
             }, [availableFolders, selectedFolders.length]);
 
             const selectedFolderSet = useMemo(() => new Set(selectedFolders), [selectedFolders]);
+            const includeAllSources = selectedSourceSet.size === 0;
+            const includeAllFolders = selectedFolderSet.size === 0;
 
             const codeDetails = useMemo(() => {
                 const map = {};
                 tags.forEach((t) => {
                     const parent = transcriptById[t.transcriptId];
                     const folder = parent?.folder || 'Uncategorized';
-                    if (!selectedSourceSet.has(buildSourceFilterId('transcript', t.transcriptId))) return;
-                    if (!selectedFolderSet.has(folder)) return;
+                    if (!includeAllSources && !selectedSourceSet.has(buildSourceFilterId('transcript', t.transcriptId))) return;
+                    if (!includeAllFolders && !selectedFolderSet.has(folder)) return;
                     if (!map[t.tagName]) {
                         map[t.tagName] = {
                             name: t.tagName,
@@ -6668,8 +6670,8 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
 
                 (artifacts || []).forEach((art) => {
                     const folder = art.folder || 'Uncategorized';
-                    if (!selectedSourceSet.has(buildSourceFilterId('artifact', art.id))) return;
-                    if (!selectedFolderSet.has(folder)) return;
+                    if (!includeAllSources && !selectedSourceSet.has(buildSourceFilterId('artifact', art.id))) return;
+                    if (!includeAllFolders && !selectedFolderSet.has(folder)) return;
                     (art.codes || []).forEach((codeName) => {
                         if (!map[codeName]) {
                             map[codeName] = {
@@ -6697,8 +6699,8 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                 (observationTags || []).forEach((t) => {
                     const parent = (observations || []).find((o) => o.id === t.observationId);
                     const folder = parent?.location || 'Onsite Observation';
-                    if (!selectedSourceSet.has(buildSourceFilterId('observation', t.observationId))) return;
-                    if (!selectedFolderSet.has(folder)) return;
+                    if (!includeAllSources && !selectedSourceSet.has(buildSourceFilterId('observation', t.observationId))) return;
+                    if (!includeAllFolders && !selectedFolderSet.has(folder)) return;
                     if (!map[t.tagName]) {
                         map[t.tagName] = {
                             name: t.tagName,
@@ -6733,7 +6735,7 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                         })()
                     }))
                     .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
-            }, [tags, artifacts, observationTags, observations, transcriptById, participantCodeById, selectedSourceSet, selectedFolderSet]);
+            }, [tags, artifacts, observationTags, observations, transcriptById, participantCodeById, selectedSourceSet, selectedFolderSet, includeAllSources, includeAllFolders]);
 
             const codeDetailByName = useMemo(() => {
                 const out = {};
