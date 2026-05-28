@@ -284,6 +284,26 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
 })();
 </script>
     <script>
+        (() => {
+            if (window.Babel) return;
+
+            const request = new XMLHttpRequest();
+            request.open('GET', 'backup.html', false);
+            request.send(null);
+
+            const ok = (request.status >= 200 && request.status < 300) || request.status === 0;
+            if (!ok) {
+                throw new Error(`Failed to load backup.html (${request.status})`);
+            }
+
+            const match = request.responseText.match(/<script>!function\(e,t\)\{"object"==typeof exports&&"undefined"!=typeof module\?t\(exports\):"function"==typeof define&&define\.amd\?define\(\["exports"\],t\):t\(\(e="undefined"!=typeof globalThis\?globalThis:e\|\|self\)\.Babel=\{\}\)\}\(this,function\(e\)\{"use strict";[\s\S]*?<\/script>/);
+            if (!match) {
+                throw new Error('Embedded Babel standalone block not found in backup.html');
+            }
+
+            document.write(match[0]);
+        })();
+
         tailwind.config = {
             theme: {
                 extend: {
@@ -1714,36 +1734,44 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
 
             useEffect(() => {
                 const detectStartupState = async () => {
-                    const [idbAppPin, idbRecovery, savedAutoLock] = await Promise.all([
-                        dbGet('data', secAppPinIdbKey),
-                        dbGet('data', secRecoveryIdbKey),
-                        dbGet('data', 'auto_lock_enabled')
-                    ]);
-                    if (savedAutoLock === false) setAutoLockEnabled(false);
-                    const legacyPin = localStorage.getItem('quali_pin');
-                    const hasPin = !!(idbAppPin || legacyPin);
-                    const legacyRecovery = !!(localStorage.getItem(recoveryQuestionKey) && localStorage.getItem(recoveryAnswerHashKey));
-                    const hasRecovery = !!(idbRecovery || legacyRecovery);
-                    const batch = await dbBatchGet('data', ['transcripts', 'tags', 'global_artifacts', 'participants', 'analysis_canvases']);
-                    const existingTranscripts = batch['transcripts'] || [];
-                    const existingTags = batch['tags'] || [];
-                    const existingArtifacts = batch['global_artifacts'] || [];
-                    const existingParticipants = batch['participants'] || [];
-                    const existingCanvases = batch['analysis_canvases'] || [];
-                    const hasProjectData = existingTranscripts.length > 0 || existingTags.length > 0 || existingArtifacts.length > 0 || existingParticipants.length > 0 || existingCanvases.length > 0;
+                    try {
+                        const [idbAppPin, idbRecovery, savedAutoLock] = await Promise.all([
+                            dbGet('data', secAppPinIdbKey),
+                            dbGet('data', secRecoveryIdbKey),
+                            dbGet('data', 'auto_lock_enabled')
+                        ]);
+                        if (savedAutoLock === false) setAutoLockEnabled(false);
+                        const legacyPin = localStorage.getItem('quali_pin');
+                        const hasPin = !!(idbAppPin || legacyPin);
+                        const legacyRecovery = !!(localStorage.getItem(recoveryQuestionKey) && localStorage.getItem(recoveryAnswerHashKey));
+                        const hasRecovery = !!(idbRecovery || legacyRecovery);
+                        const batch = await dbBatchGet('data', ['transcripts', 'tags', 'global_artifacts', 'participants', 'analysis_canvases']);
+                        const existingTranscripts = batch['transcripts'] || [];
+                        const existingTags = batch['tags'] || [];
+                        const existingArtifacts = batch['global_artifacts'] || [];
+                        const existingParticipants = batch['participants'] || [];
+                        const existingCanvases = batch['analysis_canvases'] || [];
+                        const hasProjectData = existingTranscripts.length > 0 || existingTags.length > 0 || existingArtifacts.length > 0 || existingParticipants.length > 0 || existingCanvases.length > 0;
 
-                    setHasAppPassword(hasPin);
-                    setHasRecoverySetup(hasRecovery);
-                    setShowRecoveryPrompt(hasPin && !hasRecovery);
-                    if (hasProjectData && hasPin) {
-                        setStartupState('locked');
-                        return;
+                        setHasAppPassword(hasPin);
+                        setHasRecoverySetup(hasRecovery);
+                        setShowRecoveryPrompt(hasPin && !hasRecovery);
+                        if (hasProjectData && hasPin) {
+                            setStartupState('locked');
+                            return;
+                        }
+                        if (hasProjectData) {
+                            setStartupState('open');
+                            return;
+                        }
+                        setStartupState('welcome');
+                    } catch (err) {
+                        console.warn('Startup state detection failed; falling back to welcome screen:', err);
+                        setHasAppPassword(false);
+                        setHasRecoverySetup(false);
+                        setShowRecoveryPrompt(false);
+                        setStartupState('welcome');
                     }
-                    if (hasProjectData) {
-                        setStartupState('open');
-                        return;
-                    }
-                    setStartupState('welcome');
                 };
 
                 detectStartupState();
@@ -1968,28 +1996,46 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
 
             useEffect(() => {
                 const loadData = async () => {
-                    const keys = ['transcripts','folders','transcript_folders','tags','global_artifacts','artifact_folders','participants','analysis_canvases','source_filter_presets','triangulation_sessions','triangulation_assignment_meta','code_definitions','category_definitions','observations','observation_folders','observation_tags','activityTypes'];
-                    const d = await dbBatchGet('data', keys);
-                    setTranscripts(d['transcripts'] || []);
-                    if (d['folders']) {
-                        setFolders(d['folders']);
-                    } else {
-                        const legacy = [...new Set([...(d['transcript_folders'] || []), ...(d['artifact_folders'] || []), ...(d['observation_folders'] || [])])];
-                        setFolders(legacy);
+                    try {
+                        const keys = ['transcripts','folders','transcript_folders','tags','global_artifacts','artifact_folders','participants','analysis_canvases','source_filter_presets','triangulation_sessions','triangulation_assignment_meta','code_definitions','category_definitions','observations','observation_folders','observation_tags','activityTypes'];
+                        const d = await dbBatchGet('data', keys);
+                        setTranscripts(d['transcripts'] || []);
+                        if (d['folders']) {
+                            setFolders(d['folders']);
+                        } else {
+                            const legacy = [...new Set([...(d['transcript_folders'] || []), ...(d['artifact_folders'] || []), ...(d['observation_folders'] || [])])];
+                            setFolders(legacy);
+                        }
+                        setTags(d['tags'] || []);
+                        setGlobalArtifacts(d['global_artifacts'] || []);
+                        setParticipants(d['participants'] || []);
+                        setAnalysisCanvases(d['analysis_canvases'] || []);
+                        setSourceFilterPresets(d['source_filter_presets'] || []);
+                        setTriangulationSessions(d['triangulation_sessions'] || []);
+                        setTriangulationAssignmentMeta(d['triangulation_assignment_meta'] || null);
+                        setCodeDefinitions(d['code_definitions'] || {});
+                        setCategoryDefinitions(d['category_definitions'] || {});
+                        setObservations(d['observations'] || []);
+                        setObservationTags(d['observation_tags'] || []);
+                        if (d['activityTypes']) setActivityTypes(d['activityTypes']);
+                    } catch (err) {
+                        console.warn('Project data load failed; continuing with empty in-memory state:', err);
+                        setTranscripts([]);
+                        setFolders([]);
+                        setTags([]);
+                        setGlobalArtifacts([]);
+                        setParticipants([]);
+                        setAnalysisCanvases([]);
+                        setSourceFilterPresets([]);
+                        setTriangulationSessions([]);
+                        setTriangulationAssignmentMeta(null);
+                        setCodeDefinitions({});
+                        setCategoryDefinitions({});
+                        setObservations([]);
+                        setObservationTags([]);
+                    } finally {
+                        setIsReady(true);
                     }
-                    setTags(d['tags'] || []);
-                    setGlobalArtifacts(d['global_artifacts'] || []);
-                    setParticipants(d['participants'] || []);
-                    setAnalysisCanvases(d['analysis_canvases'] || []);
-                    setSourceFilterPresets(d['source_filter_presets'] || []);
-                    setTriangulationSessions(d['triangulation_sessions'] || []);
-                    setTriangulationAssignmentMeta(d['triangulation_assignment_meta'] || null);
-                    setCodeDefinitions(d['code_definitions'] || {});
-                    setCategoryDefinitions(d['category_definitions'] || {});
-                    setObservations(d['observations'] || []);
-                    setObservationTags(d['observation_tags'] || []);
-                    if (d['activityTypes']) setActivityTypes(d['activityTypes']);
-                    setIsReady(true);
                 };
                 if (startupState === 'open') loadData();
             }, [startupState]);
