@@ -1576,7 +1576,7 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                                         <li>Create your app password and recovery question.</li>
                                         <li>Add transcripts in Transcripts workspace.</li>
                                         <li>Code transcript text in the editor.</li>
-                                        <li>Review outputs in Analysis Canvas and Codebook.</li>
+                                        <li>Review outputs in Categorization and Codebook.</li>
                                         <li>Use Backup and Restore regularly.</li>
                                     </ol>
                                     <div className="pt-2 flex justify-end">
@@ -3221,7 +3221,7 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                 {
                     title: 'Analysis',
                     items: [
-                        { key: 'analysis', label: 'Analysis Canvas', shortLabel: 'AN' },
+                        { key: 'analysis', label: 'Categorization', shortLabel: 'CA' },
                         { key: 'codebook', label: 'Codebook', shortLabel: 'CB' },
                         { key: 'triangulation', label: 'Triangulation', shortLabel: 'TG' }
                     ]
@@ -3579,6 +3579,12 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
 
                                         setAnalysisCanvases((prev) => prev.map((canvas) => ({
                                             ...canvas,
+                                            categories: (canvas.categories || []).map((category) => ({
+                                                ...category,
+                                                codes: Array.from(new Set((category.codes || []).map((codeName) =>
+                                                    String(codeName || '').trim() === previous ? next : codeName
+                                                )))
+                                            })),
                                             themes: (canvas.themes || []).map((theme) => ({
                                                 ...theme,
                                                 codes: Array.from(new Set((theme.codes || []).map((codeName) =>
@@ -3641,6 +3647,21 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                                         setGlobalArtifacts((prev) => prev.map((artifact) =>
                                             normalizeArtifactCategory(artifact.folder) === previous ? { ...artifact, folder: next } : artifact
                                         ));
+
+                                        setAnalysisCanvases((prev) => prev.map((canvas) => ({
+                                            ...canvas,
+                                            categories: (canvas.categories || []).map((category) => (
+                                                String(category.name || '').trim() === previous
+                                                    ? { ...category, name: next }
+                                                    : category
+                                            )),
+                                            themes: (canvas.themes || []).map((theme) => ({
+                                                ...theme,
+                                                categories: (theme.categories || []).map((categoryName) =>
+                                                    String(categoryName || '').trim() === previous ? next : categoryName
+                                                )
+                                            }))
+                                        })));
 
                                         setCategoryDefinitions((prev) => {
                                             const current = { ...(prev || {}) };
@@ -5897,6 +5918,12 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                 return { start, end: pre.toString().length, text: r.toString() };
             };
 
+            const isInVivoCodeFromSnippet = (snippet, codeValue) => {
+                const normalizedSnippet = String(snippet || '').toLowerCase();
+                const normalizedCode = String(codeValue || '').trim().toLowerCase();
+                return !!normalizedCode && normalizedSnippet.includes(normalizedCode);
+            };
+
             const handleMouseUp = () => {
                 if (mode !== 'code' || !textRef.current || editingTagId) return;
                 setTimeout(() => {
@@ -5919,6 +5946,17 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
 
                 const normalizedCategory = tagFormCategory.trim() || 'Uncategorized';
                 const normalizedCode = tagFormName.trim();
+                const referenceSnippet = pendingSelection
+                    ? pendingSelection.text
+                    : (tags.find((t) => t.id === editingTagId)?.textSnippet || '');
+
+                if (!isInVivoCodeFromSnippet(referenceSnippet, normalizedCode)) {
+                    showNotice({
+                        title: 'Use In-vivo Wording',
+                        message: 'The in-vivo code must come from the highlighted text. Please type a phrase that appears in the snippet.'
+                    });
+                    return;
+                }
 
                 if (editingTagId) {
                     const existing = tags.find(t => t.id === editingTagId);
@@ -6317,7 +6355,7 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                             <div className="w-full lg:w-96 lg:min-w-96 bg-slate-50 flex flex-col border-t lg:border-t-0 lg:border-l border-slate-200 z-20 overflow-y-auto max-h-[48vh] lg:max-h-none">
                                 <div className="p-5 border-b bg-white shrink-0">
                                     <div className="flex items-start justify-between gap-3 mb-2">
-                                        <h3 className="font-bold text-lg text-slate-800">{editingTagId ? 'Edit Code' : (pendingSelection ? 'Save New Code' : 'Document Codes')}</h3>
+                                        <h3 className="font-bold text-lg text-slate-800">{editingTagId ? 'Edit In-vivo Code' : (pendingSelection ? 'Save In-vivo Code' : 'In-vivo Coding')}</h3>
                                         <button
                                             type="button"
                                             onClick={clearAllCodes}
@@ -6359,14 +6397,14 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                                                 </div>
                                             </div>
 
-                                            <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1">Specific Code *</label>
+                                            <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1">In-vivo Code *</label>
                                             <input
                                                 type="text"
                                                 autoFocus
                                                 list="tags"
                                                 value={tagFormName}
                                                 onChange={e => setTagFormName(e.target.value)}
-                                                placeholder="e.g. Humor"
+                                                placeholder="Type exact wording from highlighted text"
                                                 className="w-full border border-slate-300 rounded p-2 text-sm mb-3 focus:ring-2 focus:ring-tide outline-none"
                                             />
                                             <div className="mb-3">
@@ -6395,11 +6433,11 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
 
                                             <div className="flex gap-2">
                                                 <button type="button" onClick={cancelTagForm} className="flex-1 py-2 bg-white border border-slate-300 text-slate-600 font-semibold rounded">Cancel</button>
-                                                <button type="submit" className={`flex-1 py-2 text-white font-bold rounded ${editingTagId ? 'bg-orange-500 hover:bg-orange-600' : 'bg-tide hover:bg-teal-600'}`}>{editingTagId ? 'Update' : 'Save Code'}</button>
+                                                <button type="submit" className={`flex-1 py-2 text-white font-bold rounded ${editingTagId ? 'bg-orange-500 hover:bg-orange-600' : 'bg-tide hover:bg-teal-600'}`}>{editingTagId ? 'Update' : 'Save In-vivo Code'}</button>
                                             </div>
                                         </form>
                                     ) : (
-                                        <p className="text-sm text-slate-500 border-2 border-dashed border-slate-300 p-4 rounded-xl text-center bg-slate-100">Highlight text in the transcript to assign a code.</p>
+                                        <p className="text-sm text-slate-500 border-2 border-dashed border-slate-300 p-4 rounded-xl text-center bg-slate-100">Highlight transcript text, then enter an in-vivo code using the participant's exact wording.</p>
                                     )}
                                 </div>
 
@@ -6467,12 +6505,12 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
             const { requestInput, inputDialog } = useInputDialog();
             const [newCanvasName, setNewCanvasName] = useState('');
             const [activeCanvasId, setActiveCanvasId] = useState(canvases[0]?.id || null);
+            const [newCategoryName, setNewCategoryName] = useState('');
             const [newThemeName, setNewThemeName] = useState('');
-            const [editingThemeId, setEditingThemeId] = useState(null);
-            const [editThemeName, setEditThemeName] = useState('');
             const [selectedFolders, setSelectedFolders] = useState([]);
             const [selectedSourceIds, setSelectedSourceIds] = useState([]);
             const [showExportMenu, setShowExportMenu] = useState(false);
+            const [processStepView, setProcessStepView] = useState('both');
             const hasInitializedSourceFilter = useRef(false);
 
             const csvEscape = (value) => {
@@ -6490,53 +6528,19 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                 URL.revokeObjectURL(link.href);
             };
 
-            const downloadWordDoc = (filename, htmlContent) => {
-                const wrapped = `<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body>${htmlContent}</body></html>`;
-                const blob = new Blob([wrapped], { type: 'application/msword;charset=utf-8' });
-                const link = document.createElement('a');
-                link.href = URL.createObjectURL(blob);
-                link.download = filename;
-                link.click();
-                URL.revokeObjectURL(link.href);
-            };
-
-            const escapeForHtml = (value) => String(value ?? '')
-                .replace(/&/g, '&amp;')
-                .replace(/</g, '&lt;')
-                .replace(/>/g, '&gt;')
-                .replace(/"/g, '&quot;')
-                .replace(/'/g, '&#039;');
-
-            const buildApaTableHtml = (tableNumber, title, columns, rows, noteText) => {
-                const header = columns.map(col => `<th style="text-align:left;padding:6px;border-bottom:1.5px solid #000;font-weight:700;">${escapeForHtml(col)}</th>`).join('');
-                const body = rows.map(row => `<tr>${row.map(cell => `<td style="padding:6px;border-bottom:1px solid #d1d5db;vertical-align:top;">${escapeForHtml(cell)}</td>`).join('')}</tr>`).join('');
-
-                return `
-                    <div style="font-family:'Times New Roman',serif;font-size:12pt;line-height:1.35;margin-bottom:24px;">
-                        <div style="font-weight:700;">Table ${tableNumber}</div>
-                        <div style="font-style:italic;margin:4px 0 10px 0;">${escapeForHtml(title)}</div>
-                        <table style="width:100%;border-collapse:collapse;border-top:1.5px solid #000;">
-                            <thead><tr>${header}</tr></thead>
-                            <tbody>${body || `<tr><td colspan="${columns.length}" style="padding:6px;">No rows available.</td></tr>`}</tbody>
-                        </table>
-                        <div style="margin-top:6px;"><span style="font-style:italic;">Note.</span> ${escapeForHtml(noteText)}</div>
-                    </div>
-                `;
-            };
-
             useEffect(() => {
                 if (!activeCanvasId && canvases[0]) setActiveCanvasId(canvases[0].id);
             }, [canvases, activeCanvasId]);
 
             const transcriptById = useMemo(() => {
                 const out = {};
-                transcripts.forEach(t => { out[t.id] = t; });
+                transcripts.forEach((t) => { out[t.id] = t; });
                 return out;
             }, [transcripts]);
 
             const participantCodeById = useMemo(() => {
                 const out = {};
-                (participants || []).forEach(p => { out[p.id] = p.pseudonym || p.id; });
+                (participants || []).forEach((p) => { out[p.id] = p.pseudonym || p.id; });
                 return out;
             }, [participants]);
 
@@ -6619,9 +6623,9 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
 
             const availableFolders = useMemo(() => {
                 const set = new Set();
-                transcripts.forEach(t => set.add(t.folder || 'Uncategorized'));
-                (artifacts || []).forEach(a => set.add(a.folder || 'Uncategorized'));
-                (observations || []).forEach(o => set.add(o.location || 'Onsite Observation'));
+                transcripts.forEach((t) => set.add(t.folder || 'Uncategorized'));
+                (artifacts || []).forEach((a) => set.add(a.folder || 'Uncategorized'));
+                (observations || []).forEach((o) => set.add(o.location || 'Onsite Observation'));
                 return Array.from(set).sort((a, b) => a.localeCompare(b));
             }, [transcripts, artifacts, observations]);
 
@@ -6635,7 +6639,7 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
 
             const codeDetails = useMemo(() => {
                 const map = {};
-                tags.forEach(t => {
+                tags.forEach((t) => {
                     const parent = transcriptById[t.transcriptId];
                     const folder = parent?.folder || 'Uncategorized';
                     if (!selectedSourceSet.has(buildSourceFilterId('transcript', t.transcriptId))) return;
@@ -6662,11 +6666,11 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                     });
                 });
 
-                (artifacts || []).forEach(art => {
+                (artifacts || []).forEach((art) => {
                     const folder = art.folder || 'Uncategorized';
                     if (!selectedSourceSet.has(buildSourceFilterId('artifact', art.id))) return;
                     if (!selectedFolderSet.has(folder)) return;
-                    (art.codes || []).forEach(codeName => {
+                    (art.codes || []).forEach((codeName) => {
                         if (!map[codeName]) {
                             map[codeName] = {
                                 name: codeName,
@@ -6690,8 +6694,8 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                     });
                 });
 
-                (observationTags || []).forEach(t => {
-                    const parent = (observations || []).find(o => o.id === t.observationId);
+                (observationTags || []).forEach((t) => {
+                    const parent = (observations || []).find((o) => o.id === t.observationId);
                     const folder = parent?.location || 'Onsite Observation';
                     if (!selectedSourceSet.has(buildSourceFilterId('observation', t.observationId))) return;
                     if (!selectedFolderSet.has(folder)) return;
@@ -6729,223 +6733,409 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                         })()
                     }))
                     .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
-            }, [tags, artifacts, observationTags, observations, transcriptById, selectedFolderSet, participantCodeById, selectedSourceSet]);
+            }, [tags, artifacts, observationTags, observations, transcriptById, participantCodeById, selectedSourceSet, selectedFolderSet]);
 
-            const activeCanvas = canvases.find(c => c.id === activeCanvasId) || null;
-            const uniqueCodeCount = useMemo(() => new Set(codeDetails.map(c => (c.name || '').trim()).filter(Boolean)).size, [codeDetails]);
-            const uniqueCategoryCount = useMemo(() => new Set(codeDetails.map(c => (c.category || 'Uncategorized').trim() || 'Uncategorized')).size, [codeDetails]);
-            const uniqueThemeCount = useMemo(() => {
-                if (!activeCanvas) return 0;
-                return new Set((activeCanvas.themes || []).map(t => (t.name || '').trim()).filter(Boolean)).size;
-            }, [activeCanvas]);
+            const codeDetailByName = useMemo(() => {
+                const out = {};
+                codeDetails.forEach((item) => {
+                    out[item.name] = item;
+                });
+                return out;
+            }, [codeDetails]);
+
+            const normalizeCanvas = (canvas) => {
+                const normalizedCategories = Array.isArray(canvas?.categories)
+                    ? canvas.categories.map((category, index) => ({
+                        id: category.id || `cat_${index}`,
+                        name: (category.name || '').trim() || `Category ${index + 1}`,
+                        codes: [...new Set((category.codes || []).map((name) => String(name || '').trim()).filter(Boolean))]
+                    }))
+                    : [];
+
+                const categories = normalizedCategories.length > 0
+                    ? normalizedCategories
+                    : (() => {
+                        const grouped = {};
+                        codeDetails.forEach((code, index) => {
+                            const categoryName = (code.category || 'Uncategorized').trim() || 'Uncategorized';
+                            if (!grouped[categoryName]) grouped[categoryName] = { id: `cat_inferred_${index}`, name: categoryName, codes: [] };
+                            grouped[categoryName].codes.push(code.name);
+                        });
+                        return Object.values(grouped).map((entry) => ({ ...entry, codes: [...new Set(entry.codes)] }));
+                    })();
+
+                const themes = (canvas?.themes || []).map((theme, index) => {
+                    const explicitCategories = Array.isArray(theme.categories)
+                        ? theme.categories.map((name) => String(name || '').trim()).filter(Boolean)
+                        : [];
+                    const fallbackCategories = explicitCategories.length > 0
+                        ? explicitCategories
+                        : [...new Set((theme.codes || []).map((codeName) => {
+                            const found = codeDetailByName[codeName];
+                            return (found?.category || 'Uncategorized').trim() || 'Uncategorized';
+                        }))];
+                    return {
+                        id: theme.id || `theme_${index}`,
+                        name: (theme.name || '').trim() || `Theme ${index + 1}`,
+                        categories: fallbackCategories
+                    };
+                });
+
+                return {
+                    id: canvas?.id,
+                    name: canvas?.name,
+                    categories,
+                    themes
+                };
+            };
+
+            const activeCanvasRaw = canvases.find((c) => c.id === activeCanvasId) || null;
+            const activeCanvas = useMemo(() => (activeCanvasRaw ? normalizeCanvas(activeCanvasRaw) : null), [activeCanvasRaw, codeDetailByName, codeDetails]);
+
+            const persistCanvas = (nextCanvas) => {
+                const serializedThemes = (nextCanvas.themes || []).map((theme) => {
+                    const selectedCodes = (nextCanvas.categories || [])
+                        .filter((category) => theme.categories.includes(category.name))
+                        .flatMap((category) => category.codes || []);
+                    return {
+                        ...theme,
+                        categories: [...theme.categories],
+                        codes: [...new Set(selectedCodes)]
+                    };
+                });
+
+                const payload = {
+                    ...nextCanvas,
+                    categories: (nextCanvas.categories || []).map((category) => ({
+                        ...category,
+                        codes: [...new Set(category.codes || [])]
+                    })),
+                    themes: serializedThemes
+                };
+
+                onUpdate(canvases.map((canvas) => canvas.id === payload.id ? payload : canvas));
+            };
 
             const createCanvas = () => {
                 if (!newCanvasName.trim()) return;
-                const c = { id: Date.now().toString(), name: newCanvasName.trim(), themes: [] };
-                onUpdate([c, ...canvases]);
-                setActiveCanvasId(c.id);
+                const canvas = {
+                    id: Date.now().toString(),
+                    name: newCanvasName.trim(),
+                    categories: [],
+                    themes: []
+                };
+                onUpdate([canvas, ...canvases]);
+                setActiveCanvasId(canvas.id);
                 setNewCanvasName('');
             };
 
             const deleteCanvas = async (canvasId) => {
                 const shouldDelete = await requestConfirmation({
-                    title: 'Delete Canvas',
-                    message: 'Delete this canvas and all its themes?',
-                    confirmLabel: 'Delete Canvas'
+                    title: 'Delete Workspace',
+                    message: 'Delete this categorization workspace and all theme mappings?',
+                    confirmLabel: 'Delete Workspace'
                 });
                 if (!shouldDelete) return;
-                const updated = canvases.filter(c => c.id !== canvasId);
+                const updated = canvases.filter((canvas) => canvas.id !== canvasId);
                 onUpdate(updated);
                 if (activeCanvasId === canvasId) setActiveCanvasId(updated[0]?.id || null);
             };
 
             const renameCanvas = async (canvasId) => {
-                const currentCanvas = canvases.find((c) => c.id === canvasId);
-                const newName = await requestInput({
-                    title: 'Rename Canvas',
-                    message: 'Enter a new name for this analysis canvas.',
-                    label: 'Canvas name',
+                const currentCanvas = canvases.find((canvas) => canvas.id === canvasId);
+                const nextName = await requestInput({
+                    title: 'Rename Workspace',
+                    message: 'Enter a new name for this categorization workspace.',
+                    label: 'Workspace name',
                     initialValue: currentCanvas?.name || '',
                     confirmLabel: 'Rename',
                     validate: (value) => {
-                        if (!(value || '').trim()) return 'Canvas name is required.';
+                        if (!(value || '').trim()) return 'Workspace name is required.';
                         return '';
                     }
                 });
-                if (newName == null) return;
-                onUpdate(canvases.map(c => c.id === canvasId ? { ...c, name: newName.trim() } : c));
+                if (nextName == null) return;
+                onUpdate(canvases.map((canvas) => canvas.id === canvasId ? { ...canvas, name: nextName.trim() } : canvas));
+            };
+
+            const addCategory = () => {
+                if (!activeCanvas || !newCategoryName.trim()) return;
+                if (activeCanvas.categories.some((category) => category.name.toLowerCase() === newCategoryName.trim().toLowerCase())) return;
+                const nextCanvas = {
+                    ...activeCanvas,
+                    categories: [...activeCanvas.categories, { id: Date.now().toString(), name: newCategoryName.trim(), codes: [] }]
+                };
+                persistCanvas(nextCanvas);
+                setNewCategoryName('');
+            };
+
+            const removeCategory = async (categoryId) => {
+                if (!activeCanvas) return;
+                const categoryToDelete = activeCanvas.categories.find((category) => category.id === categoryId);
+                if (!categoryToDelete) return;
+                const shouldDelete = await requestConfirmation({
+                    title: 'Delete Category',
+                    message: `Delete category "${categoryToDelete.name}" and unassign its in-vivo codes?`,
+                    confirmLabel: 'Delete Category'
+                });
+                if (!shouldDelete) return;
+
+                const nextCanvas = {
+                    ...activeCanvas,
+                    categories: activeCanvas.categories.filter((category) => category.id !== categoryId),
+                    themes: activeCanvas.themes.map((theme) => ({
+                        ...theme,
+                        categories: theme.categories.filter((name) => name !== categoryToDelete.name)
+                    }))
+                };
+                persistCanvas(nextCanvas);
+            };
+
+            const renameCategory = async (categoryId) => {
+                if (!activeCanvas) return;
+                const target = activeCanvas.categories.find((category) => category.id === categoryId);
+                if (!target) return;
+                const nextName = await requestInput({
+                    title: 'Rename Category',
+                    message: 'Enter a new category name.',
+                    label: 'Category name',
+                    initialValue: target.name,
+                    confirmLabel: 'Rename',
+                    validate: (value) => {
+                        if (!(value || '').trim()) return 'Category name is required.';
+                        return '';
+                    }
+                });
+                if (nextName == null) return;
+                const trimmed = nextName.trim();
+                if (!trimmed) return;
+
+                const nextCanvas = {
+                    ...activeCanvas,
+                    categories: activeCanvas.categories.map((category) => category.id === categoryId ? { ...category, name: trimmed } : category),
+                    themes: activeCanvas.themes.map((theme) => ({
+                        ...theme,
+                        categories: theme.categories.map((name) => name === target.name ? trimmed : name)
+                    }))
+                };
+                persistCanvas(nextCanvas);
+            };
+
+            const assignCodeToCategory = (categoryId, codeName) => {
+                if (!activeCanvas || !codeName) return;
+                const cleanedCode = String(codeName || '').trim();
+                if (!cleanedCode) return;
+
+                const nextCategories = activeCanvas.categories.map((category) => ({
+                    ...category,
+                    codes: category.codes.filter((code) => code !== cleanedCode)
+                }));
+                const targetIndex = nextCategories.findIndex((category) => category.id === categoryId);
+                if (targetIndex === -1) return;
+                nextCategories[targetIndex].codes = [...nextCategories[targetIndex].codes, cleanedCode];
+                persistCanvas({ ...activeCanvas, categories: nextCategories });
+            };
+
+            const unassignCode = (codeName) => {
+                if (!activeCanvas || !codeName) return;
+                const cleanedCode = String(codeName || '').trim();
+                const nextCategories = activeCanvas.categories.map((category) => ({
+                    ...category,
+                    codes: category.codes.filter((code) => code !== cleanedCode)
+                }));
+                persistCanvas({ ...activeCanvas, categories: nextCategories });
             };
 
             const addTheme = () => {
                 if (!activeCanvas || !newThemeName.trim()) return;
-                const updated = { ...activeCanvas, themes: [...activeCanvas.themes, { id: Date.now().toString(), name: newThemeName.trim(), codes: [] }] };
-                onUpdate(canvases.map(c => c.id === updated.id ? updated : c));
+                const nextCanvas = {
+                    ...activeCanvas,
+                    themes: [...activeCanvas.themes, { id: Date.now().toString(), name: newThemeName.trim(), categories: [] }]
+                };
+                persistCanvas(nextCanvas);
                 setNewThemeName('');
             };
 
-            const deleteTheme = async (themeId) => {
+            const removeTheme = async (themeId) => {
                 if (!activeCanvas) return;
                 const shouldDelete = await requestConfirmation({
                     title: 'Delete Theme',
-                    message: 'Delete this theme?',
+                    message: 'Delete this theme grouping?',
                     confirmLabel: 'Delete Theme'
                 });
                 if (!shouldDelete) return;
-                const updated = { ...activeCanvas, themes: activeCanvas.themes.filter(t => t.id !== themeId) };
-                onUpdate(canvases.map(c => c.id === updated.id ? updated : c));
+                const nextCanvas = { ...activeCanvas, themes: activeCanvas.themes.filter((theme) => theme.id !== themeId) };
+                persistCanvas(nextCanvas);
             };
 
-            const startEditTheme = (theme) => {
-                setEditingThemeId(theme.id);
-                setEditThemeName(theme.name);
-            };
-
-            const saveEditTheme = () => {
-                if (!activeCanvas || !editingThemeId) return;
-                const updated = { ...activeCanvas, themes: activeCanvas.themes.map(t => t.id === editingThemeId ? { ...t, name: editThemeName.trim() } : t) };
-                onUpdate(canvases.map(c => c.id === updated.id ? updated : c));
-                setEditingThemeId(null);
-                setEditThemeName('');
-            };
-
-            const moveCodeToTheme = (themeId, codeName) => {
+            const renameTheme = async (themeId) => {
                 if (!activeCanvas) return;
-                const nextThemes = activeCanvas.themes.map(t => ({ ...t, codes: t.codes.filter(c => c !== codeName) }));
-                const idx = nextThemes.findIndex(t => t.id === themeId);
-                if (idx >= 0 && !nextThemes[idx].codes.includes(codeName)) nextThemes[idx].codes.push(codeName);
-                const updated = { ...activeCanvas, themes: nextThemes };
-                onUpdate(canvases.map(c => c.id === updated.id ? updated : c));
-            };
+                const target = activeCanvas.themes.find((theme) => theme.id === themeId);
+                if (!target) return;
+                const nextName = await requestInput({
+                    title: 'Rename Theme',
+                    message: 'Enter a new theme label.',
+                    label: 'Theme name',
+                    initialValue: target.name,
+                    confirmLabel: 'Rename',
+                    validate: (value) => {
+                        if (!(value || '').trim()) return 'Theme name is required.';
+                        return '';
+                    }
+                });
+                if (nextName == null) return;
+                const trimmed = nextName.trim();
+                if (!trimmed) return;
 
-            const removeCodeFromTheme = (themeId, codeName) => {
-                if (!activeCanvas) return;
-                const updated = {
+                const nextCanvas = {
                     ...activeCanvas,
-                    themes: activeCanvas.themes.map(t => t.id === themeId ? { ...t, codes: t.codes.filter(c => c !== codeName) } : t)
+                    themes: activeCanvas.themes.map((theme) => theme.id === themeId ? { ...theme, name: trimmed } : theme)
                 };
-                onUpdate(canvases.map(c => c.id === updated.id ? updated : c));
+                persistCanvas(nextCanvas);
             };
 
-            const assignedCodes = new Set((activeCanvas?.themes || []).flatMap(t => t.codes));
-            const unassigned = codeDetails.filter(c => !assignedCodes.has(c.name));
+            const assignCategoryToTheme = (themeId, categoryName) => {
+                if (!activeCanvas || !themeId || !categoryName) return;
+                const cleanedCategory = String(categoryName || '').trim();
+                if (!cleanedCategory) return;
 
-            const codeDetailByName = useMemo(() => {
-                const detailByCode = {};
-                codeDetails.forEach((c) => {
-                    detailByCode[c.name] = c;
-                });
-                return detailByCode;
-            }, [codeDetails]);
-
-            const buildCanvasTableRows = (canvas) => {
-                if (!canvas) return [];
-                const rows = [];
-                (canvas.themes || []).forEach((theme) => {
-                    (theme.codes || []).forEach((codeName) => {
-                        const d = codeDetailByName[codeName] || { count: 0, quotes: [], category: 'Uncategorized' };
-                        rows.push({
-                            theme: theme.name,
-                            code: codeName,
-                            category: d.category,
-                            quoteCount: d.count,
-                            quotes: d.quotes
-                        });
-                    });
-                });
-                return rows;
+                const nextThemes = activeCanvas.themes.map((theme) => ({
+                    ...theme,
+                    categories: theme.categories.filter((name) => name !== cleanedCategory)
+                }));
+                const targetIndex = nextThemes.findIndex((theme) => theme.id === themeId);
+                if (targetIndex === -1) return;
+                nextThemes[targetIndex].categories = [...nextThemes[targetIndex].categories, cleanedCategory];
+                persistCanvas({ ...activeCanvas, themes: nextThemes });
             };
 
-            const tableRows = useMemo(() => buildCanvasTableRows(activeCanvas), [activeCanvas, codeDetailByName]);
-
-            const exportCanvasCsv = () => {
+            const unassignCategoryFromTheme = (themeId, categoryName) => {
                 if (!activeCanvas) return;
-                const lines = ['Theme,Code,Category,Quote Count,Quotes'];
-                tableRows.forEach((r) => {
-                    const quotes = r.quotes.map(q => `[${q.source}] ${q.ref}: ${q.text}`).join(' || ');
-                    lines.push([
-                        csvEscape(r.theme),
-                        csvEscape(r.code),
-                        csvEscape(r.category),
-                        csvEscape(r.quoteCount),
-                        csvEscape(quotes)
-                    ].join(','));
-                });
-                downloadCsv(`${activeCanvas.name.replace(/\s+/g, '_')}_analysis_table.csv`, lines);
-            };
-
-            const exportAllCanvasTablesCsv = () => {
-                const lines = ['Canvas,Theme,Code,Category,Quote Count,Quotes'];
-                canvases.forEach((canvas) => {
-                    const rows = buildCanvasTableRows(canvas);
-                    rows.forEach((r) => {
-                        const quotes = r.quotes.map(q => `[${q.source}] ${q.ref}: ${q.text}`).join(' || ');
-                        lines.push([
-                            csvEscape(canvas.name),
-                            csvEscape(r.theme),
-                            csvEscape(r.code),
-                            csvEscape(r.category),
-                            csvEscape(r.quoteCount),
-                            csvEscape(quotes)
-                        ].join(','));
-                    });
-                });
-                downloadCsv(`QualiApp_Analysis_Canvas_Tables_${new Date().toISOString().slice(0, 10)}.csv`, lines);
-            };
-
-            const exportCanvasApaDoc = () => {
-                if (!activeCanvas) return;
-                const html = buildApaTableHtml(
-                    1,
-                    `${activeCanvas.name} Analysis Table`,
-                    ['Theme', 'Code', 'Category', 'Quote Count', 'Quotes'],
-                    tableRows.map((row) => [
-                        row.theme,
-                        row.code,
-                        row.category,
-                        String(row.quoteCount),
-                        row.quotes.map(q => `[${q.source}] ${q.ref} (${q.folder}): ${q.text}`).join(' | ')
-                    ]),
-                    'Quotes are exported from current folder-filtered analysis rows and may be truncated for long entries.'
-                );
-                downloadWordDoc(`${activeCanvas.name.replace(/\s+/g, '_')}_APA7_analysis_table.doc`, html);
-            };
-
-            const exportAllCanvasApaDoc = () => {
-                const html = canvases.map((canvas, index) => {
-                    const rows = buildCanvasTableRows(canvas);
-                    return buildApaTableHtml(
-                        index + 1,
-                        `${canvas.name} Analysis Table`,
-                        ['Theme', 'Code', 'Category', 'Quote Count', 'Quotes'],
-                        rows.map((row) => [
-                            row.theme,
-                            row.code,
-                            row.category,
-                            String(row.quoteCount),
-                            row.quotes.map(q => `[${q.source}] ${q.ref} (${q.folder}): ${q.text}`).join(' | ')
-                        ]),
-                        'Quotes are exported from current folder-filtered analysis rows and may be truncated for long entries.'
-                    );
-                }).join('');
-                downloadWordDoc(`QualiApp_APA7_All_Analysis_Canvas_Tables_${new Date().toISOString().slice(0, 10)}.doc`, html);
+                const nextCanvas = {
+                    ...activeCanvas,
+                    themes: activeCanvas.themes.map((theme) => (
+                        theme.id === themeId
+                            ? { ...theme, categories: theme.categories.filter((name) => name !== categoryName) }
+                            : theme
+                    ))
+                };
+                persistCanvas(nextCanvas);
             };
 
             const toggleFolder = (folder) => {
-                setSelectedFolders((prev) => prev.includes(folder) ? prev.filter(f => f !== folder) : [...prev, folder]);
+                setSelectedFolders((prev) => prev.includes(folder) ? prev.filter((name) => name !== folder) : [...prev, folder]);
             };
+
+            const categoryByCode = useMemo(() => {
+                const out = {};
+                (activeCanvas?.categories || []).forEach((category) => {
+                    (category.codes || []).forEach((codeName) => {
+                        out[codeName] = category.name;
+                    });
+                });
+                return out;
+            }, [activeCanvas]);
+
+            const assignedCodes = useMemo(() => new Set(Object.keys(categoryByCode)), [categoryByCode]);
+            const unassignedCodes = useMemo(() => codeDetails.filter((code) => !assignedCodes.has(code.name)), [codeDetails, assignedCodes]);
+
+            const unassignedCategories = useMemo(() => {
+                if (!activeCanvas) return [];
+                const assignedCategoryNames = new Set(activeCanvas.themes.flatMap((theme) => theme.categories));
+                return activeCanvas.categories.filter((category) => !assignedCategoryNames.has(category.name));
+            }, [activeCanvas]);
+
+            const categorizationRows = useMemo(() => codeDetails.map((code) => ({
+                code: code.name,
+                category: categoryByCode[code.name] || 'Unassigned',
+                quoteCount: code.count,
+                source: code.source,
+                folders: Array.from(code.folders || []).join(' | ')
+            })), [codeDetails, categoryByCode]);
+
+            const thematicRows = useMemo(() => {
+                if (!activeCanvas) return [];
+                const rows = [];
+                activeCanvas.themes.forEach((theme) => {
+                    theme.categories.forEach((categoryName) => {
+                        const foundCategory = activeCanvas.categories.find((category) => category.name === categoryName);
+                        const categoryCodes = (foundCategory?.codes || []).filter((codeName) => !!codeDetailByName[codeName]);
+                        if (categoryCodes.length === 0) {
+                            rows.push({
+                                theme: theme.name,
+                                category: categoryName,
+                                code: '',
+                                quoteCount: 0,
+                                source: '',
+                                folders: ''
+                            });
+                        } else {
+                            categoryCodes.forEach((codeName) => {
+                                const detail = codeDetailByName[codeName];
+                                rows.push({
+                                    theme: theme.name,
+                                    category: categoryName,
+                                    code: codeName,
+                                    quoteCount: detail?.count || 0,
+                                    source: detail?.source || '',
+                                    folders: Array.from(detail?.folders || []).join(' | ')
+                                });
+                            });
+                        }
+                    });
+                });
+                return rows;
+            }, [activeCanvas, codeDetailByName]);
+
+            const exportCategorizationTable = () => {
+                if (!activeCanvas) return;
+                const lines = ['In-vivo Code,Category,Quote Count,Source,Folders'];
+                categorizationRows.forEach((row) => {
+                    lines.push([
+                        csvEscape(row.code),
+                        csvEscape(row.category),
+                        csvEscape(row.quoteCount),
+                        csvEscape(row.source),
+                        csvEscape(row.folders)
+                    ].join(','));
+                });
+                downloadCsv(`${activeCanvas.name.replace(/\s+/g, '_')}_categorization_table.csv`, lines);
+            };
+
+            const exportThematicTable = () => {
+                if (!activeCanvas) return;
+                const lines = ['Theme,Category,In-vivo Code,Quote Count,Source,Folders'];
+                thematicRows.forEach((row) => {
+                    lines.push([
+                        csvEscape(row.theme),
+                        csvEscape(row.category),
+                        csvEscape(row.code),
+                        csvEscape(row.quoteCount),
+                        csvEscape(row.source),
+                        csvEscape(row.folders)
+                    ].join(','));
+                });
+                downloadCsv(`${activeCanvas.name.replace(/\s+/g, '_')}_thematic_table.csv`, lines);
+            };
+
+            const uniqueCodeCount = new Set(codeDetails.map((code) => code.name)).size;
+            const uniqueCategoryCount = new Set((activeCanvas?.categories || []).map((category) => category.name)).size;
+            const uniqueThemeCount = new Set((activeCanvas?.themes || []).map((theme) => theme.name)).size;
+            const showStep2 = processStepView !== 'step3';
+            const showStep3 = processStepView !== 'step2';
 
             return (
                 <div className="p-8 h-full overflow-y-auto">
                     <div className="max-w-7xl mx-auto space-y-6">
                         <div className="bg-white border rounded-2xl p-6 shadow-soft">
-                            <h2 className="text-3xl font-display">Analysis Canvases</h2>
-                            <p className="text-slate-500 mt-1">Create theme buckets, filter by folder, review theme tables, and export via CSV or APA7 Word formats.</p>
-                            <p className="text-slate-500 mt-1">Unique codes: {uniqueCodeCount} • Unique categories: {uniqueCategoryCount} • Unique themes in selected canvas: {uniqueThemeCount}</p>
+                            <h2 className="text-3xl font-display">Categorization and Thematic Analysis</h2>
+                            <p className="text-slate-500 mt-1">Step 2: assign in-vivo code cards into categories. Step 3: group categories into themes. All data stays offline on this device.</p>
+                            <p className="text-slate-500 mt-1">Filtered in-vivo codes: {uniqueCodeCount} • Categories in workspace: {uniqueCategoryCount} • Themes in workspace: {uniqueThemeCount}</p>
                         </div>
 
                         <SourceItemFilterPanel
                             title="Included Source Items"
-                            description="Choose which transcripts, artifacts, and onsite observations are included in this canvas. Checked items stay in counts, code banks, and exports."
+                            description="Choose which transcripts, artifacts, and onsite observations are included. Checked items stay in categorization cards and thematic exports."
                             groups={sourceFilterGroups}
                             selectedIds={selectedSourceIds}
                             presets={sourceFilterPresets}
@@ -6960,12 +7150,12 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
 
                         <div className="bg-white border rounded-2xl p-5 shadow-soft grid md:grid-cols-3 gap-4">
                             <div className="md:col-span-2 flex gap-2">
-                                <input value={newCanvasName} onChange={e => setNewCanvasName(e.target.value)} placeholder="New canvas name" className="flex-1 border rounded-lg p-2.5 focus:outline-none focus:ring-2 focus:ring-tide" />
-                                <button onClick={createCanvas} className="bg-tide hover:bg-teal-600 text-white px-4 rounded-lg font-semibold">Create Canvas</button>
+                                <input value={newCanvasName} onChange={(e) => setNewCanvasName(e.target.value)} placeholder="New categorization workspace" className="flex-1 border rounded-lg p-2.5 focus:outline-none focus:ring-2 focus:ring-tide" />
+                                <button onClick={createCanvas} className="bg-tide hover:bg-teal-600 text-white px-4 rounded-lg font-semibold">Create Workspace</button>
                             </div>
-                            <select value={activeCanvasId || ''} onChange={e => setActiveCanvasId(e.target.value)} className="border rounded-lg p-2.5">
-                                <option value="">Select canvas</option>
-                                {canvases.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                            <select value={activeCanvasId || ''} onChange={(e) => setActiveCanvasId(e.target.value)} className="border rounded-lg p-2.5">
+                                <option value="">Select workspace</option>
+                                {canvases.map((canvas) => <option key={canvas.id} value={canvas.id}>{canvas.name}</option>)}
                             </select>
                         </div>
 
@@ -6975,7 +7165,7 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                                 <button onClick={() => setSelectedFolders(availableFolders)} className="text-xs font-semibold text-tide">Select All</button>
                             </div>
                             <div className="flex flex-wrap gap-2">
-                                {availableFolders.map(folder => (
+                                {availableFolders.map((folder) => (
                                     <label key={folder} className={`px-3 py-1.5 rounded-full border text-xs cursor-pointer ${selectedFolderSet.has(folder) ? 'bg-teal-100 border-teal-300 text-teal-800' : 'bg-white text-slate-600'}`}>
                                         <input type="checkbox" className="hidden" checked={selectedFolderSet.has(folder)} onChange={() => toggleFolder(folder)} />
                                         {folder}
@@ -6985,161 +7175,256 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                         </div>
 
                         {!activeCanvas ? (
-                            <div className="text-center py-16 bg-white border rounded-2xl text-slate-500">Create or select a canvas to begin analysis.</div>
+                            <div className="text-center py-16 bg-white border rounded-2xl text-slate-500">Create or select a workspace to begin categorization.</div>
                         ) : (
-                            <div>
-                                <div className="flex justify-between items-center mb-4 bg-white border rounded-2xl p-4 shadow-soft">
+                            <div className="space-y-6">
+                                <div className="flex justify-between items-center bg-white border rounded-2xl p-4 shadow-soft">
                                     <h3 className="text-lg font-bold text-ink">{activeCanvas.name}</h3>
                                     <div className="flex gap-2">
-                                        <button onClick={() => renameCanvas(activeCanvasId)} className="px-3 py-1 text-sm bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 font-semibold">Rename</button>
-                                        <button onClick={() => deleteCanvas(activeCanvasId)} className="px-3 py-1 text-sm bg-red-100 text-red-700 rounded-lg hover:bg-red-200 font-semibold">Delete Canvas</button>
+                                        <button onClick={() => renameCanvas(activeCanvas.id)} className="px-3 py-1 text-sm bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 font-semibold">Rename</button>
+                                        <button onClick={() => deleteCanvas(activeCanvas.id)} className="px-3 py-1 text-sm bg-red-100 text-red-700 rounded-lg hover:bg-red-200 font-semibold">Delete</button>
                                     </div>
                                 </div>
 
-                                <div className="grid lg:grid-cols-3 gap-5">
-                                    <div className="bg-white border rounded-2xl p-4 shadow-soft lg:col-span-1">
-                                        <h3 className="font-bold mb-3">Code Bank (filtered)</h3>
-                                        <p className="text-xs text-slate-500 mb-3">Drag codes into theme buckets. Quote counts reflect selected folders.</p>
-                                        <div className="space-y-2 max-h-[520px] overflow-y-auto pr-1">
-                                            {codeDetails.map(code => (
-                                                <div
-                                                    key={code.name}
-                                                    draggable
-                                                    onDragStart={(e) => e.dataTransfer.setData('text/plain', code.name)}
-                                                    className={`border rounded-lg p-2 cursor-grab bg-white hover:border-tide transition ${assignedCodes.has(code.name) ? 'opacity-60' : ''}`}
-                                                >
-                                                    <div className="font-semibold text-sm">{code.name}</div>
-                                                    <div className="text-xs text-slate-500">{code.count} quotes • <span className="text-[10px] uppercase font-bold text-slate-400">{code.category}</span></div>
-                                                    {code.source === 'multiple' && <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-full">Multiple sources</span>}
-                                                    {code.source === 'artifact' && <span className="text-[10px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded-full">Artifact</span>}
-                                                    {code.source === 'observation' && <span className="text-[10px] bg-violet-100 text-violet-800 px-1.5 py-0.5 rounded-full">Observation</span>}
-                                                </div>
-                                            ))}
-                                            {codeDetails.length === 0 && <p className="text-sm text-slate-400">No codes available for the selected folders and source items.</p>}
-                                        </div>
+                                <div className="bg-white border rounded-2xl p-4 shadow-soft flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                                    <div>
+                                        <h3 className="font-bold text-ink">Process Step View</h3>
+                                        <p className="text-xs text-slate-500">Focus on Step 2, Step 3, or keep both visible.</p>
                                     </div>
-
-                                    <div className="bg-white border rounded-2xl p-4 shadow-soft lg:col-span-2">
-                                        <div className="flex gap-2 mb-4">
-                                            <input value={newThemeName} onChange={e => setNewThemeName(e.target.value)} placeholder="New theme bucket" className="flex-1 border rounded-lg p-2.5 focus:outline-none focus:ring-2 focus:ring-ember" />
-                                            <button onClick={addTheme} className="bg-ember hover:bg-orange-700 text-white px-4 rounded-lg font-semibold">Add Theme</button>
-                                        </div>
-
-                                        {activeCanvas.themes.length === 0 && <p className="text-slate-400 text-sm">No themes yet in this canvas.</p>}
-
-                                        <div className="space-y-3">
-                                            {activeCanvas.themes.map(theme => (
-                                                <div
-                                                    key={theme.id}
-                                                    onDragOver={(e) => e.preventDefault()}
-                                                    onDrop={(e) => {
-                                                        e.preventDefault();
-                                                        const codeName = e.dataTransfer.getData('text/plain');
-                                                        moveCodeToTheme(theme.id, codeName);
-                                                    }}
-                                                    className="border-2 border-dashed rounded-xl p-4 bg-slate-50 group"
-                                                >
-                                                    <div className="flex justify-between items-center mb-3">
-                                                        {editingThemeId === theme.id ? (
-                                                            <div className="flex gap-2 flex-1">
-                                                                <input autoFocus value={editThemeName} onChange={e => setEditThemeName(e.target.value)} className="flex-1 border rounded p-1.5 text-sm focus:ring-2 focus:ring-tide outline-none" />
-                                                                <button onClick={saveEditTheme} className="bg-tide text-white px-2 rounded text-sm font-semibold">Save</button>
-                                                                <button onClick={() => setEditingThemeId(null)} className="bg-slate-300 text-slate-700 px-2 rounded text-sm font-semibold">Cancel</button>
-                                                            </div>
-                                                        ) : (
-                                                            <>
-                                                                <h4 className="font-bold text-ink">{theme.name}</h4>
-                                                                <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition">
-                                                                    <button onClick={() => startEditTheme(theme)} className="text-slate-400 hover:text-blue-600 text-sm">✎</button>
-                                                                    <button onClick={() => deleteTheme(theme.id)} className="text-slate-400 hover:text-red-600 text-sm">✕</button>
-                                                                </div>
-                                                            </>
-                                                        )}
-                                                    </div>
-                                                    <div className="flex flex-wrap gap-2">
-                                                        {theme.codes.map(codeName => {
-                                                            const found = codeDetails.find(c => c.name === codeName);
-                                                            return (
-                                                                <span key={codeName} className="inline-flex items-center gap-2 text-xs bg-teal-100 text-teal-900 px-3 py-1 rounded-full border border-teal-200">
-                                                                    {codeName} ({found?.count || 0})
-                                                                    <button onClick={() => removeCodeFromTheme(theme.id, codeName)} className="text-teal-700 hover:text-red-600">x</button>
-                                                                </span>
-                                                            );
-                                                        })}
-                                                        {theme.codes.length === 0 && <span className="text-xs text-slate-400">Drop codes here</span>}
-                                                    </div>
-                                                </div>
-                                            ))}
-                                        </div>
-
-                                        {unassigned.length > 0 && (
-                                            <div className="mt-5 pt-4 border-t">
-                                                <p className="text-xs uppercase text-slate-500 font-bold mb-2">Unassigned in this canvas</p>
-                                                <p className="text-sm text-slate-600">{unassigned.map(c => `${c.name} (${c.count})`).join(', ')}</p>
-                                            </div>
-                                        )}
+                                    <div className="inline-flex bg-slate-100 p-1 rounded-lg">
+                                        <button
+                                            type="button"
+                                            onClick={() => { setShowExportMenu(false); setProcessStepView('step2'); }}
+                                            className={`px-3 py-1.5 text-sm font-semibold rounded-md transition ${processStepView === 'step2' ? 'bg-white text-ink shadow' : 'text-slate-600 hover:bg-slate-200'}`}
+                                        >
+                                            Step 2 only
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => { setShowExportMenu(false); setProcessStepView('step3'); }}
+                                            className={`px-3 py-1.5 text-sm font-semibold rounded-md transition ${processStepView === 'step3' ? 'bg-white text-ink shadow' : 'text-slate-600 hover:bg-slate-200'}`}
+                                        >
+                                            Step 3 only
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => { setShowExportMenu(false); setProcessStepView('both'); }}
+                                            className={`px-3 py-1.5 text-sm font-semibold rounded-md transition ${processStepView === 'both' ? 'bg-white text-ink shadow' : 'text-slate-600 hover:bg-slate-200'}`}
+                                        >
+                                            Both steps
+                                        </button>
                                     </div>
                                 </div>
 
-                                <div className="bg-white border rounded-2xl p-5 shadow-soft mt-6">
-                                    <div className="flex items-center justify-between mb-3">
-                                        <h3 className="font-bold">Canvas Table (Themes, Codes, Quotes)</h3>
+                                {showStep2 && (
+                                <div className="bg-white border rounded-2xl p-5 shadow-soft">
+                                    <div className="flex items-center justify-between mb-4">
+                                        <h3 className="font-bold text-ink">Step 2: Categorization</h3>
                                         <div className="relative">
                                             <button
                                                 type="button"
-                                                onClick={() => setShowExportMenu(prev => !prev)}
+                                                onClick={() => setShowExportMenu((prev) => !prev)}
                                                 className="px-3 py-1.5 rounded-lg bg-ink text-white text-sm font-semibold hover:bg-slate-800"
                                             >
-                                                Export
+                                                Export Tables
                                             </button>
                                             {showExportMenu && (
-                                                <div className="absolute right-0 mt-2 w-64 bg-white border border-slate-200 rounded-xl shadow-soft z-30 p-2">
-                                                    <p className="px-2 py-1 text-[11px] uppercase font-bold tracking-wide text-slate-500">CSV</p>
-                                                    <button type="button" onClick={() => { exportCanvasCsv(); setShowExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm text-slate-700">Canvas table (.csv)</button>
-                                                    <button type="button" onClick={() => { exportAllCanvasTablesCsv(); setShowExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm text-slate-700">All canvas tables (.csv)</button>
-                                                    <div className="my-1 border-t" />
-                                                    <p className="px-2 py-1 text-[11px] uppercase font-bold tracking-wide text-slate-500">APA7 Word (.doc)</p>
-                                                    <button type="button" onClick={() => { exportCanvasApaDoc(); setShowExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm text-slate-700">Canvas table APA7 (.doc)</button>
-                                                    <button type="button" onClick={() => { exportAllCanvasApaDoc(); setShowExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm font-semibold text-ink">All canvas tables APA7 (.doc)</button>
+                                                <div className="absolute right-0 mt-2 w-72 bg-white border border-slate-200 rounded-xl shadow-soft z-30 p-2">
+                                                    <button type="button" onClick={() => { exportCategorizationTable(); setShowExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm text-slate-700">In-vivo codes with categories (.csv)</button>
+                                                    <button type="button" onClick={() => { exportThematicTable(); setShowExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm text-slate-700">Themes, categories, and in-vivo codes (.csv)</button>
                                                 </div>
                                             )}
                                         </div>
                                     </div>
-                                    {tableRows.length === 0 ? (
-                                        <p className="text-sm text-slate-500">No rows yet. Assign codes to themes first.</p>
+
+                                    <div className="grid lg:grid-cols-3 gap-5">
+                                        <div className="lg:col-span-1 space-y-3">
+                                            <div className="border rounded-xl p-3 bg-slate-50">
+                                                <div className="flex items-center justify-between">
+                                                    <p className="text-xs uppercase font-bold tracking-wide text-slate-500">Unassigned In-vivo Codes</p>
+                                                    <span className="text-xs font-semibold text-red-700 bg-red-100 px-2 py-0.5 rounded-full">{unassignedCodes.length}</span>
+                                                </div>
+                                                <p className="text-xs text-slate-500 mt-1">Drag cards into a category or use the quick category selector.</p>
+                                            </div>
+                                            <div className="space-y-2 max-h-[520px] overflow-y-auto pr-1">
+                                                {unassignedCodes.map((code) => (
+                                                    <div
+                                                        key={code.name}
+                                                        draggable
+                                                        onDragStart={(e) => e.dataTransfer.setData('text/plain', code.name)}
+                                                        className="border rounded-lg p-3 bg-white cursor-grab hover:border-tide transition"
+                                                    >
+                                                        <div className="font-semibold text-sm text-ink">{code.name}</div>
+                                                        <div className="text-xs text-slate-500 mt-1">{code.count} quotes • {code.source}</div>
+                                                        <select
+                                                            value=""
+                                                            onChange={(e) => {
+                                                                if (!e.target.value) return;
+                                                                assignCodeToCategory(e.target.value, code.name);
+                                                            }}
+                                                            className="mt-2 w-full border rounded p-1.5 text-xs"
+                                                        >
+                                                            <option value="">Quick assign to category...</option>
+                                                            {activeCanvas.categories.map((category) => (
+                                                                <option key={category.id} value={category.id}>{category.name}</option>
+                                                            ))}
+                                                        </select>
+                                                    </div>
+                                                ))}
+                                                {unassignedCodes.length === 0 && <p className="text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg p-3">All filtered in-vivo codes are assigned.</p>}
+                                            </div>
+                                        </div>
+
+                                        <div className="lg:col-span-2">
+                                            <div className="flex gap-2 mb-3">
+                                                <input value={newCategoryName} onChange={(e) => setNewCategoryName(e.target.value)} placeholder="Create category" className="flex-1 border rounded-lg p-2.5 focus:outline-none focus:ring-2 focus:ring-tide" />
+                                                <button onClick={addCategory} className="bg-tide hover:bg-teal-600 text-white px-4 rounded-lg font-semibold">Add Category</button>
+                                            </div>
+
+                                            <div className="space-y-3 max-h-[560px] overflow-y-auto pr-1">
+                                                {activeCanvas.categories.map((category) => (
+                                                    <div
+                                                        key={category.id}
+                                                        onDragOver={(e) => e.preventDefault()}
+                                                        onDrop={(e) => {
+                                                            e.preventDefault();
+                                                            assignCodeToCategory(category.id, e.dataTransfer.getData('text/plain'));
+                                                        }}
+                                                        className="border-2 border-dashed rounded-xl p-4 bg-slate-50"
+                                                    >
+                                                        <div className="flex items-center justify-between mb-3">
+                                                            <div className="flex items-center gap-2">
+                                                                <h4 className="font-bold text-ink">{category.name}</h4>
+                                                                <span className="text-[11px] font-semibold bg-teal-100 text-teal-800 px-2 py-0.5 rounded-full">{category.codes.length} assigned</span>
+                                                            </div>
+                                                            <div className="flex gap-2">
+                                                                <button onClick={() => renameCategory(category.id)} className="text-xs font-semibold text-blue-700 hover:text-blue-800">Rename</button>
+                                                                <button onClick={() => removeCategory(category.id)} className="text-xs font-semibold text-red-700 hover:text-red-800">Delete</button>
+                                                            </div>
+                                                        </div>
+                                                        <div className="flex flex-wrap gap-2">
+                                                            {category.codes.filter((codeName) => !!codeDetailByName[codeName]).map((codeName) => (
+                                                                <span key={`${category.id}_${codeName}`} className="inline-flex items-center gap-2 text-xs bg-white border border-slate-300 px-3 py-1 rounded-full">
+                                                                    <span className="font-semibold">{codeName}</span>
+                                                                    <span className="text-slate-500">({codeDetailByName[codeName]?.count || 0})</span>
+                                                                    <button onClick={() => unassignCode(codeName)} className="text-red-600 hover:text-red-700">x</button>
+                                                                </span>
+                                                            ))}
+                                                            {category.codes.filter((codeName) => !!codeDetailByName[codeName]).length === 0 && <span className="text-xs text-slate-400">Drop in-vivo code cards here</span>}
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                                {activeCanvas.categories.length === 0 && <p className="text-sm text-slate-500">No categories yet. Create a category to start organizing in-vivo codes.</p>}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                )}
+
+                                {showStep3 && (
+                                <>
+                                <div className="bg-white border rounded-2xl p-5 shadow-soft">
+                                    <h3 className="font-bold text-ink mb-4">Step 3: Thematic Analysis</h3>
+                                    <div className="grid lg:grid-cols-3 gap-5">
+                                        <div className="lg:col-span-1">
+                                            <div className="border rounded-xl p-3 bg-slate-50 mb-3">
+                                                <div className="flex items-center justify-between">
+                                                    <p className="text-xs uppercase font-bold tracking-wide text-slate-500">Unassigned Categories</p>
+                                                    <span className="text-xs font-semibold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">{unassignedCategories.length}</span>
+                                                </div>
+                                            </div>
+                                            <div className="space-y-2 max-h-[400px] overflow-y-auto pr-1">
+                                                {unassignedCategories.map((category) => (
+                                                    <div
+                                                        key={`unassigned_${category.id}`}
+                                                        draggable
+                                                        onDragStart={(e) => e.dataTransfer.setData('text/plain', category.name)}
+                                                        className="border rounded-lg p-3 bg-white cursor-grab hover:border-amber-400"
+                                                    >
+                                                        <div className="font-semibold text-sm text-ink">{category.name}</div>
+                                                        <div className="text-xs text-slate-500 mt-1">{category.codes.filter((codeName) => !!codeDetailByName[codeName]).length} in-vivo codes</div>
+                                                    </div>
+                                                ))}
+                                                {unassignedCategories.length === 0 && <p className="text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg p-3">All categories are grouped into themes.</p>}
+                                            </div>
+                                        </div>
+
+                                        <div className="lg:col-span-2">
+                                            <div className="flex gap-2 mb-3">
+                                                <input value={newThemeName} onChange={(e) => setNewThemeName(e.target.value)} placeholder="Create theme" className="flex-1 border rounded-lg p-2.5 focus:outline-none focus:ring-2 focus:ring-ember" />
+                                                <button onClick={addTheme} className="bg-ember hover:bg-orange-700 text-white px-4 rounded-lg font-semibold">Add Theme</button>
+                                            </div>
+
+                                            <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1">
+                                                {activeCanvas.themes.map((theme) => (
+                                                    <div
+                                                        key={theme.id}
+                                                        onDragOver={(e) => e.preventDefault()}
+                                                        onDrop={(e) => {
+                                                            e.preventDefault();
+                                                            assignCategoryToTheme(theme.id, e.dataTransfer.getData('text/plain'));
+                                                        }}
+                                                        className="border-2 border-dashed rounded-xl p-4 bg-slate-50"
+                                                    >
+                                                        <div className="flex items-center justify-between mb-3">
+                                                            <h4 className="font-bold text-ink">{theme.name}</h4>
+                                                            <div className="flex gap-2">
+                                                                <button onClick={() => renameTheme(theme.id)} className="text-xs font-semibold text-blue-700 hover:text-blue-800">Rename</button>
+                                                                <button onClick={() => removeTheme(theme.id)} className="text-xs font-semibold text-red-700 hover:text-red-800">Delete</button>
+                                                            </div>
+                                                        </div>
+
+                                                        <div className="space-y-2">
+                                                            {theme.categories.map((categoryName) => {
+                                                                const category = activeCanvas.categories.find((item) => item.name === categoryName);
+                                                                const visibleCodes = (category?.codes || []).filter((codeName) => !!codeDetailByName[codeName]);
+                                                                return (
+                                                                    <div key={`${theme.id}_${categoryName}`} className="bg-white border rounded-lg p-3">
+                                                                        <div className="flex items-center justify-between mb-2">
+                                                                            <div className="font-semibold text-sm text-ink">{categoryName}</div>
+                                                                            <button onClick={() => unassignCategoryFromTheme(theme.id, categoryName)} className="text-xs font-semibold text-red-700 hover:text-red-800">Remove</button>
+                                                                        </div>
+                                                                        <div className="flex flex-wrap gap-1.5">
+                                                                            {visibleCodes.map((codeName) => (
+                                                                                <span key={`${theme.id}_${categoryName}_${codeName}`} className="text-[11px] bg-teal-100 text-teal-900 px-2 py-0.5 rounded-full border border-teal-200">{codeName}</span>
+                                                                            ))}
+                                                                            {visibleCodes.length === 0 && <span className="text-xs text-slate-400">No filtered in-vivo codes in this category.</span>}
+                                                                        </div>
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                            {theme.categories.length === 0 && <p className="text-xs text-slate-400">Drop categories here to build this theme.</p>}
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                                {activeCanvas.themes.length === 0 && <p className="text-sm text-slate-500">No themes yet. Add a theme, then drag categories into it.</p>}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="bg-white border rounded-2xl p-5 shadow-soft">
+                                    <h3 className="font-bold mb-3">Thematic Table Preview</h3>
+                                    {thematicRows.length === 0 ? (
+                                        <p className="text-sm text-slate-500">No thematic rows yet. Assign categories to themes to generate the table.</p>
                                     ) : (
                                         <div className="overflow-x-auto">
                                             <table className="w-full text-sm border-collapse">
                                                 <thead>
                                                     <tr className="text-left border-b bg-slate-50">
                                                         <th className="p-3">Theme</th>
-                                                        <th className="p-3">Code</th>
                                                         <th className="p-3">Category</th>
+                                                        <th className="p-3">In-vivo Code</th>
                                                         <th className="p-3">Quotes</th>
-                                                        <th className="p-3">Details</th>
                                                     </tr>
                                                 </thead>
                                                 <tbody>
-                                                    {tableRows.map((row, idx) => (
-                                                        <tr key={`${row.theme}_${row.code}_${idx}`} className="border-b align-top">
+                                                    {thematicRows.map((row, idx) => (
+                                                        <tr key={`${row.theme}_${row.category}_${row.code}_${idx}`} className="border-b align-top">
                                                             <td className="p-3 font-semibold">{row.theme}</td>
-                                                            <td className="p-3">{row.code}</td>
                                                             <td className="p-3">{row.category}</td>
+                                                            <td className="p-3">{row.code || '-'}</td>
                                                             <td className="p-3">{row.quoteCount}</td>
-                                                            <td className="p-3">
-                                                                <details>
-                                                                    <summary className="cursor-pointer text-tide">Show quotes</summary>
-                                                                    <div className="mt-2 space-y-2 max-h-48 overflow-y-auto">
-                                                                        {row.quotes.length === 0 && <p className="text-xs text-slate-400">No quote text available.</p>}
-                                                                        {row.quotes.map((q, qIdx) => (
-                                                                            <div key={`${row.code}_${qIdx}`} className="text-xs bg-slate-50 border rounded p-2">
-                                                                                <p className="font-semibold text-slate-600">[{q.source}] {q.ref} • {q.folder}</p>
-                                                                                <p className="text-slate-700 italic">"{q.text}"</p>
-                                                                            </div>
-                                                                        ))}
-                                                                    </div>
-                                                                </details>
-                                                            </td>
                                                         </tr>
                                                     ))}
                                                 </tbody>
@@ -7147,6 +7432,8 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                                         </div>
                                     )}
                                 </div>
+                                </>
+                                )}
                             </div>
                         )}
                     </div>
