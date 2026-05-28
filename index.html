@@ -3183,7 +3183,10 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
 
             const handleDownloadApp = async () => {
                 try {
-                    const html = `<!DOCTYPE html>\n${document.documentElement.outerHTML}`;
+                    const appUrl = new URL('./index.html', window.location.href).toString();
+                    const res = await fetch(appUrl, { cache: 'no-store' });
+                    if (!res.ok) throw new Error('Failed to fetch app file');
+                    const html = await res.text();
                     const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
                     const a = document.createElement('a');
                     a.href = URL.createObjectURL(blob);
@@ -3193,7 +3196,7 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                 } catch (err) {
                     showNotice({
                         title: 'Download Unavailable',
-                        message: 'Unable to package this app file for download in the current browser.'
+                        message: 'Unable to download app file from this location. If opened via file://, use your file manager to copy index.html directly.'
                     });
                 }
             };
