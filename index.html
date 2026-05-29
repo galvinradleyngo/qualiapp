@@ -5300,6 +5300,7 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
             const [content, setContent] = useState(transcript.content || '');
             const [contentHtml, setContentHtml] = useState(transcript.contentHtml || '');
             const [notes, setNotes] = useState(transcript.notes || '');
+            const [notesHtml, setNotesHtml] = useState(transcript.notesHtml || '');
             const [modality, setModality] = useState(transcript.modality || '');
             const [saveStatus, setSaveStatus] = useState('saved');
             const [lastSavedAt, setLastSavedAt] = useState(null);
@@ -5325,6 +5326,7 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
 
             const textRef = useRef(null);
             const editableRef = useRef(null);
+            const notesEditableRef = useRef(null);
             const audioRef = useRef(null);
             const audioTrackUrlsRef = useRef([]);
             const SPEED_STEPS = [0.5, 0.75, 1, 1.25, 1.5, 2];
@@ -5365,7 +5367,9 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                 const nextContent = transcript.content || '';
                 setContent(nextContent);
                 setContentHtml(transcript.contentHtml || plainToHtml(nextContent));
-                setNotes(transcript.notes || '');
+                const nextNotes = transcript.notes || '';
+                setNotes(nextNotes);
+                setNotesHtml(transcript.notesHtml || plainToHtml(nextNotes));
                 setModality(transcript.modality || '');
                 setPlaybackRate(transcript.playbackRate || 1);
                 setSaveStatus('saved');
@@ -5382,6 +5386,15 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                 const expectedHtml = contentHtml || plainToHtml(content);
                 if (editableRef.current.innerHTML !== expectedHtml) {
                     editableRef.current.innerHTML = expectedHtml;
+                }
+            }, [transcript.id, mode]);
+
+            useEffect(() => {
+                if (!notesEditableRef.current) return;
+                if (mode !== 'notes') return;
+                const expectedHtml = notesHtml || plainToHtml(notes);
+                if (notesEditableRef.current.innerHTML !== expectedHtml) {
+                    notesEditableRef.current.innerHTML = expectedHtml;
                 }
             }, [transcript.id, mode]);
 
@@ -5446,12 +5459,13 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                 setSaveStatus('unsaved');
             };
 
-            const persistTranscriptDraft = (nextHtml, nextPlain, nextNotes) => {
+            const persistTranscriptDraft = (nextHtml, nextPlain, nextNotes, nextNotesHtml) => {
                 const savedHtml = transcript.contentHtml || plainToHtml(transcript.content || '');
                 const savedPlain = transcript.content || '';
                 const savedNotes = transcript.notes || '';
+                const savedNotesHtml = transcript.notesHtml || plainToHtml(savedNotes);
 
-                if (nextHtml === savedHtml && nextPlain === savedPlain && nextNotes === savedNotes) {
+                if (nextHtml === savedHtml && nextPlain === savedPlain && nextNotes === savedNotes && nextNotesHtml === savedNotesHtml) {
                     return false;
                 }
 
@@ -5462,6 +5476,7 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                         content: nextPlain,
                         contentHtml: nextHtml,
                         notes: nextNotes,
+                        notesHtml: nextNotesHtml,
                         modality
                     });
                     setLastSavedAt(new Date());
@@ -5476,25 +5491,32 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
             useEffect(() => {
                 const nextHtml = contentHtml || plainToHtml(content);
                 const nextPlain = htmlToPlain(nextHtml);
+                const nextNotesHtml = notesHtml || plainToHtml(notes);
+                const nextNotesPlain = htmlToPlain(nextNotesHtml);
                 const savedHtml = transcript.contentHtml || plainToHtml(transcript.content || '');
                 const savedPlain = transcript.content || '';
                 const savedNotes = transcript.notes || '';
+                const savedNotesHtml = transcript.notesHtml || plainToHtml(savedNotes);
 
-                if (nextHtml === savedHtml && nextPlain === savedPlain && notes === savedNotes) return;
+                if (nextHtml === savedHtml && nextPlain === savedPlain && nextNotesPlain === savedNotes && nextNotesHtml === savedNotesHtml) return;
 
                 const timer = setTimeout(() => {
-                    persistTranscriptDraft(nextHtml, nextPlain, notes);
+                    persistTranscriptDraft(nextHtml, nextPlain, nextNotesPlain, nextNotesHtml);
                 }, 300);
 
                 return () => clearTimeout(timer);
-            }, [contentHtml, content, notes, transcript, onUpdateTranscript]);
+            }, [contentHtml, content, notes, notesHtml, transcript, onUpdateTranscript]);
 
             const handleSave = () => {
                 const latestHtml = editableRef.current ? editableRef.current.innerHTML : contentHtml;
                 const latestPlain = htmlToPlain(latestHtml);
+                const latestNotesHtml = notesEditableRef.current ? notesEditableRef.current.innerHTML : (notesHtml || plainToHtml(notes));
+                const latestNotesPlain = htmlToPlain(latestNotesHtml);
                 setContentHtml(latestHtml);
                 setContent(latestPlain);
-                const didSave = persistTranscriptDraft(latestHtml, latestPlain, notes);
+                setNotesHtml(latestNotesHtml);
+                setNotes(latestNotesPlain);
+                const didSave = persistTranscriptDraft(latestHtml, latestPlain, latestNotesPlain, latestNotesHtml);
                 if (!didSave) setSaveStatus('saved');
             };
 
@@ -5609,6 +5631,7 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                         content: latestPlain,
                         contentHtml: latestHtml,
                         notes,
+                        notesHtml,
                         modality: nextModality
                     });
                     setLastSavedAt(new Date());
@@ -5801,6 +5824,7 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                         content,
                         contentHtml,
                         notes,
+                        notesHtml,
                         modality,
                         playbackRate,
                         hasAudio: nextAudioMeta.length > 0,
@@ -5865,6 +5889,7 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                     content,
                     contentHtml,
                     notes,
+                    notesHtml,
                     modality,
                     playbackRate,
                     hasAudio: nextAudioMeta.length > 0,
@@ -5881,13 +5906,13 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                 const nextRate = SPEED_STEPS[targetIndex];
                 if (nextRate === playbackRate) return;
                 setPlaybackRate(nextRate);
-                onUpdateTranscript({ ...transcript, content, contentHtml, notes, modality, playbackRate: nextRate });
+                onUpdateTranscript({ ...transcript, content, contentHtml, notes, notesHtml, modality, playbackRate: nextRate });
             };
 
             const resetPlaybackRate = () => {
                 if (playbackRate === 1) return;
                 setPlaybackRate(1);
-                onUpdateTranscript({ ...transcript, content, contentHtml, notes, modality, playbackRate: 1 });
+                onUpdateTranscript({ ...transcript, content, contentHtml, notes, notesHtml, modality, playbackRate: 1 });
             };
 
             const submitActivityLog = (e) => {
@@ -5900,7 +5925,7 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                     note: logNote.trim(),
                     timestamp: new Date().toISOString()
                 };
-                onUpdateTranscript({ ...transcript, content, contentHtml, notes, modality, activityLog: [newLog, ...activityLog] });
+                onUpdateTranscript({ ...transcript, content, contentHtml, notes, notesHtml, modality, activityLog: [newLog, ...activityLog] });
                 setLogType('');
                 setLogNote('');
             };
@@ -6307,7 +6332,21 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                                 )}
                                 {mode === 'notes' && (
                                     <div className="h-full flex flex-col max-w-3xl mx-auto w-full">
-                                        <textarea value={notes} onChange={e => { setNotes(e.target.value); setSaveStatus('unsaved'); }} onBlur={handleSave} placeholder="Type overarching observations and context for this transcript..." className="flex-1 w-full resize-none outline-none border border-slate-300 bg-white p-6 rounded-xl text-lg text-slate-800 leading-relaxed shadow-sm focus:ring-2 ring-ink transition" />
+                                        <div
+                                            ref={notesEditableRef}
+                                            contentEditable
+                                            suppressContentEditableWarning
+                                            onInput={() => {
+                                                if (!notesEditableRef.current) return;
+                                                const html = notesEditableRef.current.innerHTML;
+                                                setNotesHtml(html);
+                                                setNotes(htmlToPlain(html));
+                                                setSaveStatus('unsaved');
+                                            }}
+                                            onBlur={handleSave}
+                                            className="flex-1 w-full outline-none border border-slate-300 bg-white p-6 rounded-xl text-lg text-slate-800 leading-relaxed shadow-sm focus:ring-2 ring-ink transition whitespace-pre-wrap min-h-[400px]"
+                                            data-placeholder="Type overarching observations and context for this transcript..."
+                                        />
                                     </div>
                                 )}
                                 {mode === 'log' && (
@@ -7797,6 +7836,7 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                     date: newDate,
                     folder: newObsFolder,
                     content: newTranscript,
+                    contentHtml: '',
                     notes: '',
                     audioFiles: newAudioFiles,
                     createdAt: new Date().toISOString()
@@ -7985,7 +8025,9 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
             const { showNotice, noticeDialog } = useNoticeDialog();
             const [mode, setMode] = useState('edit');
             const [content, setContent] = useState(observation.content || '');
+            const [contentHtml, setContentHtml] = useState(observation.contentHtml || '');
             const [notes, setNotes] = useState(observation.notes || '');
+            const [notesHtml, setNotesHtml] = useState(observation.notesHtml || '');
             const [editingTitle, setEditingTitle] = useState(false);
             const [titleInput, setTitleInput] = useState(observation.title || '');
             const [editingFolder, setEditingFolder] = useState(false);
@@ -8005,6 +8047,7 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
 
             const textRef = useRef(null);
             const editableRef = useRef(null);
+            const notesEditableRef = useRef(null);
             const audioRef = useRef(null);
             const audioTrackUrlsRef = useRef([]);
             const SPEED_STEPS = [0.5, 0.75, 1, 1.25, 1.5, 2];
@@ -8019,8 +8062,12 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
             };
 
             useEffect(() => {
-                setContent(observation.content || '');
-                setNotes(observation.notes || '');
+                const nextContent = observation.content || '';
+                setContent(nextContent);
+                setContentHtml(observation.contentHtml || plainToHtml(nextContent));
+                const nextNotes = observation.notes || '';
+                setNotes(nextNotes);
+                setNotesHtml(observation.notesHtml || plainToHtml(nextNotes));
                 setTitleInput(observation.title || '');
                 setFolderInput(observation.folder || '');
                 setEditingFolder(false);
@@ -8138,7 +8185,9 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                     onUpdate({
                         ...observation,
                         content,
+                        contentHtml,
                         notes,
+                        notesHtml,
                         playbackRate,
                         hasAudio: nextAudioMeta.length > 0,
                         audioFiles: nextAudioMeta
@@ -8178,7 +8227,9 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                 onUpdate({
                     ...observation,
                     content,
+                    contentHtml,
                     notes,
+                    notesHtml,
                     playbackRate,
                     hasAudio: nextAudioMeta.length > 0,
                     audioFiles: nextAudioMeta
@@ -8287,13 +8338,13 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                 const nextRate = SPEED_STEPS[targetIndex];
                 if (nextRate === playbackRate) return;
                 setPlaybackRate(nextRate);
-                onUpdate({ ...observation, content, notes, playbackRate: nextRate });
+                onUpdate({ ...observation, content, contentHtml, notes, notesHtml, playbackRate: nextRate });
             };
 
             const resetPlaybackRate = () => {
                 if (playbackRate === 1) return;
                 setPlaybackRate(1);
-                onUpdate({ ...observation, content, notes, playbackRate: 1 });
+                onUpdate({ ...observation, content, contentHtml, notes, notesHtml, playbackRate: 1 });
             };
 
             const handleSaveFolder = () => {
@@ -8303,15 +8354,28 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
 
             useEffect(() => {
                 if (editableRef.current && mode === 'edit') {
-                    const expected = plainToHtml(content);
+                    const expected = contentHtml || plainToHtml(content);
                     if (editableRef.current.innerHTML !== expected) editableRef.current.innerHTML = expected;
                 }
             }, [observation.id, mode]);
 
+            useEffect(() => {
+                if (notesEditableRef.current && mode === 'notes') {
+                    const expected = notesHtml || plainToHtml(notes);
+                    if (notesEditableRef.current.innerHTML !== expected) notesEditableRef.current.innerHTML = expected;
+                }
+            }, [observation.id, mode]);
+
             const handleSave = () => {
-                const latestHtml = editableRef.current ? editableRef.current.innerHTML : plainToHtml(content);
+                const latestHtml = editableRef.current ? editableRef.current.innerHTML : (contentHtml || plainToHtml(content));
                 const latestPlain = htmlToPlain(latestHtml);
-                onUpdate({ ...observation, content: latestPlain, notes });
+                setContentHtml(latestHtml);
+                setContent(latestPlain);
+                const latestNotesHtml = notesEditableRef.current ? notesEditableRef.current.innerHTML : (notesHtml || plainToHtml(notes));
+                const latestNotesPlain = htmlToPlain(latestNotesHtml);
+                setNotesHtml(latestNotesHtml);
+                setNotes(latestNotesPlain);
+                onUpdate({ ...observation, content: latestPlain, contentHtml: latestHtml, notes: latestNotesPlain, notesHtml: latestNotesHtml });
             };
 
             const handleSaveTitle = () => {
@@ -8433,9 +8497,10 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
             };
 
             const renderHighlightedHtml = () => {
-                if (!content) return '';
+                const baseHtml = contentHtml || plainToHtml(content);
+                if (!baseHtml) return '';
                 const container = document.createElement('div');
-                container.innerHTML = plainToHtml(content);
+                container.innerHTML = baseHtml;
                 const sorted = [...tags]
                     .filter(t => Number.isFinite(t.start) && Number.isFinite(t.end) && t.end > t.start)
                     .sort((a, b) => a.start - b.start);
@@ -8677,7 +8742,10 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                                             contentEditable
                                             suppressContentEditableWarning
                                             onInput={() => {
-                                                if (editableRef.current) setContent(htmlToPlain(editableRef.current.innerHTML));
+                                                if (!editableRef.current) return;
+                                                const html = editableRef.current.innerHTML;
+                                                setContentHtml(html);
+                                                setContent(htmlToPlain(html));
                                             }}
                                             onClick={handleTimecodeBookmarkClick}
                                             onBlur={handleSave}
@@ -8695,7 +8763,20 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                                 )}
                                 {mode === 'notes' && (
                                     <div className="h-full flex flex-col max-w-3xl mx-auto w-full">
-                                        <textarea value={notes} onChange={e => setNotes(e.target.value)} onBlur={handleSave} placeholder="Write overarching memos and reflective notes on this observation..." className="flex-1 w-full resize-none outline-none border border-slate-300 bg-white p-6 rounded-xl text-lg text-slate-800 leading-relaxed shadow-sm focus:ring-2 ring-ink transition min-h-[400px]" />
+                                        <div
+                                            ref={notesEditableRef}
+                                            contentEditable
+                                            suppressContentEditableWarning
+                                            onInput={() => {
+                                                if (!notesEditableRef.current) return;
+                                                const html = notesEditableRef.current.innerHTML;
+                                                setNotesHtml(html);
+                                                setNotes(htmlToPlain(html));
+                                            }}
+                                            onBlur={handleSave}
+                                            className="flex-1 w-full outline-none border border-slate-300 bg-white p-6 rounded-xl text-lg text-slate-800 leading-relaxed shadow-sm focus:ring-2 ring-ink transition whitespace-pre-wrap min-h-[400px]"
+                                            data-placeholder="Write overarching memos and reflective notes on this observation..."
+                                        />
                                     </div>
                                 )}
                             </div>
