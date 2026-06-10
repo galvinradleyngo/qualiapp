@@ -7184,6 +7184,7 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
             const [selectedFolders, setSelectedFolders] = useState([]);
             const [selectedSourceIds, setSelectedSourceIds] = useState([]);
             const [showExportMenu, setShowExportMenu] = useState(false);
+            const [showConnectingExportMenu, setShowConnectingExportMenu] = useState(false);
             const [processStepView, setProcessStepView] = useState('both');
             const [expandedCategoryIds, setExpandedCategoryIds] = useState({});
             const [connectingCursor, setConnectingCursor] = useState(0);
@@ -7221,6 +7222,121 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                 link.click();
                 URL.revokeObjectURL(link.href);
             };
+
+            const downloadWordDoc = (filename, htmlContent) => {
+                const wrapped = `<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body>${htmlContent}</body></html>`;
+                const blob = new Blob([wrapped], { type: 'application/msword;charset=utf-8' });
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(blob);
+                link.download = filename;
+                link.click();
+                URL.revokeObjectURL(link.href);
+            };
+
+            const escapeForHtml = (value) => String(value ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+
+            const buildApaTableHtml = (tableNumber, title, columns, rows, noteText) => {
+                const header = columns.map(col => `<th style="text-align:left;padding:6px;border-bottom:1.5px solid #000;font-weight:700;">${escapeForHtml(col)}</th>`).join('');
+                const body = rows.map(row => `<tr>${row.map(cell => `<td style="padding:6px;border-bottom:1px solid #d1d5db;vertical-align:top;">${escapeForHtml(cell)}</td>`).join('')}</tr>`).join('');
+
+                return `
+                    <div style="font-family:'Times New Roman',serif;font-size:12pt;line-height:1.35;margin-bottom:24px;">
+                        <div style="font-weight:700;">Table ${tableNumber}</div>
+                        <div style="font-style:italic;margin:4px 0 10px 0;">${escapeForHtml(title)}</div>
+                        <table style="width:100%;border-collapse:collapse;border-top:1.5px solid #000;">
+                            <thead><tr>${header}</tr></thead>
+                            <tbody>${body || `<tr><td colspan="${columns.length}" style="padding:6px;">No rows available.</td></tr>`}</tbody>
+                        </table>
+                        <div style="margin-top:6px;"><span style="font-style:italic;">Note.</span> ${escapeForHtml(noteText)}</div>
+                    </div>
+                `;
+            };
+
+            const buildApaFigureHtml = (figureNumber, title, figureInnerHtml, noteText) => `
+                <div style="font-family:'Times New Roman',serif;font-size:12pt;line-height:1.35;margin-bottom:24px;">
+                    <div style="font-weight:700;">Figure ${figureNumber}</div>
+                    <div style="font-style:italic;margin:4px 0 10px 0;">${escapeForHtml(title)}</div>
+                    <div style="border-top:1.5px solid #000;padding-top:10px;">${figureInnerHtml}</div>
+                    <div style="margin-top:6px;"><span style="font-style:italic;">Note.</span> ${escapeForHtml(noteText)}</div>
+                </div>
+            `;
+
+            const buildRelationalMapSvgMarkup = (geometry) => {
+                if (!geometry || !geometry.nodes || geometry.nodes.length === 0) return '';
+                const width = Number(geometry.width || 980);
+                const height = Number(geometry.height || 640);
+
+                const linkMarkup = (geometry.links || []).map((link) => {
+                    const sourceNode = geometry.nodes.find((node) => node.code === link.sourceCode);
+                    const targetNode = geometry.nodes.find((node) => node.code === link.targetCode);
+                    if (!sourceNode || !targetNode) return '';
+                    return `<line x1="${sourceNode.x}" y1="${sourceNode.y}" x2="${targetNode.x}" y2="${targetNode.y}" stroke="#64748b" stroke-width="2" />`;
+                }).join('');
+
+                const nodeMarkup = geometry.nodes.map((node) => {
+                    const tierColor = node.tier === 'low'
+                        ? '#ef4444'
+                        : node.tier === 'mid'
+                            ? '#3b82f6'
+                            : '#16a34a';
+
+                    return `
+                        <g>
+                            <circle cx="${node.x}" cy="${node.y}" r="34" fill="${tierColor}" stroke="#ffffff" stroke-width="2" />
+                            <text x="${node.x}" y="${node.y}" text-anchor="middle" dominant-baseline="middle" fill="#ffffff" font-weight="700" font-size="12">${escapeForHtml(`${node.code} (${node.degree})`)}</text>
+                        </g>
+                    `;
+                }).join('');
+
+                return `
+                    <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+                        <rect x="0" y="0" width="100%" height="100%" fill="#f8fafc" />
+                        ${linkMarkup}
+                        ${nodeMarkup}
+                    </svg>
+                `;
+            };
+
+            const renderSvgToPngDataUrl = (svgMarkup, width, height) => new Promise((resolve, reject) => {
+                const svgBlob = new Blob([svgMarkup], { type: 'image/svg+xml;charset=utf-8' });
+                const svgUrl = URL.createObjectURL(svgBlob);
+                const image = new Image();
+
+                image.onload = () => {
+                    try {
+                        const canvas = document.createElement('canvas');
+                        canvas.width = width;
+                        canvas.height = height;
+                        const context = canvas.getContext('2d');
+                        if (!context) {
+                            URL.revokeObjectURL(svgUrl);
+                            reject(new Error('Canvas context unavailable'));
+                            return;
+                        }
+                        context.fillStyle = '#ffffff';
+                        context.fillRect(0, 0, width, height);
+                        context.drawImage(image, 0, 0, width, height);
+                        const pngDataUrl = canvas.toDataURL('image/png');
+                        URL.revokeObjectURL(svgUrl);
+                        resolve(pngDataUrl);
+                    } catch (error) {
+                        URL.revokeObjectURL(svgUrl);
+                        reject(error);
+                    }
+                };
+
+                image.onerror = () => {
+                    URL.revokeObjectURL(svgUrl);
+                    reject(new Error('Failed to render SVG image'));
+                };
+
+                image.src = svgUrl;
+            });
 
             useEffect(() => {
                 if (!activeCanvasId && canvases[0]) setActiveCanvasId(canvases[0].id);
@@ -7871,6 +7987,51 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                 downloadCsv(`${activeCanvas.name.replace(/\s+/g, '_')}_thematic_table.csv`, lines);
             };
 
+            const exportClusteringTableApaDoc = () => {
+                if (!activeCanvas) return;
+                const html = buildApaTableHtml(
+                    1,
+                    'Clustering Table',
+                    ['In-vivo Code', 'Category Code', 'Category', 'Quote Count', 'Source', 'Folders'],
+                    clusteringRows.map((row) => {
+                        const foundCategory = (activeCanvas.categories || []).find((category) => category.name === row.category);
+                        return [
+                            row.code,
+                            foundCategory?.code || '',
+                            row.category,
+                            String(row.quoteCount),
+                            row.source,
+                            row.folders
+                        ];
+                    }),
+                    'Rows reflect the currently filtered source items and folders.'
+                );
+                downloadWordDoc(`${activeCanvas.name.replace(/\s+/g, '_')}_APA7_clustering_table.doc`, html);
+            };
+
+            const exportThematicTableApaDoc = () => {
+                if (!activeCanvas) return;
+                const html = buildApaTableHtml(
+                    1,
+                    'Thematic Table',
+                    ['Theme', 'Category Code', 'Category', 'In-vivo Code', 'Quote Count', 'Source', 'Folders'],
+                    thematicRows.map((row) => {
+                        const foundCategory = (activeCanvas.categories || []).find((category) => category.name === row.category);
+                        return [
+                            row.theme,
+                            foundCategory?.code || '',
+                            row.category,
+                            row.code,
+                            String(row.quoteCount),
+                            row.source,
+                            row.folders
+                        ];
+                    }),
+                    'Rows reflect the currently filtered source items and folders.'
+                );
+                downloadWordDoc(`${activeCanvas.name.replace(/\s+/g, '_')}_APA7_thematic_table.doc`, html);
+            };
+
             const uniqueCodeCount = new Set(codeDetails.map((code) => code.name)).size;
             const uniqueCategoryCount = new Set((activeCanvas?.categories || []).map((category) => category.name)).size;
             const uniqueThemeCount = new Set((activeCanvas?.themes || []).map((theme) => theme.name)).size;
@@ -8141,6 +8302,92 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                 return { width, height, nodes, links };
             }, [activeCanvas, categoryDegrees, degreeRangeLegend]);
 
+            const connectingMatrixRows = useMemo(() => {
+                if (!activeCanvas) return [];
+                return (activeCanvas.categories || []).map((rowCategory) => {
+                    const cells = (activeCanvas.categories || []).map((columnCategory) => {
+                        if (rowCategory.code === columnCategory.code) return '1';
+                        const value = getConnectionValue(rowCategory.code, columnCategory.code);
+                        return value == null ? '?' : String(value);
+                    });
+                    return [rowCategory.code, ...cells];
+                });
+            }, [activeCanvas]);
+
+            const connectingNarrativeRows = useMemo(() => {
+                if (!activeCanvas) return [];
+                return (activeCanvas.categories || []).map((category) => {
+                    const connectedCodes = (activeCanvas.categories || [])
+                        .filter((item) => item.code !== category.code)
+                        .map((item) => item.code)
+                        .filter((code) => getConnectionValue(category.code, code) === 1);
+                    const rationaleSummary = connectedCodes.map((code) => {
+                        const rationale = getConnectionRationale(category.code, code);
+                        return rationale ? `${code}:${rationale}` : `${code}:`;
+                    }).join(' | ');
+                    return [
+                        category.code,
+                        connectedCodes.join(' - '),
+                        rationaleSummary,
+                        (activeCanvas.connectionNotes || {})[category.code] || buildNarrativeDefault(category.code)
+                    ];
+                });
+            }, [activeCanvas]);
+
+            const exportConnectingMatrixApaDoc = () => {
+                if (!activeCanvas) return;
+                const categoryCodes = (activeCanvas.categories || []).map((category) => category.code);
+                const html = buildApaTableHtml(
+                    1,
+                    'Connecting Matrix (One-mode Network)',
+                    ['Category', ...categoryCodes],
+                    connectingMatrixRows,
+                    'Diagonal cells are fixed at 1; ? indicates not identified yet.'
+                );
+                downloadWordDoc(`${activeCanvas.name.replace(/\s+/g, '_')}_APA7_connecting_matrix.doc`, html);
+            };
+
+            const exportConnectingNarrativeApaDoc = () => {
+                if (!activeCanvas) return;
+                const html = buildApaTableHtml(
+                    1,
+                    'Connecting Narrative Table',
+                    ['Category', 'Connected Categories', 'Rationale Codes', 'Narrative'],
+                    connectingNarrativeRows,
+                    'Rationale codes: A = specificity, B = part-whole, C = conditional.'
+                );
+                downloadWordDoc(`${activeCanvas.name.replace(/\s+/g, '_')}_APA7_connecting_narrative.doc`, html);
+            };
+
+            const exportConnectingFigureApaDoc = async () => {
+                if (!activeCanvas || !relationalMapGeometry) return;
+                const width = Number(relationalMapGeometry.width || 980);
+                const height = Number(relationalMapGeometry.height || 640);
+                const svgMarkup = buildRelationalMapSvgMarkup(relationalMapGeometry);
+                if (!svgMarkup) return;
+
+                let imageSource = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgMarkup)}`;
+                try {
+                    imageSource = await renderSvgToPngDataUrl(svgMarkup, width, height);
+                } catch (error) {
+                    // Fallback to embedded SVG data URI if PNG rendering fails in-browser.
+                }
+
+                const figureInner = `
+                    <div style="text-align:center;">
+                        <img src="${imageSource}" alt="Relational map of category connections" style="display:inline-block;max-width:100%;height:auto;border:1px solid #d1d5db;" />
+                    </div>
+                `;
+
+                const html = buildApaFigureHtml(
+                    1,
+                    'Relational Map of Category Connections',
+                    figureInner,
+                    'Nodes show category codes with degree counts. Node color indicates tier (low, medium, high connectivity). Lines represent identified inter-category links.'
+                );
+                downloadWordDoc(`${activeCanvas.name.replace(/\s+/g, '_')}_APA7_connecting_figure.doc`, html);
+            };
+
             return (
                 <div className="p-8 h-full overflow-y-auto">
                     <div className="max-w-7xl mx-auto space-y-6">
@@ -8256,8 +8503,13 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                                             </button>
                                             {showExportMenu && (
                                                 <div className="absolute right-0 mt-2 w-72 bg-white border border-slate-200 rounded-xl shadow-soft z-30 p-2">
+                                                    <p className="px-2 py-1 text-[11px] uppercase font-bold tracking-wide text-slate-500">CSV</p>
                                                     <button type="button" onClick={() => { exportClusteringTable(); setShowExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm text-slate-700">In-vivo codes with clustering categories (.csv)</button>
                                                     <button type="button" onClick={() => { exportThematicTable(); setShowExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm text-slate-700">Themes, categories, and in-vivo codes (.csv)</button>
+                                                    <div className="my-1 border-t" />
+                                                    <p className="px-2 py-1 text-[11px] uppercase font-bold tracking-wide text-slate-500">APA7 Word (.doc)</p>
+                                                    <button type="button" onClick={() => { exportClusteringTableApaDoc(); setShowExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm text-slate-700">Clustering table APA7 (.doc)</button>
+                                                    <button type="button" onClick={() => { exportThematicTableApaDoc(); setShowExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm text-slate-700">Thematic table APA7 (.doc)</button>
                                                 </div>
                                             )}
                                         </div>
@@ -8365,9 +8617,28 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
 
                                 {showConnecting && (
                                 <div className="bg-white border rounded-2xl p-5 shadow-soft space-y-5">
-                                    <div>
-                                        <h3 className="font-bold text-ink mb-1">Connecting</h3>
-                                        <p className="text-sm text-slate-500">Identify whether categories are connected, then generate a one-mode network matrix and relational map.</p>
+                                    <div className="flex items-start justify-between gap-3">
+                                        <div>
+                                            <h3 className="font-bold text-ink mb-1">Connecting</h3>
+                                            <p className="text-sm text-slate-500">Identify whether categories are connected, then generate a one-mode network matrix and relational map.</p>
+                                        </div>
+                                        <div className="relative">
+                                            <button
+                                                type="button"
+                                                onClick={() => setShowConnectingExportMenu((prev) => !prev)}
+                                                className="px-3 py-1.5 rounded-lg bg-ink text-white text-sm font-semibold hover:bg-slate-800"
+                                            >
+                                                Export APA
+                                            </button>
+                                            {showConnectingExportMenu && (
+                                                <div className="absolute right-0 mt-2 w-80 bg-white border border-slate-200 rounded-xl shadow-soft z-30 p-2">
+                                                    <p className="px-2 py-1 text-[11px] uppercase font-bold tracking-wide text-slate-500">APA7 Word (.doc)</p>
+                                                    <button type="button" onClick={() => { exportConnectingMatrixApaDoc(); setShowConnectingExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm text-slate-700">Connecting matrix table APA7 (.doc)</button>
+                                                    <button type="button" onClick={() => { exportConnectingNarrativeApaDoc(); setShowConnectingExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm text-slate-700">Connecting narrative table APA7 (.doc)</button>
+                                                    <button type="button" onClick={() => { exportConnectingFigureApaDoc(); setShowConnectingExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm text-slate-700">Relational map figure APA7 (.doc)</button>
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
 
                                     <div className="bg-slate-50 border rounded-xl p-4 space-y-3">
@@ -10302,31 +10573,13 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
             );
         }
 
-        function Codebook({ tags, transcripts, participants, artifacts, observations, observationTags, analysisCanvases, sourceFilterPresets, codeDefinitions, categoryDefinitions, onUpdateCodeDefinitions, onUpdateCategoryDefinitions, onSaveSourceFilterPreset, onDeleteSourceFilterPreset, onRenameCodeLabel, onRenameCategoryLabel }) {
+        function Codebook({ tags, transcripts, participants, artifacts, observations, observationTags, sourceFilterPresets, onSaveSourceFilterPreset, onDeleteSourceFilterPreset }) {
             const [searchTerm, setSearchTerm] = useState('');
             const [sortBy, setSortBy] = useState('category');
             const [sortDirection, setSortDirection] = useState('asc');
             const [selectedSourceIds, setSelectedSourceIds] = useState([]);
             const [showExportMenu, setShowExportMenu] = useState(false);
-            const [editingRows, setEditingRows] = useState(new Set());
-            const [renamingCodeName, setRenamingCodeName] = useState(null);
-            const [renameCodeValue, setRenameCodeValue] = useState('');
-            const [renamingCategoryName, setRenamingCategoryName] = useState(null);
-            const [renameCategoryValue, setRenameCategoryValue] = useState('');
             const hasInitializedSourceFilter = useRef(false);
-            const hasClearedCategoryDefinitions = useRef(false);
-            const toggleRow = (name) => setEditingRows(prev => {
-                const next = new Set(prev);
-                if (next.has(name)) next.delete(name); else next.add(name);
-                return next;
-            });
-            const toggleAllRows = (rows) => setEditingRows(prev => {
-                const names = rows.map(r => r.name);
-                const anyEditing = names.some(n => prev.has(n));
-                const next = new Set(prev);
-                if (anyEditing) { names.forEach(n => next.delete(n)); } else { names.forEach(n => next.add(n)); }
-                return next;
-            });
 
             const csvEscape = (value) => {
                 const text = String(value ?? '');
@@ -10503,39 +10756,13 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                             id: groupKey,
                             tagName: item.tagName,
                             category: item.category,
-                            quoteCount: 0,
-                            sources: [],
-                            quotes: [],
-                            memos: []
+                            quotes: []
                         };
                     }
 
-                    const hasSource = acc[groupKey].sources.some((source) => source.sourceType === item.sourceType && source.sourceId === item.sourceId);
-                    if (!hasSource) {
-                        acc[groupKey].sources.push({
-                            sourceType: item.sourceType,
-                            sourceId: item.sourceId,
-                            label: item.transcriptLabel,
-                            folder: item.folder,
-                            subfolder: item.subfolder
-                        });
-                    }
-
-                    acc[groupKey].quoteCount += 1;
                     if (item.textSnippet && item.textSnippet.trim()) {
                         acc[groupKey].quotes.push({
-                            text: item.textSnippet.trim(),
-                            sourceType: item.sourceType,
-                            label: item.transcriptLabel,
-                            folder: item.folder,
-                            subfolder: item.subfolder
-                        });
-                    }
-                    if (item.memo && item.memo.trim()) {
-                        acc[groupKey].memos.push({
-                            text: item.memo.trim(),
-                            sourceType: item.sourceType,
-                            label: item.transcriptLabel
+                            text: item.textSnippet.trim()
                         });
                     }
                     return acc;
@@ -10543,14 +10770,10 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
 
                 const filteredRows = groupedRows.filter(item => {
                     const combinedQuotes = item.quotes.map(q => q.text).join(' ');
-                    const combinedMemos = item.memos.map(m => m.text).join(' ');
-                    const combinedSources = item.sources.map(s => `${s.sourceType} ${s.label} ${s.folder} ${s.subfolder}`).join(' ');
                     const query = searchTerm.toLowerCase();
                     return item.tagName.toLowerCase().includes(query) ||
                         item.category.toLowerCase().includes(query) ||
-                        combinedSources.toLowerCase().includes(query) ||
-                        combinedQuotes.toLowerCase().includes(query) ||
-                        combinedMemos.toLowerCase().includes(query);
+                        combinedQuotes.toLowerCase().includes(query);
                 });
 
                 return filteredRows.sort((a, b) => {
@@ -10559,8 +10782,6 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
 
                     if (sortBy === 'code') {
                         primaryComparison = a.tagName.localeCompare(b.tagName);
-                    } else if (sortBy === 'quoteCount') {
-                        primaryComparison = a.quoteCount - b.quoteCount;
                     } else {
                         primaryComparison = a.category.localeCompare(b.category);
                     }
@@ -10569,289 +10790,41 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
 
                     const secondaryComparison = sortBy === 'code'
                         ? a.category.localeCompare(b.category)
-                        : sortBy === 'quoteCount'
-                            ? a.category.localeCompare(b.category)
-                            : a.tagName.localeCompare(b.tagName);
+                        : a.tagName.localeCompare(b.tagName);
                     if (secondaryComparison !== 0) return secondaryComparison;
 
                     return a.tagName.localeCompare(b.tagName);
-                }).map((item) => ({
-                    ...item,
-                    sourceCount: (item.sources || []).length
-                }));
+                });
             }, [tags, transcripts, participants, artifacts, observations, observationTags, searchTerm, sortBy, sortDirection, selectedSourceSet]);
 
             const uniqueCodeCount = useMemo(() => new Set(tableData.map(t => t.tagName)).size, [tableData]);
             const uniqueCategoryCount = useMemo(() => new Set(tableData.map(t => t.category)).size, [tableData]);
-            const pickExamples = (quotes) => Array.from(new Set((quotes || []).map(q => (q?.text || q || '').trim()).filter(Boolean))).slice(0, 3);
-
-            const toDefinitionRecord = (value) => {
-                if (!value) return { definition: '', inclusion: '', exclusion: '', exemplars: '' };
-                if (typeof value === 'string') {
-                    return { definition: value, inclusion: '', exclusion: '', exemplars: '' };
-                }
-                return {
-                    definition: value.definition || '',
-                    inclusion: value.inclusion || '',
-                    exclusion: value.exclusion || '',
-                    exemplars: value.exemplars || ''
-                };
-            };
-
-            const codeRows = useMemo(() => {
-                const names = Array.from(new Set([
-                    ...tableData.map(item => item.tagName),
-                    ...Object.keys(codeDefinitions || {})
-                ])).sort((a, b) => a.localeCompare(b));
-
-                return names.map((name) => {
-                    const related = tableData.filter(item => item.tagName === name);
-                    const examples = pickExamples(related.flatMap(item => item.quotes));
-                    const record = toDefinitionRecord((codeDefinitions || {})[name]);
-                    return {
-                        name,
-                        ...record,
-                        examples
-                    };
-                });
-            }, [tableData, codeDefinitions]);
-
-            const clusteringCategoryNames = useMemo(() => Array.from(new Set((analysisCanvases || [])
-                .flatMap((canvas) => canvas.categories || [])
-                .map((category) => String(category?.name || '').trim())
-                .filter(Boolean)
-            )).sort((a, b) => a.localeCompare(b)), [analysisCanvases]);
-
-            useEffect(() => {
-                if (hasClearedCategoryDefinitions.current) return;
-                hasClearedCategoryDefinitions.current = true;
-                const resetMap = {};
-                clusteringCategoryNames.forEach((name) => {
-                    resetMap[name] = { definition: '', inclusion: '', exclusion: '', exemplars: '' };
-                });
-                onUpdateCategoryDefinitions(resetMap);
-            }, [clusteringCategoryNames, onUpdateCategoryDefinitions]);
-
-            const categoryRows = useMemo(() => {
-                const names = clusteringCategoryNames;
-
-                return names.map((name) => {
-                    const record = toDefinitionRecord((categoryDefinitions || {})[name]);
-                    return {
-                        name,
-                        ...record,
-                        examples: []
-                    };
-                });
-            }, [clusteringCategoryNames, categoryDefinitions]);
-
-            const updateDefinitionMap = (currentMap, setter, key, field, value) => {
-                const next = { ...(currentMap || {}) };
-                const existing = toDefinitionRecord(next[key]);
-                const updated = { ...existing, [field]: value };
-                const hasAnyValue = Object.values(updated).some(v => String(v || '').trim());
-                if (hasAnyValue) next[key] = updated;
-                else delete next[key];
-                setter(next);
-            };
-
-            const beginRenameCodeLabel = (currentName) => {
-                setRenamingCodeName(currentName);
-                setRenameCodeValue(currentName);
-            };
-
-            const cancelRenameCodeLabel = () => {
-                setRenamingCodeName(null);
-                setRenameCodeValue('');
-            };
-
-            const commitRenameCodeLabel = () => {
-                if (!renamingCodeName) return;
-                const cleaned = String(renameCodeValue || '').trim();
-                if (!cleaned || cleaned === renamingCodeName) {
-                    cancelRenameCodeLabel();
-                    return;
-                }
-                onRenameCodeLabel(renamingCodeName, cleaned);
-                setEditingRows((prev) => {
-                    const next = new Set(prev);
-                    if (next.has(renamingCodeName)) {
-                        next.delete(renamingCodeName);
-                        next.add(cleaned);
-                    }
-                    return next;
-                });
-                cancelRenameCodeLabel();
-            };
-
-            const beginRenameCategoryLabel = (currentName) => {
-                setRenamingCategoryName(currentName);
-                setRenameCategoryValue(currentName);
-            };
-
-            const cancelRenameCategoryLabel = () => {
-                setRenamingCategoryName(null);
-                setRenameCategoryValue('');
-            };
-
-            const commitRenameCategoryLabel = () => {
-                if (!renamingCategoryName) return;
-                const cleaned = String(renameCategoryValue || '').trim();
-                if (!cleaned || cleaned === renamingCategoryName) {
-                    cancelRenameCategoryLabel();
-                    return;
-                }
-                onRenameCategoryLabel(renamingCategoryName, cleaned);
-                setEditingRows((prev) => {
-                    const next = new Set(prev);
-                    if (next.has(renamingCategoryName)) {
-                        next.delete(renamingCategoryName);
-                        next.add(cleaned);
-                    }
-                    return next;
-                });
-                cancelRenameCategoryLabel();
-            };
 
             const exportGroupedCodebookCsv = () => {
-                const lines = ['Category,Code,Source,Source Count,Folder,Subfolder,Quote Count,Quotes,Memos'];
+                const lines = ['Category,In-vivo Code,Quotes'];
                 tableData.forEach((row) => {
-                    const sourceSummary = (row.sources || []).map((s) => `${s.sourceType}: ${s.label}`).join(' | ');
-                    const folderSummary = Array.from(new Set((row.sources || []).map((s) => s.folder).filter(Boolean))).join(' | ');
-                    const subfolderSummary = Array.from(new Set((row.sources || []).map((s) => s.subfolder).filter(Boolean))).join(' | ');
                     lines.push([
                         csvEscape(row.category),
                         csvEscape(row.tagName),
-                        csvEscape(sourceSummary),
-                        csvEscape(row.sourceCount),
-                        csvEscape(folderSummary),
-                        csvEscape(subfolderSummary),
-                        csvEscape(row.quoteCount),
-                        csvEscape((row.quotes || []).slice(0, 3).map((q) => `[${q.sourceType}] ${q.label}: ${q.text}`).join(' | ')),
-                        csvEscape((row.memos || []).map((m) => `[${m.sourceType}] ${m.label}: ${m.text}`).join(' | '))
+                        csvEscape((row.quotes || []).map((q) => q.text).join(' | '))
                     ].join(','));
                 });
                 downloadCsv(`QualiApp_Codebook_Table_${new Date().toISOString().slice(0, 10)}.csv`, lines);
-            };
-
-            const exportCodeDefinitionsCsv = () => {
-                const lines = ['Code Name/Label,Definition,Inclusion Criteria,Exclusion Criteria,Examples (auto)'];
-                codeRows.forEach((row) => {
-                    lines.push([
-                        csvEscape(row.name),
-                        csvEscape(row.definition),
-                        csvEscape(row.inclusion),
-                        csvEscape(row.exclusion),
-                        csvEscape((row.examples || []).join(' | '))
-                    ].join(','));
-                });
-                downloadCsv(`QualiApp_Code_Definitions_${new Date().toISOString().slice(0, 10)}.csv`, lines);
-            };
-
-            const exportCategoryDefinitionsCsv = () => {
-                const lines = ['Category Label,Definition,Inclusion Criteria,Exclusion Criteria,Examples (auto)'];
-                categoryRows.forEach((row) => {
-                    lines.push([
-                        csvEscape(row.name),
-                        csvEscape(row.definition),
-                        csvEscape(row.inclusion),
-                        csvEscape(row.exclusion),
-                        csvEscape((row.examples || []).join(' | '))
-                    ].join(','));
-                });
-                downloadCsv(`QualiApp_Category_Definitions_${new Date().toISOString().slice(0, 10)}.csv`, lines);
             };
 
             const exportCodebookApaDoc = () => {
                 const html = buildApaTableHtml(
                     1,
                     'Grouped Codebook Entries',
-                    ['Category', 'Code', 'Source', 'Source Count', 'Quote Count', 'Quote and memo'],
+                    ['Category', 'In-vivo code', 'Quotes'],
                     tableData.map(row => [
                         row.category,
                         row.tagName,
-                        (row.sources || []).map((s) => `${s.sourceType}: ${s.label}`).join(' | '),
-                        String(row.sourceCount || 0),
-                        String(row.quoteCount),
-                        [
-                            ...(row.quotes || []).slice(0, 3).map((q) => `[${q.sourceType}] ${q.label}: ${q.text}`),
-                            ...(row.memos || []).slice(0, 2).map((m) => `[${m.sourceType}] ${m.label}: ${m.text}`)
-                        ].join(' | ')
+                        (row.quotes || []).map((q) => q.text).join(' | ')
                     ]),
-                    'Quote text may be truncated in export previews.'
+                    'Quotes are joined with a pipe separator (|).'
                 );
                 downloadWordDoc(`QualiApp_APA7_Codebook_Table_${new Date().toISOString().slice(0, 10)}.doc`, html);
-            };
-
-            const exportCodeDefinitionsApaDoc = () => {
-                const html = buildApaTableHtml(
-                    1,
-                    'Code Definitions',
-                    ['Code name/label', 'Definition', 'Inclusion Criteria', 'Exclusion Criteria', 'Examples'],
-                    codeRows.map(row => [
-                        row.name,
-                        row.definition,
-                        row.inclusion,
-                        row.exclusion,
-                        (row.examples || []).join(' | ')
-                    ]),
-                    'Examples are auto-sampled from coded quotes (max 3).'
-                );
-                downloadWordDoc(`QualiApp_APA7_Code_Definitions_${new Date().toISOString().slice(0, 10)}.doc`, html);
-            };
-
-            const exportCategoryDefinitionsApaDoc = () => {
-                const html = buildApaTableHtml(
-                    1,
-                    'Category Definitions',
-                    ['Category label', 'Definition', 'Inclusion Criteria', 'Exclusion Criteria', 'Examples'],
-                    categoryRows.map(row => [
-                        row.name,
-                        row.definition,
-                        row.inclusion,
-                        row.exclusion,
-                        (row.examples || []).join(' | ')
-                    ]),
-                    'Examples are auto-sampled from coded quotes (max 3).'
-                );
-                downloadWordDoc(`QualiApp_APA7_Category_Definitions_${new Date().toISOString().slice(0, 10)}.doc`, html);
-            };
-
-            const exportAllApaDoc = () => {
-                const html = [
-                    buildApaTableHtml(
-                        1,
-                        'Grouped Codebook Entries',
-                        ['Category', 'Code', 'Source', 'Source Count', 'Quote Count', 'Quote and memo'],
-                        tableData.map(row => [
-                            row.category,
-                            row.tagName,
-                            (row.sources || []).map((s) => `${s.sourceType}: ${s.label}`).join(' | '),
-                            String(row.sourceCount || 0),
-                            String(row.quoteCount),
-                            [
-                                ...(row.quotes || []).slice(0, 3).map((q) => `[${q.sourceType}] ${q.label}: ${q.text}`),
-                                ...(row.memos || []).slice(0, 2).map((m) => `[${m.sourceType}] ${m.label}: ${m.text}`)
-                            ].join(' | ')
-                        ]),
-                        'Quote text may be truncated in export previews.'
-                    ),
-                    buildApaTableHtml(
-                        2,
-                        'Code Definitions',
-                        ['Code name/label', 'Definition', 'Inclusion Criteria', 'Exclusion Criteria', 'Examples'],
-                        codeRows.map(row => [row.name, row.definition, row.inclusion, row.exclusion, (row.examples || []).join(' | ')]),
-                        'Examples are auto-sampled from coded quotes (max 3).'
-                    ),
-                    buildApaTableHtml(
-                        3,
-                        'Category Definitions',
-                        ['Category label', 'Definition', 'Inclusion Criteria', 'Exclusion Criteria', 'Examples'],
-                        categoryRows.map(row => [row.name, row.definition, row.inclusion, row.exclusion, (row.examples || []).join(' | ')]),
-                        'Examples are auto-sampled from coded quotes (max 3).'
-                    )
-                ].join('');
-                downloadWordDoc(`QualiApp_APA7_All_Codebook_Tables_${new Date().toISOString().slice(0, 10)}.doc`, html);
             };
 
             return (
@@ -10894,11 +10867,9 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                                         <div className="absolute right-0 mt-2 w-72 bg-white border border-slate-200 rounded-xl shadow-soft z-30 p-2">
                                             <p className="px-2 py-1 text-[11px] uppercase font-bold tracking-wide text-slate-500">CSV</p>
                                             <button type="button" onClick={() => { exportGroupedCodebookCsv(); setShowExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm text-slate-700">Codebook table (.csv)</button>
-                                            <button type="button" onClick={() => { exportCategoryDefinitionsCsv(); setShowExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm text-slate-700">Category definitions (.csv)</button>
                                             <div className="my-1 border-t" />
                                             <p className="px-2 py-1 text-[11px] uppercase font-bold tracking-wide text-slate-500">APA7 Word (.doc)</p>
                                             <button type="button" onClick={() => { exportCodebookApaDoc(); setShowExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm text-slate-700">Codebook table APA7 (.doc)</button>
-                                            <button type="button" onClick={() => { exportCategoryDefinitionsApaDoc(); setShowExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm text-slate-700">Category definitions APA7 (.doc)</button>
                                         </div>
                                     )}
                                 </div>
@@ -10922,15 +10893,14 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                             <div className="flex flex-col xl:flex-row xl:items-end gap-4">
                                 <div className="w-full xl:flex-1">
                                     <label className="block text-xs font-bold uppercase tracking-wide text-slate-500 mb-1.5">Search</label>
-                                    <input type="text" placeholder="Search categories, codes, memos, or quotes..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full p-3 border rounded-xl outline-none focus:ring-2 focus:ring-tide" />
+                                    <input type="text" placeholder="Search categories, in-vivo codes, or quotes..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full p-3 border rounded-xl outline-none focus:ring-2 focus:ring-tide" />
                                 </div>
                                 <div className="w-full xl:w-auto grid grid-cols-1 sm:grid-cols-2 gap-3 xl:min-w-[360px]">
                                     <div>
                                         <label className="block text-xs font-bold uppercase tracking-wide text-slate-500 mb-1.5">Sort By</label>
                                         <select value={sortBy} onChange={e => setSortBy(e.target.value)} className="w-full p-3 border rounded-xl bg-white text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-tide">
                                             <option value="category">Category</option>
-                                            <option value="code">Code</option>
-                                            <option value="quoteCount">Code Count</option>
+                                            <option value="code">In-vivo Code</option>
                                         </select>
                                     </div>
                                     <div>
@@ -10950,15 +10920,12 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                                     <thead>
                                         <tr className="bg-slate-50 border-b text-slate-600 uppercase text-xs tracking-wider">
                                             <th className="p-4 font-bold w-32">Category</th>
-                                            <th className="p-4 font-bold w-40">Code</th>
-                                            <th className="p-4 font-bold w-48">Source</th>
-                                            <th className="p-4 font-bold w-28">Source Count</th>
-                                            <th className="p-4 font-bold w-28">Quote Count</th>
-                                            <th className="p-4 font-bold">Quote & Memo</th>
+                                            <th className="p-4 font-bold w-48">In-vivo Code</th>
+                                            <th className="p-4 font-bold">Quotes</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y text-sm">
-                                        {tableData.length === 0 ? <tr><td colSpan="6" className="p-12 text-center text-slate-400 italic">No codes match the current search and source-item filter.</td></tr> : tableData.map((row) => (
+                                        {tableData.length === 0 ? <tr><td colSpan="3" className="p-12 text-center text-slate-400 italic">No codes match the current search and source-item filter.</td></tr> : tableData.map((row) => (
                                             <tr key={row.id} className="hover:bg-slate-50 align-top">
                                                 <td className="p-4 text-slate-500 font-bold uppercase text-[10px]">{row.category}</td>
                                                 <td className="p-4">
@@ -10966,29 +10933,11 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                                                         {row.tagName}
                                                     </span>
                                                 </td>
-                                                <td className="p-4 text-slate-700">
-                                                    {(row.sources || []).map((source, idx) => (
-                                                        <div key={`${row.id}_source_${idx}`} className="mb-2 last:mb-0">
-                                                            <span className="font-bold block">{source.label}</span>
-                                                            <span className={`text-[10px] mt-1 inline-block px-2 py-0.5 rounded-full ${source.sourceType === 'Artifact' ? 'bg-amber-100 text-amber-800' : source.sourceType === 'Observation' ? 'bg-violet-100 text-violet-800' : 'bg-slate-100 text-slate-700'}`}>{source.sourceType}</span>
-                                                            <span className="text-xs text-slate-400 mt-1 block">{source.folder} / {source.subfolder}</span>
-                                                        </div>
-                                                    ))}
-                                                </td>
-                                                <td className="p-4 text-slate-700 font-semibold">{row.sourceCount}</td>
-                                                <td className="p-4 text-slate-700 font-semibold">{row.quoteCount}</td>
                                                 <td className="p-4">
-                                                    {row.quotes.length === 0 && row.memos.length === 0 && <p className="text-sm text-slate-400 italic">No quote text available.</p>}
+                                                    {row.quotes.length === 0 && <p className="text-sm text-slate-400 italic">No quote text available.</p>}
                                                     {row.quotes.map((quote, quoteIdx) => (
                                                         <div key={`${row.id}_quote_${quoteIdx}`} className="mb-2">
-                                                            <p className="text-[11px] text-slate-500 font-semibold">[{quote.sourceType}] {quote.label}</p>
                                                             <p className="italic text-slate-700 leading-relaxed">"{quote.text}"</p>
-                                                        </div>
-                                                    ))}
-                                                    {row.memos.map((memo, memoIdx) => (
-                                                        <div key={`${row.id}_memo_${memoIdx}`} className="mb-2 text-sm text-slate-600">
-                                                            <p className="text-[11px] text-slate-500 font-semibold">Memo • [{memo.sourceType}] {memo.label}</p>
-                                                            <p>{memo.text}</p>
                                                         </div>
                                                     ))}
                                                 </td>
@@ -10999,297 +10948,7 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                             </div>
                         </div>
 
-                        <div className="mt-6 pb-6 space-y-6">
-                            {false && (
-                            <section className="w-full bg-white border rounded-2xl shadow-sm overflow-hidden">
-                                <div className="p-4 border-b bg-slate-50 flex items-center justify-between">
-                                    <div>
-                                        <h3 className="text-lg font-bold text-ink">Code Definitions</h3>
-                                        <p className="text-xs text-slate-500 mt-0.5">{codeRows.some(r => editingRows.has(r.name)) ? 'Some rows in edit mode — click ✓ on a row when done.' : 'Click the pencil on any row to edit it, or use the button to edit all.'}</p>
-                                    </div>
-                                    <button
-                                        type="button"
-                                        title={codeRows.some(r => editingRows.has(r.name)) ? 'Close all edits' : 'Edit all rows'}
-                                        onClick={() => toggleAllRows(codeRows)}
-                                        className={`p-2 rounded-lg border transition ${codeRows.some(r => editingRows.has(r.name)) ? 'bg-amber-100 border-amber-300 text-amber-700 hover:bg-amber-200' : 'bg-white border-slate-300 text-slate-500 hover:bg-slate-100 hover:text-slate-700'}`}
-                                    >
-                                        {codeRows.some(r => editingRows.has(r.name)) ? (
-                                            <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
-                                        ) : (
-                                            <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                                        )}
-                                    </button>
-                                </div>
-                                <div className="overflow-x-auto">
-                                    <table className="w-full text-left border-collapse">
-                                        <thead>
-                                            <tr className="bg-slate-50 border-b text-slate-600 uppercase text-xs tracking-wider">
-                                                <th className="p-3 font-bold w-36">Code</th>
-                                                <th className="p-3 font-bold min-w-[180px]">Definition</th>
-                                                <th className="p-3 font-bold min-w-[180px]">Inclusion Criteria</th>
-                                                <th className="p-3 font-bold min-w-[180px]">Exclusion Criteria</th>
-                                                <th className="p-3 font-bold min-w-[200px]">Examples</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="divide-y text-sm">
-                                            {codeRows.length === 0 ? (
-                                                <tr><td colSpan="5" className="p-8 text-center text-slate-400 italic">No codes available yet.</td></tr>
-                                            ) : codeRows.map((row) => (
-                                                <tr key={`code_row_${row.name}`} className={`align-top hover:bg-slate-50 ${editingRows.has(row.name) ? 'bg-amber-50/30' : ''}`}>
-                                                    <td className="p-3">
-                                                        <div className="flex items-start gap-1.5">
-                                                            {renamingCodeName === row.name ? (
-                                                                <div className="flex items-center gap-1.5 w-full">
-                                                                    <input
-                                                                        autoFocus
-                                                                        value={renameCodeValue}
-                                                                        onChange={(e) => setRenameCodeValue(e.target.value)}
-                                                                        onKeyDown={(e) => {
-                                                                            if (e.key === 'Enter') commitRenameCodeLabel();
-                                                                            if (e.key === 'Escape') cancelRenameCodeLabel();
-                                                                        }}
-                                                                        className="w-full border border-teal-300 rounded-lg px-2 py-1 text-xs font-semibold text-teal-800 outline-none focus:ring-2 focus:ring-tide"
-                                                                    />
-                                                                    <button
-                                                                        type="button"
-                                                                        title="Save label"
-                                                                        onClick={commitRenameCodeLabel}
-                                                                        className="p-1 rounded border bg-teal-100 border-teal-300 text-teal-700 hover:bg-teal-200"
-                                                                    >
-                                                                        <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
-                                                                    </button>
-                                                                    <button
-                                                                        type="button"
-                                                                        title="Cancel rename"
-                                                                        onClick={cancelRenameCodeLabel}
-                                                                        className="p-1 rounded border bg-white border-slate-300 text-slate-500 hover:bg-slate-100"
-                                                                    >
-                                                                        <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
-                                                                    </button>
-                                                                </div>
-                                                            ) : (
-                                                                <>
-                                                                    <span className="inline-block max-w-[180px] whitespace-normal break-words leading-tight bg-teal-100 border border-teal-200 text-teal-800 px-3 py-1.5 rounded-xl text-xs font-bold">
-                                                                        {row.name}
-                                                                    </span>
-                                                                    <button
-                                                                        type="button"
-                                                                        title="Rename code label"
-                                                                        onClick={() => beginRenameCodeLabel(row.name)}
-                                                                        className="mt-1 p-1 rounded border transition flex-shrink-0 bg-white border-slate-200 text-slate-400 hover:text-teal-700 hover:border-teal-300"
-                                                                    >
-                                                                        <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M13 7L5 15l-2 7 7-2 8-8"/><path d="M15 5l4 4"/></svg>
-                                                                    </button>
-                                                                </>
-                                                            )}
-                                                            <button
-                                                                type="button"
-                                                                title={editingRows.has(row.name) ? 'Done editing' : 'Edit this row'}
-                                                                onClick={() => toggleRow(row.name)}
-                                                                className={`mt-1 p-1 rounded border transition flex-shrink-0 ${editingRows.has(row.name) ? 'bg-amber-100 border-amber-300 text-amber-700 hover:bg-amber-200' : 'bg-white border-slate-200 text-slate-400 hover:text-slate-600 hover:border-slate-300'}`}
-                                                            >
-                                                                {editingRows.has(row.name) ? (
-                                                                    <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
-                                                                ) : (
-                                                                    <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                                                                )}
-                                                            </button>
-                                                        </div>
-                                                    </td>
-                                                    <td className="p-3">
-                                                        {editingRows.has(row.name) ? (
-                                                            <textarea
-                                                                value={row.definition}
-                                                                onChange={(e) => updateDefinitionMap(codeDefinitions, onUpdateCodeDefinitions, row.name, 'definition', e.target.value)}
-                                                                placeholder="What this code represents..."
-                                                                className="w-full min-h-[100px] border rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-tide resize-y"
-                                                            />
-                                                        ) : (
-                                                            <span className="text-slate-600">{row.definition || <span className="italic text-slate-400">Not provided yet.</span>}</span>
-                                                        )}
-                                                    </td>
-                                                    <td className="p-3">
-                                                        {editingRows.has(row.name) ? (
-                                                            <textarea
-                                                                value={row.inclusion}
-                                                                onChange={(e) => updateDefinitionMap(codeDefinitions, onUpdateCodeDefinitions, row.name, 'inclusion', e.target.value)}
-                                                                placeholder="When to apply this code..."
-                                                                className="w-full min-h-[100px] border rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-tide resize-y"
-                                                            />
-                                                        ) : (
-                                                            <span className="text-slate-600">{row.inclusion || <span className="italic text-slate-400">Not provided yet.</span>}</span>
-                                                        )}
-                                                    </td>
-                                                    <td className="p-3">
-                                                        {editingRows.has(row.name) ? (
-                                                            <textarea
-                                                                value={row.exclusion}
-                                                                onChange={(e) => updateDefinitionMap(codeDefinitions, onUpdateCodeDefinitions, row.name, 'exclusion', e.target.value)}
-                                                                placeholder="When not to apply this code..."
-                                                                className="w-full min-h-[100px] border rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-tide resize-y"
-                                                            />
-                                                        ) : (
-                                                            <span className="text-slate-600">{row.exclusion || <span className="italic text-slate-400">Not provided yet.</span>}</span>
-                                                        )}
-                                                    </td>
-                                                    <td className="p-3">
-                                                        {row.examples.length === 0 ? (
-                                                            <p className="text-xs text-slate-400 italic">No quotes yet.</p>
-                                                        ) : row.examples.map((example, idx) => (
-                                                            <p key={`code_example_${row.name}_${idx}`} className="text-xs italic text-slate-700 mb-2 leading-relaxed">"{example}"</p>
-                                                        ))}
-                                                    </td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </section>
-                            )}
-
-                            <section className="w-full bg-white border rounded-2xl shadow-sm overflow-hidden">
-                                <div className="p-4 border-b bg-slate-50 flex items-center justify-between">
-                                    <div>
-                                        <h3 className="text-lg font-bold text-ink">Category Definitions</h3>
-                                        <p className="text-xs text-slate-500 mt-0.5">{categoryRows.some(r => editingRows.has(r.name)) ? 'Some rows in edit mode — click ✓ on a row when done.' : 'Click the pencil on any row to edit it, or use the button to edit all.'}</p>
-                                    </div>
-                                    <button
-                                        type="button"
-                                        title={categoryRows.some(r => editingRows.has(r.name)) ? 'Close all edits' : 'Edit all rows'}
-                                        onClick={() => toggleAllRows(categoryRows)}
-                                        className={`p-2 rounded-lg border transition ${categoryRows.some(r => editingRows.has(r.name)) ? 'bg-amber-100 border-amber-300 text-amber-700 hover:bg-amber-200' : 'bg-white border-slate-300 text-slate-500 hover:bg-slate-100 hover:text-slate-700'}`}
-                                    >
-                                        {categoryRows.some(r => editingRows.has(r.name)) ? (
-                                            <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
-                                        ) : (
-                                            <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                                        )}
-                                    </button>
-                                </div>
-                                <div className="overflow-x-auto">
-                                    <table className="w-full text-left border-collapse">
-                                        <thead>
-                                            <tr className="bg-slate-50 border-b text-slate-600 uppercase text-xs tracking-wider">
-                                                <th className="p-3 font-bold w-36">Category</th>
-                                                <th className="p-3 font-bold min-w-[180px]">Definition</th>
-                                                <th className="p-3 font-bold min-w-[180px]">Inclusion Criteria</th>
-                                                <th className="p-3 font-bold min-w-[180px]">Exclusion Criteria</th>
-                                                <th className="p-3 font-bold min-w-[200px]">Examples</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="divide-y text-sm">
-                                            {categoryRows.length === 0 ? (
-                                                <tr><td colSpan="5" className="p-8 text-center text-slate-400 italic">No categories available yet.</td></tr>
-                                            ) : categoryRows.map((row) => (
-                                                <tr key={`category_row_${row.name}`} className={`align-top hover:bg-slate-50 ${editingRows.has(row.name) ? 'bg-amber-50/30' : ''}`}>
-                                                    <td className="p-3">
-                                                        <div className="flex items-start gap-1.5">
-                                                            {renamingCategoryName === row.name ? (
-                                                                <div className="flex items-center gap-1.5 w-full">
-                                                                    <input
-                                                                        autoFocus
-                                                                        value={renameCategoryValue}
-                                                                        onChange={(e) => setRenameCategoryValue(e.target.value)}
-                                                                        onKeyDown={(e) => {
-                                                                            if (e.key === 'Enter') commitRenameCategoryLabel();
-                                                                            if (e.key === 'Escape') cancelRenameCategoryLabel();
-                                                                        }}
-                                                                        className="w-full border border-teal-300 rounded-lg px-2 py-1 text-xs font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-tide"
-                                                                    />
-                                                                    <button
-                                                                        type="button"
-                                                                        title="Save label"
-                                                                        onClick={commitRenameCategoryLabel}
-                                                                        className="p-1 rounded border bg-teal-100 border-teal-300 text-teal-700 hover:bg-teal-200"
-                                                                    >
-                                                                        <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
-                                                                    </button>
-                                                                    <button
-                                                                        type="button"
-                                                                        title="Cancel rename"
-                                                                        onClick={cancelRenameCategoryLabel}
-                                                                        className="p-1 rounded border bg-white border-slate-300 text-slate-500 hover:bg-slate-100"
-                                                                    >
-                                                                        <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
-                                                                    </button>
-                                                                </div>
-                                                            ) : (
-                                                                <>
-                                                                    <span className="text-[10px] uppercase font-bold text-slate-400 block">{row.name}</span>
-                                                                    <button
-                                                                        type="button"
-                                                                        title="Rename category label"
-                                                                        onClick={() => beginRenameCategoryLabel(row.name)}
-                                                                        className="p-1 rounded border transition flex-shrink-0 bg-white border-slate-200 text-slate-400 hover:text-teal-700 hover:border-teal-300"
-                                                                    >
-                                                                        <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M13 7L5 15l-2 7 7-2 8-8"/><path d="M15 5l4 4"/></svg>
-                                                                    </button>
-                                                                </>
-                                                            )}
-                                                            <button
-                                                                type="button"
-                                                                title={editingRows.has(row.name) ? 'Done editing' : 'Edit this row'}
-                                                                onClick={() => toggleRow(row.name)}
-                                                                className={`p-1 rounded border transition flex-shrink-0 ${editingRows.has(row.name) ? 'bg-amber-100 border-amber-300 text-amber-700 hover:bg-amber-200' : 'bg-white border-slate-200 text-slate-400 hover:text-slate-600 hover:border-slate-300'}`}
-                                                            >
-                                                                {editingRows.has(row.name) ? (
-                                                                    <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
-                                                                ) : (
-                                                                    <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                                                                )}
-                                                            </button>
-                                                        </div>
-                                                    </td>
-                                                    <td className="p-3">
-                                                        {editingRows.has(row.name) ? (
-                                                            <textarea
-                                                                value={row.definition}
-                                                                onChange={(e) => updateDefinitionMap(categoryDefinitions, onUpdateCategoryDefinitions, row.name, 'definition', e.target.value)}
-                                                                placeholder="What this category represents..."
-                                                                className="w-full min-h-[100px] border rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-tide resize-y"
-                                                            />
-                                                        ) : (
-                                                            <span className="text-slate-600">{row.definition || <span className="italic text-slate-400">Not provided yet.</span>}</span>
-                                                        )}
-                                                    </td>
-                                                    <td className="p-3">
-                                                        {editingRows.has(row.name) ? (
-                                                            <textarea
-                                                                value={row.inclusion}
-                                                                onChange={(e) => updateDefinitionMap(categoryDefinitions, onUpdateCategoryDefinitions, row.name, 'inclusion', e.target.value)}
-                                                                placeholder="When to apply this category..."
-                                                                className="w-full min-h-[100px] border rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-tide resize-y"
-                                                            />
-                                                        ) : (
-                                                            <span className="text-slate-600">{row.inclusion || <span className="italic text-slate-400">Not provided yet.</span>}</span>
-                                                        )}
-                                                    </td>
-                                                    <td className="p-3">
-                                                        {editingRows.has(row.name) ? (
-                                                            <textarea
-                                                                value={row.exclusion}
-                                                                onChange={(e) => updateDefinitionMap(categoryDefinitions, onUpdateCategoryDefinitions, row.name, 'exclusion', e.target.value)}
-                                                                placeholder="When not to apply this category..."
-                                                                className="w-full min-h-[100px] border rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-tide resize-y"
-                                                            />
-                                                        ) : (
-                                                            <span className="text-slate-600">{row.exclusion || <span className="italic text-slate-400">Not provided yet.</span>}</span>
-                                                        )}
-                                                    </td>
-                                                    <td className="p-3">
-                                                        {row.examples.length === 0 ? (
-                                                            <p className="text-xs text-slate-400 italic">No quotes yet.</p>
-                                                        ) : row.examples.map((example, idx) => (
-                                                            <p key={`category_example_${row.name}_${idx}`} className="text-xs italic text-slate-700 mb-2 leading-relaxed">"{example}"</p>
-                                                        ))}
-                                                    </td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </section>
-                        </div>
+                        <div className="mt-6 pb-6" />
                     </div>
                 </div>
             );
