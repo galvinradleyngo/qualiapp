@@ -1603,7 +1603,7 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                                         <li>Create your app password and recovery question.</li>
                                         <li>Add transcripts in Transcripts workspace.</li>
                                         <li>Code transcript text in the editor.</li>
-                                        <li>Review outputs in Categorization and Codebook.</li>
+                                        <li>Review outputs in Clustering and Codebook.</li>
                                         <li>Use Backup and Restore regularly.</li>
                                     </ol>
                                     <div className="pt-2 flex justify-end">
@@ -3361,7 +3361,7 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                 {
                     title: 'Analysis',
                     items: [
-                        { key: 'analysis', label: 'Categorization', shortLabel: 'CA' },
+                        { key: 'analysis', label: 'Clustering', shortLabel: 'CL' },
                         { key: 'codebook', label: 'Codebook', shortLabel: 'CB' },
                         { key: 'triangulation', label: 'Triangulation', shortLabel: 'TG' }
                     ]
@@ -7031,7 +7031,21 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
             const [selectedSourceIds, setSelectedSourceIds] = useState([]);
             const [showExportMenu, setShowExportMenu] = useState(false);
             const [processStepView, setProcessStepView] = useState('both');
+            const [expandedCategoryIds, setExpandedCategoryIds] = useState({});
             const hasInitializedSourceFilter = useRef(false);
+
+            const parseCategoryCodeNumber = (value) => {
+                const match = /^C(\d+)$/i.exec(String(value || '').trim());
+                return match ? Number(match[1]) : null;
+            };
+
+            const getNextCategoryCode = (categories = []) => {
+                const max = categories.reduce((acc, category) => {
+                    const parsed = parseCategoryCodeNumber(category.code);
+                    return parsed && parsed > acc ? parsed : acc;
+                }, 0);
+                return `C${max + 1}`;
+            };
 
             const csvEscape = (value) => {
                 const text = String(value ?? '');
@@ -7270,6 +7284,7 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                     ? canvas.categories.map((category, index) => ({
                         id: category.id || `cat_${index}`,
                         name: (category.name || '').trim() || `Category ${index + 1}`,
+                        code: String(category.code || `C${index + 1}`).trim() || `C${index + 1}`,
                         codes: [...new Set((category.codes || []).map((name) => String(name || '').trim()).filter(Boolean))]
                     }))
                     : [];
@@ -7280,7 +7295,7 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                         const grouped = {};
                         codeDetails.forEach((code, index) => {
                             const categoryName = (code.category || 'Uncategorized').trim() || 'Uncategorized';
-                            if (!grouped[categoryName]) grouped[categoryName] = { id: `cat_inferred_${index}`, name: categoryName, codes: [] };
+                            if (!grouped[categoryName]) grouped[categoryName] = { id: `cat_inferred_${index}`, name: categoryName, code: `C${Object.keys(grouped).length + 1}`, codes: [] };
                             grouped[categoryName].codes.push(code.name);
                         });
                         return Object.values(grouped).map((entry) => ({ ...entry, codes: [...new Set(entry.codes)] }));
@@ -7330,6 +7345,7 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                     ...nextCanvas,
                     categories: (nextCanvas.categories || []).map((category) => ({
                         ...category,
+                        code: String(category.code || '').trim(),
                         codes: [...new Set(category.codes || [])]
                     })),
                     themes: serializedThemes
@@ -7354,7 +7370,7 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
             const deleteCanvas = async (canvasId) => {
                 const shouldDelete = await requestConfirmation({
                     title: 'Delete Workspace',
-                    message: 'Delete this categorization workspace and all theme mappings?',
+                    message: 'Delete this clustering workspace and all thematic mappings?',
                     confirmLabel: 'Delete Workspace'
                 });
                 if (!shouldDelete) return;
@@ -7367,7 +7383,7 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                 const currentCanvas = canvases.find((canvas) => canvas.id === canvasId);
                 const nextName = await requestInput({
                     title: 'Rename Workspace',
-                    message: 'Enter a new name for this categorization workspace.',
+                    message: 'Enter a new name for this clustering workspace.',
                     label: 'Workspace name',
                     initialValue: currentCanvas?.name || '',
                     confirmLabel: 'Rename',
@@ -7385,10 +7401,17 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                 if (activeCanvas.categories.some((category) => category.name.toLowerCase() === newCategoryName.trim().toLowerCase())) return;
                 const nextCanvas = {
                     ...activeCanvas,
-                    categories: [...activeCanvas.categories, { id: Date.now().toString(), name: newCategoryName.trim(), codes: [] }]
+                    categories: [...activeCanvas.categories, { id: Date.now().toString(), name: newCategoryName.trim(), code: getNextCategoryCode(activeCanvas.categories), codes: [] }]
                 };
                 persistCanvas(nextCanvas);
                 setNewCategoryName('');
+            };
+
+            const toggleCategoryCodes = (categoryId) => {
+                setExpandedCategoryIds((prev) => ({
+                    ...prev,
+                    [categoryId]: !prev[categoryId]
+                }));
             };
 
             const removeCategory = async (categoryId) => {
@@ -7567,7 +7590,7 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                 return activeCanvas.categories.filter((category) => !assignedCategoryNames.has(category.name));
             }, [activeCanvas]);
 
-            const categorizationRows = useMemo(() => codeDetails.map((code) => ({
+            const clusteringRows = useMemo(() => codeDetails.map((code) => ({
                 code: code.name,
                 category: categoryByCode[code.name] || 'Unassigned',
                 quoteCount: code.count,
@@ -7609,27 +7632,31 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                 return rows;
             }, [activeCanvas, codeDetailByName]);
 
-            const exportCategorizationTable = () => {
+            const exportClusteringTable = () => {
                 if (!activeCanvas) return;
-                const lines = ['In-vivo Code,Category,Quote Count,Source,Folders'];
-                categorizationRows.forEach((row) => {
+                const lines = ['In-vivo Code,Category Code,Category,Quote Count,Source,Folders'];
+                clusteringRows.forEach((row) => {
+                    const foundCategory = (activeCanvas.categories || []).find((category) => category.name === row.category);
                     lines.push([
                         csvEscape(row.code),
+                        csvEscape(foundCategory?.code || ''),
                         csvEscape(row.category),
                         csvEscape(row.quoteCount),
                         csvEscape(row.source),
                         csvEscape(row.folders)
                     ].join(','));
                 });
-                downloadCsv(`${activeCanvas.name.replace(/\s+/g, '_')}_categorization_table.csv`, lines);
+                downloadCsv(`${activeCanvas.name.replace(/\s+/g, '_')}_clustering_table.csv`, lines);
             };
 
             const exportThematicTable = () => {
                 if (!activeCanvas) return;
-                const lines = ['Theme,Category,In-vivo Code,Quote Count,Source,Folders'];
+                const lines = ['Theme,Category Code,Category,In-vivo Code,Quote Count,Source,Folders'];
                 thematicRows.forEach((row) => {
+                    const foundCategory = (activeCanvas.categories || []).find((category) => category.name === row.category);
                     lines.push([
                         csvEscape(row.theme),
+                        csvEscape(foundCategory?.code || ''),
                         csvEscape(row.category),
                         csvEscape(row.code),
                         csvEscape(row.quoteCount),
@@ -7650,14 +7677,14 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                 <div className="p-8 h-full overflow-y-auto">
                     <div className="max-w-7xl mx-auto space-y-6">
                         <div className="bg-white border rounded-2xl p-6 shadow-soft">
-                            <h2 className="text-3xl font-display">Categorization and Thematic Analysis</h2>
-                            <p className="text-slate-500 mt-1">Step 2: assign in-vivo code cards into categories. Step 3: group categories into themes. All data stays offline on this device.</p>
+                            <h2 className="text-3xl font-display">Clustering and Thematic Analysis</h2>
+                            <p className="text-slate-500 mt-1">Step 2: assign in-vivo code cards into categories (clustering). Step 3: group categories into themes. All data stays offline on this device.</p>
                             <p className="text-slate-500 mt-1">Filtered in-vivo codes: {uniqueCodeCount} • Categories in workspace: {uniqueCategoryCount} • Themes in workspace: {uniqueThemeCount}</p>
                         </div>
 
                         <SourceItemFilterPanel
                             title="Included Source Items"
-                            description="Choose which transcripts, artifacts, and onsite observations are included. Checked items stay in categorization cards and thematic exports."
+                            description="Choose which transcripts, artifacts, and onsite observations are included. Checked items stay in clustering cards and thematic exports."
                             groups={sourceFilterGroups}
                             selectedIds={selectedSourceIds}
                             presets={sourceFilterPresets}
@@ -7672,7 +7699,7 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
 
                         <div className="bg-white border rounded-2xl p-5 shadow-soft grid md:grid-cols-3 gap-4">
                             <div className="md:col-span-2 flex gap-2">
-                                <input value={newCanvasName} onChange={(e) => setNewCanvasName(e.target.value)} placeholder="New categorization workspace" className="flex-1 border rounded-lg p-2.5 focus:outline-none focus:ring-2 focus:ring-tide" />
+                                <input value={newCanvasName} onChange={(e) => setNewCanvasName(e.target.value)} placeholder="New clustering workspace" className="flex-1 border rounded-lg p-2.5 focus:outline-none focus:ring-2 focus:ring-tide" />
                                 <button onClick={createCanvas} className="bg-tide hover:bg-teal-600 text-white px-4 rounded-lg font-semibold">Create Workspace</button>
                             </div>
                             <select value={activeCanvasId || ''} onChange={(e) => setActiveCanvasId(e.target.value)} className="border rounded-lg p-2.5">
@@ -7697,7 +7724,7 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                         </div>
 
                         {!activeCanvas ? (
-                            <div className="text-center py-16 bg-white border rounded-2xl text-slate-500">Create or select a workspace to begin categorization.</div>
+                            <div className="text-center py-16 bg-white border rounded-2xl text-slate-500">Create or select a workspace to begin clustering.</div>
                         ) : (
                             <div className="space-y-6">
                                 <div className="flex justify-between items-center bg-white border rounded-2xl p-4 shadow-soft">
@@ -7741,7 +7768,7 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                                 {showStep2 && (
                                 <div className="bg-white border rounded-2xl p-5 shadow-soft">
                                     <div className="flex items-center justify-between mb-4">
-                                        <h3 className="font-bold text-ink">Step 2: Categorization</h3>
+                                        <h3 className="font-bold text-ink">Step 2: Clustering</h3>
                                         <div className="relative">
                                             <button
                                                 type="button"
@@ -7752,7 +7779,7 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                                             </button>
                                             {showExportMenu && (
                                                 <div className="absolute right-0 mt-2 w-72 bg-white border border-slate-200 rounded-xl shadow-soft z-30 p-2">
-                                                    <button type="button" onClick={() => { exportCategorizationTable(); setShowExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm text-slate-700">In-vivo codes with categories (.csv)</button>
+                                                    <button type="button" onClick={() => { exportClusteringTable(); setShowExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm text-slate-700">In-vivo codes with clustering categories (.csv)</button>
                                                     <button type="button" onClick={() => { exportThematicTable(); setShowExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm text-slate-700">Themes, categories, and in-vivo codes (.csv)</button>
                                                 </div>
                                             )}
@@ -7816,24 +7843,28 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                                                     >
                                                         <div className="flex items-center justify-between mb-3">
                                                             <div className="flex items-center gap-2">
+                                                                <span className="text-[11px] font-semibold bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full">{category.code || 'C?'}</span>
                                                                 <h4 className="font-bold text-ink">{category.name}</h4>
                                                                 <span className="text-[11px] font-semibold bg-teal-100 text-teal-800 px-2 py-0.5 rounded-full">{category.codes.length} assigned</span>
                                                             </div>
                                                             <div className="flex gap-2">
+                                                                <button onClick={() => toggleCategoryCodes(category.id)} className="text-xs font-semibold text-slate-700 hover:text-slate-900">{expandedCategoryIds[category.id] ? 'Hide in-vivo codes' : 'View in-vivo codes'}</button>
                                                                 <button onClick={() => renameCategory(category.id)} className="text-xs font-semibold text-blue-700 hover:text-blue-800">Rename</button>
                                                                 <button onClick={() => removeCategory(category.id)} className="text-xs font-semibold text-red-700 hover:text-red-800">Delete</button>
                                                             </div>
                                                         </div>
-                                                        <div className="flex flex-wrap gap-2">
-                                                            {category.codes.filter((codeName) => !!codeDetailByName[codeName]).map((codeName) => (
-                                                                <span key={`${category.id}_${codeName}`} className="inline-flex items-center gap-2 text-xs bg-white border border-slate-300 px-3 py-1 rounded-full">
-                                                                    <span className="font-semibold">{codeName}</span>
-                                                                    <span className="text-slate-500">({codeDetailByName[codeName]?.count || 0})</span>
-                                                                    <button onClick={() => unassignCode(codeName)} className="text-red-600 hover:text-red-700">x</button>
-                                                                </span>
-                                                            ))}
-                                                            {category.codes.filter((codeName) => !!codeDetailByName[codeName]).length === 0 && <span className="text-xs text-slate-400">Drop in-vivo code cards here</span>}
-                                                        </div>
+                                                        {expandedCategoryIds[category.id] && (
+                                                            <div className="flex flex-wrap gap-2">
+                                                                {category.codes.filter((codeName) => !!codeDetailByName[codeName]).map((codeName) => (
+                                                                    <span key={`${category.id}_${codeName}`} className="inline-flex items-center gap-2 text-xs bg-white border border-slate-300 px-3 py-1 rounded-full">
+                                                                        <span className="font-semibold">{codeName}</span>
+                                                                        <span className="text-slate-500">({codeDetailByName[codeName]?.count || 0})</span>
+                                                                        <button onClick={() => unassignCode(codeName)} className="text-red-600 hover:text-red-700">x</button>
+                                                                    </span>
+                                                                ))}
+                                                                {category.codes.filter((codeName) => !!codeDetailByName[codeName]).length === 0 && <span className="text-xs text-slate-400">Drop in-vivo code cards here</span>}
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 ))}
                                                 {activeCanvas.categories.length === 0 && <p className="text-sm text-slate-500">No categories yet. Create a category to start organizing in-vivo codes.</p>}
@@ -7903,15 +7934,23 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                                                                 return (
                                                                     <div key={`${theme.id}_${categoryName}`} className="bg-white border rounded-lg p-3">
                                                                         <div className="flex items-center justify-between mb-2">
-                                                                            <div className="font-semibold text-sm text-ink">{categoryName}</div>
-                                                                            <button onClick={() => unassignCategoryFromTheme(theme.id, categoryName)} className="text-xs font-semibold text-red-700 hover:text-red-800">Remove</button>
+                                                                            <div className="flex items-center gap-2">
+                                                                                <span className="text-[11px] font-semibold bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full">{category?.code || 'C?'}</span>
+                                                                                <div className="font-semibold text-sm text-ink">{categoryName}</div>
+                                                                            </div>
+                                                                            <div className="flex items-center gap-2">
+                                                                                <button onClick={() => toggleCategoryCodes(category?.id || `theme_${theme.id}_${categoryName}`)} className="text-xs font-semibold text-slate-700 hover:text-slate-900">{expandedCategoryIds[category?.id || `theme_${theme.id}_${categoryName}`] ? 'Hide in-vivo codes' : 'View in-vivo codes'}</button>
+                                                                                <button onClick={() => unassignCategoryFromTheme(theme.id, categoryName)} className="text-xs font-semibold text-red-700 hover:text-red-800">Remove</button>
+                                                                            </div>
                                                                         </div>
-                                                                        <div className="flex flex-wrap gap-1.5">
-                                                                            {visibleCodes.map((codeName) => (
-                                                                                <span key={`${theme.id}_${categoryName}_${codeName}`} className="text-[11px] bg-teal-100 text-teal-900 px-2 py-0.5 rounded-full border border-teal-200">{codeName}</span>
-                                                                            ))}
-                                                                            {visibleCodes.length === 0 && <span className="text-xs text-slate-400">No filtered in-vivo codes in this category.</span>}
-                                                                        </div>
+                                                                        {expandedCategoryIds[category?.id || `theme_${theme.id}_${categoryName}`] && (
+                                                                            <div className="flex flex-wrap gap-1.5">
+                                                                                {visibleCodes.map((codeName) => (
+                                                                                    <span key={`${theme.id}_${categoryName}_${codeName}`} className="text-[11px] bg-teal-100 text-teal-900 px-2 py-0.5 rounded-full border border-teal-200">{codeName}</span>
+                                                                                ))}
+                                                                                {visibleCodes.length === 0 && <span className="text-xs text-slate-400">No filtered in-vivo codes in this category.</span>}
+                                                                            </div>
+                                                                        )}
                                                                     </div>
                                                                 );
                                                             })}
