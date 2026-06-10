@@ -3362,6 +3362,7 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                     title: 'Analysis',
                     items: [
                         { key: 'analysis', label: 'Clustering', shortLabel: 'CL' },
+                        { key: 'connecting', label: 'Connecting', shortLabel: 'CN' },
                         { key: 'codebook', label: 'Codebook', shortLabel: 'CB' },
                         { key: 'triangulation', label: 'Triangulation', shortLabel: 'TG' }
                     ]
@@ -3726,7 +3727,8 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                                 />
                             )}
                             {view === 'participants' && <ParticipantVault participants={participants} onUpdate={setParticipants} />}
-                            {view === 'analysis' && <AnalysisBoard tags={tags} canvases={analysisCanvases} onUpdate={setAnalysisCanvases} artifacts={globalArtifacts} transcripts={transcripts} participants={participants} observations={observations} observationTags={observationTags} sourceFilterPresets={sourceFilterPresets} onSaveSourceFilterPreset={handleSaveSourceFilterPreset} onDeleteSourceFilterPreset={handleDeleteSourceFilterPreset} />}
+                            {view === 'analysis' && <AnalysisBoard tags={tags} canvases={analysisCanvases} onUpdate={setAnalysisCanvases} artifacts={globalArtifacts} transcripts={transcripts} participants={participants} observations={observations} observationTags={observationTags} sourceFilterPresets={sourceFilterPresets} onSaveSourceFilterPreset={handleSaveSourceFilterPreset} onDeleteSourceFilterPreset={handleDeleteSourceFilterPreset} panelMode="analysis" />}
+                            {view === 'connecting' && <AnalysisBoard tags={tags} canvases={analysisCanvases} onUpdate={setAnalysisCanvases} artifacts={globalArtifacts} transcripts={transcripts} participants={participants} observations={observations} observationTags={observationTags} sourceFilterPresets={sourceFilterPresets} onSaveSourceFilterPreset={handleSaveSourceFilterPreset} onDeleteSourceFilterPreset={handleDeleteSourceFilterPreset} panelMode="connecting" />}
                             {view === 'triangulation' && (
                                 <TriangulationDashboard
                                     transcripts={transcripts}
@@ -7020,9 +7022,10 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
             );
         }
 
-        function AnalysisBoard({ tags, canvases, onUpdate, artifacts, transcripts, participants, observations, observationTags, sourceFilterPresets, onSaveSourceFilterPreset, onDeleteSourceFilterPreset }) {
+        function AnalysisBoard({ tags, canvases, onUpdate, artifacts, transcripts, participants, observations, observationTags, sourceFilterPresets, onSaveSourceFilterPreset, onDeleteSourceFilterPreset, panelMode = 'analysis' }) {
             const { requestConfirmation, confirmationDialog } = useConfirmationDialog();
             const { requestInput, inputDialog } = useInputDialog();
+            const isConnectingMode = panelMode === 'connecting';
             const [newCanvasName, setNewCanvasName] = useState('');
             const [activeCanvasId, setActiveCanvasId] = useState(canvases[0]?.id || null);
             const [newCategoryName, setNewCategoryName] = useState('');
@@ -7431,9 +7434,10 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
             };
 
             const toggleCategoryCodes = (categoryId) => {
+                const currentlyExpanded = expandedCategoryIds[categoryId] !== false;
                 setExpandedCategoryIds((prev) => ({
                     ...prev,
-                    [categoryId]: !prev[categoryId]
+                    [categoryId]: !currentlyExpanded
                 }));
             };
 
@@ -7693,9 +7697,9 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
             const uniqueCodeCount = new Set(codeDetails.map((code) => code.name)).size;
             const uniqueCategoryCount = new Set((activeCanvas?.categories || []).map((category) => category.name)).size;
             const uniqueThemeCount = new Set((activeCanvas?.themes || []).map((theme) => theme.name)).size;
-            const showStep2 = processStepView !== 'step3';
-            const showConnecting = processStepView !== 'step3';
-            const showStep3 = processStepView !== 'step2';
+            const showStep2 = !isConnectingMode && processStepView !== 'step3';
+            const showConnecting = isConnectingMode;
+            const showStep3 = !isConnectingMode && processStepView !== 'step2';
 
             const connectingPairs = useMemo(() => {
                 if (!activeCanvas) return [];
@@ -7843,8 +7847,12 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                 <div className="p-8 h-full overflow-y-auto">
                     <div className="max-w-7xl mx-auto space-y-6">
                         <div className="bg-white border rounded-2xl p-6 shadow-soft">
-                            <h2 className="text-3xl font-display">Clustering and Thematic Analysis</h2>
-                            <p className="text-slate-500 mt-1">Step 2: assign in-vivo code cards into categories (clustering). Step 3: group categories into themes. All data stays offline on this device.</p>
+                            <h2 className="text-3xl font-display">{isConnectingMode ? 'Connecting Analysis' : 'Clustering and Thematic Analysis'}</h2>
+                            <p className="text-slate-500 mt-1">
+                                {isConnectingMode
+                                    ? 'Review category relationships and build the connection matrix, narrative table, and relational map.'
+                                    : 'Step 2: assign in-vivo code cards into categories (clustering). Step 3: group categories into themes. All data stays offline on this device.'}
+                            </p>
                             <p className="text-slate-500 mt-1">Filtered in-vivo codes: {uniqueCodeCount} • Categories in workspace: {uniqueCategoryCount} • Themes in workspace: {uniqueThemeCount}</p>
                         </div>
 
@@ -7901,6 +7909,7 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                                     </div>
                                 </div>
 
+                                {!isConnectingMode && (
                                 <div className="bg-white border rounded-2xl p-4 shadow-soft flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                                     <div>
                                         <h3 className="font-bold text-ink">Process Step View</h3>
@@ -7930,6 +7939,7 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                                         </button>
                                     </div>
                                 </div>
+                                )}
 
                                 {showStep2 && (
                                 <div className="bg-white border rounded-2xl p-5 shadow-soft">
@@ -8014,12 +8024,12 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                                                                 <span className="text-[11px] font-semibold bg-teal-100 text-teal-800 px-2 py-0.5 rounded-full">{category.codes.length} assigned</span>
                                                             </div>
                                                             <div className="flex gap-2">
-                                                                <button onClick={() => toggleCategoryCodes(category.id)} className="text-xs font-semibold text-slate-700 hover:text-slate-900">{expandedCategoryIds[category.id] ? 'Hide in-vivo codes' : 'View in-vivo codes'}</button>
+                                                                <button onClick={() => toggleCategoryCodes(category.id)} className="text-xs font-semibold text-slate-700 hover:text-slate-900">{expandedCategoryIds[category.id] === false ? 'View in-vivo codes' : 'Hide in-vivo codes'}</button>
                                                                 <button onClick={() => renameCategory(category.id)} className="text-xs font-semibold text-blue-700 hover:text-blue-800">Rename</button>
                                                                 <button onClick={() => removeCategory(category.id)} className="text-xs font-semibold text-red-700 hover:text-red-800">Delete</button>
                                                             </div>
                                                         </div>
-                                                        {expandedCategoryIds[category.id] && (
+                                                        {expandedCategoryIds[category.id] !== false && (
                                                             <div className="flex flex-wrap gap-2">
                                                                 {category.codes.filter((codeName) => !!codeDetailByName[codeName]).map((codeName) => (
                                                                     <span key={`${category.id}_${codeName}`} className="inline-flex items-center gap-2 text-xs bg-white border border-slate-300 px-3 py-1 rounded-full">
@@ -8370,11 +8380,11 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                                                                                 <div className="font-semibold text-sm text-ink">{categoryName}</div>
                                                                             </div>
                                                                             <div className="flex items-center gap-2">
-                                                                                <button onClick={() => toggleCategoryCodes(category?.id || `theme_${theme.id}_${categoryName}`)} className="text-xs font-semibold text-slate-700 hover:text-slate-900">{expandedCategoryIds[category?.id || `theme_${theme.id}_${categoryName}`] ? 'Hide in-vivo codes' : 'View in-vivo codes'}</button>
+                                                                                <button onClick={() => toggleCategoryCodes(category?.id || `theme_${theme.id}_${categoryName}`)} className="text-xs font-semibold text-slate-700 hover:text-slate-900">{expandedCategoryIds[category?.id || `theme_${theme.id}_${categoryName}`] === false ? 'View in-vivo codes' : 'Hide in-vivo codes'}</button>
                                                                                 <button onClick={() => unassignCategoryFromTheme(theme.id, categoryName)} className="text-xs font-semibold text-red-700 hover:text-red-800">Remove</button>
                                                                             </div>
                                                                         </div>
-                                                                        {expandedCategoryIds[category?.id || `theme_${theme.id}_${categoryName}`] && (
+                                                                        {expandedCategoryIds[category?.id || `theme_${theme.id}_${categoryName}`] !== false && (
                                                                             <div className="flex flex-wrap gap-1.5">
                                                                                 {visibleCodes.map((codeName) => (
                                                                                     <span key={`${theme.id}_${categoryName}_${codeName}`} className="text-[11px] bg-teal-100 text-teal-900 px-2 py-0.5 rounded-full border border-teal-200">{codeName}</span>
