@@ -344,6 +344,10 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
             background: #dbeafe;
             border-color: #93c5fd;
         }
+
+        .qa-audio-player {
+            accent-color: #0f766e;
+        }
     </style>
 </head>
 <body class="bg-mist text-ink font-sans">
@@ -6335,7 +6339,7 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                             {audioTracks.length > 0 ? (
                                 <div className="sticky top-0 p-4 border-b border-slate-200/80 bg-slate-50/90 backdrop-blur-sm z-20 space-y-3 shadow-[0_1px_0_rgba(148,163,184,0.35),0_4px_12px_rgba(15,23,42,0.06)]">
                                     <div className="flex gap-4 items-center">
-                                        <audio ref={audioRef} src={audioUrl} controls className="flex-1 h-10 outline-none" />
+                                        <audio ref={audioRef} src={audioUrl} controls className="qa-audio-player flex-1 h-10 outline-none" />
                                         {audioTracks.length > 1 && (
                                             <select
                                                 value={activeAudioTrackId || ''}
@@ -8827,7 +8831,7 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                             {audioTracks.length > 0 ? (
                                 <div className="sticky top-0 p-4 border-b border-slate-200/80 bg-slate-50/90 backdrop-blur-sm z-20 space-y-3 shadow-[0_1px_0_rgba(148,163,184,0.35),0_4px_12px_rgba(15,23,42,0.06)]">
                                     <div className="flex gap-3 items-center">
-                                        <audio ref={audioRef} src={audioUrl} controls className="flex-1 h-10 outline-none" />
+                                        <audio ref={audioRef} src={audioUrl} controls className="qa-audio-player flex-1 h-10 outline-none" />
                                         {audioTracks.length > 1 && (
                                             <select
                                                 value={activeAudioTrackId || ''}
