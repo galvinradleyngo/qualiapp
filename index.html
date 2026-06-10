@@ -7753,6 +7753,23 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                 ? connectingPairs[Math.max(0, Math.min(connectingCursor, connectingPairs.length - 1))]
                 : null;
 
+            const getConnectingPairIndex = (rowCode, columnCode) => connectingPairs.findIndex((pair) => (
+                (pair.rowCode === rowCode && pair.columnCode === columnCode)
+                || (pair.rowCode === columnCode && pair.columnCode === rowCode)
+            ));
+
+            const focusConnectingPair = (rowCode, columnCode) => {
+                const pairIndex = getConnectingPairIndex(rowCode, columnCode);
+                if (pairIndex >= 0) setConnectingCursor(pairIndex);
+            };
+
+            const getConnectionResponseLabel = (rowCode, columnCode) => {
+                const value = getConnectionValue(rowCode, columnCode);
+                if (value === 1) return 'Yes';
+                if (value === 0) return 'No';
+                return 'Not identified yet';
+            };
+
             const connectingProgress = useMemo(() => {
                 if (!currentConnectingPair && connectingPairs.length === 0) {
                     return { identified: 0, total: 0, percent: 0 };
@@ -7790,6 +7807,13 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                 const foundCategory = (activeCanvas.categories || []).find((category) => category.code === categoryCode);
                 if (!foundCategory) return categoryCode;
                 return `${foundCategory.code} (${foundCategory.name})`;
+            };
+
+            const buildCategoryPromptLabelByCode = (categoryCode) => {
+                if (!activeCanvas || !categoryCode) return categoryCode || '';
+                const foundCategory = (activeCanvas.categories || []).find((category) => category.code === categoryCode);
+                if (!foundCategory) return categoryCode;
+                return `${foundCategory.name} (${foundCategory.code})`;
             };
 
             const buildNarrativeDefault = (categoryCode) => {
@@ -8110,7 +8134,7 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                                         <p className="text-xs text-slate-600">C. A category acts as a condition which enables (or constrains) another category to be what it is.</p>
                                     </div>
 
-                                    <div className="border rounded-xl p-4 bg-white space-y-3">
+                                    <div className="border-2 border-amber-300 rounded-xl p-4 bg-amber-50/30 shadow-[0_0_0_3px_rgba(251,191,36,0.22)] space-y-3">
                                         <div className="flex items-center justify-between gap-3">
                                             <p className="text-sm font-semibold text-ink">Guided Connection Prompt</p>
                                             <p className="text-xs text-slate-500">
@@ -8129,7 +8153,10 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                                         {currentConnectingPair ? (
                                             <>
                                                 <p className="text-sm text-slate-700">
-                                                    Is <span className="font-semibold">{currentConnectingPair.rowCode}</span> connected to <span className="font-semibold">{currentConnectingPair.columnCode}</span>?
+                                                    Is <span className="font-semibold">{buildCategoryPromptLabelByCode(currentConnectingPair.rowCode)}</span> connected to <span className="font-semibold">{buildCategoryPromptLabelByCode(currentConnectingPair.columnCode)}</span>?
+                                                </p>
+                                                <p className="text-xs text-slate-600">
+                                                    Current response: <span className="font-semibold text-slate-800">{getConnectionResponseLabel(currentConnectingPair.rowCode, currentConnectingPair.columnCode)}</span>
                                                 </p>
                                                 <p className={`text-xs font-semibold ${isConnectionIdentified(currentConnectingPair.rowCode, currentConnectingPair.columnCode) ? 'text-emerald-700' : 'text-amber-700'}`}>
                                                     {isConnectionIdentified(currentConnectingPair.rowCode, currentConnectingPair.columnCode) ? 'Status: Identified' : 'Status: Not identified yet'}
@@ -8191,10 +8218,10 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                                                                                 type="button"
                                                                                 onClick={() => {
                                                                                     if (isDiagonal) return;
-                                                                                    updateConnectionValue(rowCategory.code, columnCategory.code, value === 1 ? 0 : 1);
+                                                                                    focusConnectingPair(rowCategory.code, columnCategory.code);
                                                                                 }}
                                                                                 className={`h-8 w-8 rounded-full text-xs font-bold border transition ${isDiagonal ? 'bg-slate-50 border-slate-200 text-slate-300 cursor-not-allowed' : value === 1 ? 'bg-emerald-100 border-emerald-300 text-emerald-800' : value === 0 ? 'bg-slate-100 border-slate-300 text-slate-700' : 'bg-amber-50 border-amber-300 text-amber-700'}`}
-                                                                                title={isDiagonal ? 'Self-connection not applicable' : value === null ? `Mark ${rowCategory.code}-${columnCategory.code} as connected` : `Set ${rowCategory.code}-${columnCategory.code} to ${value === 1 ? 0 : 1}`}
+                                                                                title={isDiagonal ? 'Self-connection not applicable' : `Edit ${rowCategory.code}-${columnCategory.code} in guided prompt (current: ${getConnectionResponseLabel(rowCategory.code, columnCategory.code)})`}
                                                                                 disabled={isDiagonal}
                                                                             >
                                                                                 {isDiagonal ? '-' : value == null ? '?' : value}
