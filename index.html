@@ -347,6 +347,29 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
 
         .qa-audio-player {
             accent-color: #0f766e;
+            color: #0f766e;
+        }
+
+        .qa-audio-player::-webkit-media-controls-enclosure {
+            border-radius: 9999px;
+        }
+
+        .qa-audio-player::-webkit-media-controls-panel {
+            background: #f8fafc;
+        }
+
+        .qa-audio-player::-webkit-media-controls-timeline {
+            border-radius: 9999px;
+        }
+
+        .qa-audio-player::-webkit-media-controls-timeline::-webkit-slider-runnable-track {
+            background: linear-gradient(to right, #0f766e 0%, #0f766e var(--_played, 0%), #cbd5e1 var(--_played, 0%), #cbd5e1 100%);
+            border-radius: 9999px;
+        }
+
+        .qa-audio-player::-webkit-media-controls-timeline::-webkit-slider-thumb {
+            background: #0f766e;
+            border-radius: 9999px;
         }
     </style>
 </head>
@@ -5334,6 +5357,7 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
             const [audioUploadStatus, setAudioUploadStatus] = useState('');
             const [audioEncodingCount, setAudioEncodingCount] = useState(0);
             const [playbackRate, setPlaybackRate] = useState(transcript.playbackRate || 1);
+            const [audioProgressPct, setAudioProgressPct] = useState(0);
 
             const [pendingSelection, setPendingSelection] = useState(null);
             const [editingTagId, setEditingTagId] = useState(null);
@@ -5474,6 +5498,34 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                 if (!audioRef.current) return;
                 audioRef.current.playbackRate = playbackRate;
             }, [audioUrl, playbackRate]);
+
+            useEffect(() => {
+                const player = audioRef.current;
+                if (!player || !audioUrl) {
+                    setAudioProgressPct(0);
+                    return;
+                }
+                const updateProgress = () => {
+                    const duration = Number(player.duration) || 0;
+                    const current = Number(player.currentTime) || 0;
+                    if (duration <= 0) {
+                        setAudioProgressPct(0);
+                        return;
+                    }
+                    setAudioProgressPct(Math.max(0, Math.min(100, (current / duration) * 100)));
+                };
+                updateProgress();
+                player.addEventListener('timeupdate', updateProgress);
+                player.addEventListener('loadedmetadata', updateProgress);
+                player.addEventListener('durationchange', updateProgress);
+                player.addEventListener('seeked', updateProgress);
+                return () => {
+                    player.removeEventListener('timeupdate', updateProgress);
+                    player.removeEventListener('loadedmetadata', updateProgress);
+                    player.removeEventListener('durationchange', updateProgress);
+                    player.removeEventListener('seeked', updateProgress);
+                };
+            }, [audioUrl, activeAudioTrackId]);
 
             useEffect(() => {
                 if (!editableRef.current) return;
@@ -6383,6 +6435,9 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                                             Add More
                                             <input type="file" accept="audio/*" multiple onChange={handleAudioUpload} className="hidden" disabled={uploadingAudio} />
                                         </label>
+                                    </div>
+                                    <div className="h-1.5 w-full rounded-full bg-slate-200 overflow-hidden">
+                                        <div className="h-full bg-tide transition-all" style={{ width: `${audioProgressPct}%` }} />
                                     </div>
                                     {audioEncodingCount > 0 && (
                                         <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
@@ -8210,6 +8265,7 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
             const [activeAudioTrackId, setActiveAudioTrackId] = useState(null);
             const [uploadingAudio, setUploadingAudio] = useState(false);
             const [playbackRate, setPlaybackRate] = useState(observation.playbackRate || 1);
+            const [audioProgressPct, setAudioProgressPct] = useState(0);
 
             const [pendingSelection, setPendingSelection] = useState(null);
             const [editingTagId, setEditingTagId] = useState(null);
@@ -8251,6 +8307,34 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                 if (!audioRef.current) return;
                 audioRef.current.playbackRate = playbackRate;
             }, [audioUrl, playbackRate]);
+
+            useEffect(() => {
+                const player = audioRef.current;
+                if (!player || !audioUrl) {
+                    setAudioProgressPct(0);
+                    return;
+                }
+                const updateProgress = () => {
+                    const duration = Number(player.duration) || 0;
+                    const current = Number(player.currentTime) || 0;
+                    if (duration <= 0) {
+                        setAudioProgressPct(0);
+                        return;
+                    }
+                    setAudioProgressPct(Math.max(0, Math.min(100, (current / duration) * 100)));
+                };
+                updateProgress();
+                player.addEventListener('timeupdate', updateProgress);
+                player.addEventListener('loadedmetadata', updateProgress);
+                player.addEventListener('durationchange', updateProgress);
+                player.addEventListener('seeked', updateProgress);
+                return () => {
+                    player.removeEventListener('timeupdate', updateProgress);
+                    player.removeEventListener('loadedmetadata', updateProgress);
+                    player.removeEventListener('durationchange', updateProgress);
+                    player.removeEventListener('seeked', updateProgress);
+                };
+            }, [audioUrl, activeAudioTrackId]);
 
             const getObservationAudioEntries = (doc) => {
                 if (Array.isArray(doc.audioFiles) && doc.audioFiles.length > 0) {
@@ -8875,6 +8959,9 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                                             Add More
                                             <input type="file" accept="audio/*" multiple onChange={handleAudioUpload} className="hidden" disabled={uploadingAudio} />
                                         </label>
+                                    </div>
+                                    <div className="h-1.5 w-full rounded-full bg-slate-200 overflow-hidden">
+                                        <div className="h-full bg-tide transition-all" style={{ width: `${audioProgressPct}%` }} />
                                     </div>
                                 </div>
                             ) : (
