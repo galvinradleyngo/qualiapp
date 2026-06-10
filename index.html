@@ -1710,6 +1710,11 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
             });
             const [audioMigrationProgress, setAudioMigrationProgress] = useState(buildAudioMigrationState());
             const [isProgressMinimized, setIsProgressMinimized] = useState(false);
+            const [pomodoroOpen, setPomodoroOpen] = useState(false);
+            const [pomodoroMinimized, setPomodoroMinimized] = useState(false);
+            const [pomodoroDurationMinutes, setPomodoroDurationMinutes] = useState(20);
+            const [pomodoroRemainingSeconds, setPomodoroRemainingSeconds] = useState(20 * 60);
+            const [pomodoroRunning, setPomodoroRunning] = useState(false);
             const audioOptimizationBusyRef = useRef(false);
             const autoOptimizationTriggeredRef = useRef(false);
             const confirmResolverRef = useRef(null);
@@ -1742,6 +1747,81 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                     confirmResolverRef.current(accepted);
                     confirmResolverRef.current = null;
                 }
+            };
+
+            const formatPomodoroTime = (totalSeconds) => {
+                const safe = Math.max(0, Number(totalSeconds) || 0);
+                const minutes = Math.floor(safe / 60);
+                const seconds = safe % 60;
+                return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+            };
+
+            const playPomodoroChime = () => {
+                try {
+                    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                    if (!AudioCtx) return;
+                    const ctx = new AudioCtx();
+                    const now = ctx.currentTime;
+                    const gain = ctx.createGain();
+                    gain.gain.setValueAtTime(0.0001, now);
+                    gain.gain.exponentialRampToValueAtTime(0.08, now + 0.02);
+                    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.35);
+
+                    const osc = ctx.createOscillator();
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(660, now);
+                    osc.frequency.linearRampToValueAtTime(520, now + 0.35);
+                    osc.connect(gain);
+                    gain.connect(ctx.destination);
+                    osc.start(now);
+                    osc.stop(now + 0.36);
+
+                    setTimeout(() => {
+                        ctx.close().catch(() => {});
+                    }, 450);
+                } catch (_err) {
+                    // Silent fallback when browser blocks autoplay or WebAudio.
+                }
+            };
+
+            useEffect(() => {
+                if (!pomodoroRunning) return;
+                const intervalId = setInterval(() => {
+                    setPomodoroRemainingSeconds((prev) => {
+                        if (prev <= 1) {
+                            clearInterval(intervalId);
+                            setPomodoroRunning(false);
+                            setPomodoroOpen(true);
+                            setPomodoroMinimized(false);
+                            playPomodoroChime();
+                            showNotice({
+                                title: 'Pomodoro Complete',
+                                message: 'congratulations! Take a quick break!'
+                            });
+                            return pomodoroDurationMinutes * 60;
+                        }
+                        return prev - 1;
+                    });
+                }, 1000);
+
+                return () => clearInterval(intervalId);
+            }, [pomodoroRunning, pomodoroDurationMinutes, showNotice]);
+
+            const adjustPomodoroMinutes = (delta) => {
+                if (pomodoroRunning) return;
+                const next = Math.min(180, Math.max(1, pomodoroDurationMinutes + delta));
+                setPomodoroDurationMinutes(next);
+                setPomodoroRemainingSeconds(next * 60);
+            };
+
+            const startPomodoro = () => {
+                setPomodoroRemainingSeconds(pomodoroDurationMinutes * 60);
+                setPomodoroRunning(true);
+            };
+
+            const resetPomodoro = () => {
+                setPomodoroRunning(false);
+                setPomodoroRemainingSeconds(pomodoroDurationMinutes * 60);
             };
 
             useEffect(() => {
@@ -2560,6 +2640,39 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                 setTranscripts(transcripts.map(t => t.id === transcriptId ? { ...t, folder: targetFolder, subfolder: '' } : t));
             };
 
+            const handleReorderTranscriptsInFolder = (folderName, orderedIds) => {
+                if (!folderName || !Array.isArray(orderedIds) || orderedIds.length === 0) return;
+                setTranscripts(prev => {
+                    const inFolder = prev.filter(t => (t.folder || 'Uncategorized') === folderName);
+                    if (inFolder.length <= 1) return prev;
+
+                    const byId = new Map(inFolder.map(t => [t.id, t]));
+                    const seen = new Set();
+                    const reordered = [];
+
+                    orderedIds.forEach((id) => {
+                        const item = byId.get(id);
+                        if (!item || seen.has(id)) return;
+                        reordered.push(item);
+                        seen.add(id);
+                    });
+
+                    inFolder.forEach((item) => {
+                        if (seen.has(item.id)) return;
+                        reordered.push(item);
+                        seen.add(item.id);
+                    });
+
+                    let cursor = 0;
+                    return prev.map((item) => {
+                        if ((item.folder || 'Uncategorized') !== folderName) return item;
+                        const next = reordered[cursor] || item;
+                        cursor += 1;
+                        return next;
+                    });
+                });
+            };
+
             const handleMoveArtifactToFolder = (artId, folderName) => {
                 const targetFolder = folderName.trim() || '';
                 if (targetFolder && !folders.includes(targetFolder)) {
@@ -3351,6 +3464,111 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                         </aside>
 
                         <main className="flex-1 overflow-hidden flex flex-col relative">
+                            <div className="absolute top-3 right-3 z-40 flex items-start gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setPomodoroOpen(true);
+                                        setPomodoroMinimized(false);
+                                    }}
+                                    className="h-10 w-10 rounded-full bg-white border border-rose-200 shadow-soft text-xl hover:scale-105 transition"
+                                    title="Open Pomodoro"
+                                    aria-label="Open Pomodoro timer"
+                                >
+                                    🍅
+                                </button>
+
+                                {pomodoroMinimized && (
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setPomodoroOpen(true);
+                                            setPomodoroMinimized(false);
+                                        }}
+                                        className="h-10 px-3 rounded-full bg-white/95 border border-slate-200 shadow-soft text-sm font-semibold text-slate-700"
+                                        title="Expand Pomodoro"
+                                        aria-label="Expand minimized Pomodoro timer"
+                                    >
+                                        {formatPomodoroTime(pomodoroRemainingSeconds)}
+                                    </button>
+                                )}
+                            </div>
+
+                            {pomodoroOpen && !pomodoroMinimized && (
+                                <div className="absolute top-14 right-3 z-40 w-64 bg-white/95 border border-slate-200 rounded-2xl shadow-soft p-4 space-y-3">
+                                    <div className="flex items-center justify-between">
+                                        <h3 className="text-sm font-bold text-ink">pomodoro</h3>
+                                        <button
+                                            type="button"
+                                            onClick={() => setPomodoroMinimized(true)}
+                                            className="text-slate-400 hover:text-slate-600 text-lg leading-none"
+                                            title="Minimize Pomodoro"
+                                            aria-label="Minimize Pomodoro timer"
+                                        >
+                                            -
+                                        </button>
+                                    </div>
+
+                                    <div className="text-3xl font-display text-center text-ink tracking-wide">
+                                        {formatPomodoroTime(pomodoroRemainingSeconds)}
+                                    </div>
+
+                                    <div className="flex items-center justify-center gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => adjustPomodoroMinutes(-1)}
+                                            disabled={pomodoroRunning}
+                                            className="h-8 w-8 rounded-full border border-slate-300 text-slate-700 font-bold disabled:opacity-40"
+                                            aria-label="Subtract one minute"
+                                        >
+                                            -
+                                        </button>
+                                        <p className="text-sm text-slate-600 min-w-[110px] text-center">
+                                            Focus: {pomodoroDurationMinutes} min
+                                        </p>
+                                        <button
+                                            type="button"
+                                            onClick={() => adjustPomodoroMinutes(1)}
+                                            disabled={pomodoroRunning}
+                                            className="h-8 w-8 rounded-full border border-slate-300 text-slate-700 font-bold disabled:opacity-40"
+                                            aria-label="Add one minute"
+                                        >
+                                            +
+                                        </button>
+                                    </div>
+
+                                    <div className="flex gap-2">
+                                        {!pomodoroRunning ? (
+                                            <button
+                                                type="button"
+                                                onClick={startPomodoro}
+                                                className="flex-1 bg-tide text-white rounded-lg py-2 text-sm font-semibold hover:bg-teal-600"
+                                            >
+                                                Start
+                                            </button>
+                                        ) : (
+                                            <button
+                                                type="button"
+                                                onClick={resetPomodoro}
+                                                className="flex-1 bg-ember text-white rounded-lg py-2 text-sm font-semibold hover:bg-orange-700"
+                                            >
+                                                Stop
+                                            </button>
+                                        )}
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setPomodoroOpen(false);
+                                                setPomodoroMinimized(false);
+                                            }}
+                                            className="px-3 py-2 rounded-lg text-sm font-semibold border border-slate-300 text-slate-700 hover:bg-slate-50"
+                                        >
+                                            Close
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+
                             {audioMigrationProgress.running && (
                                 <div className="absolute top-3 right-3 z-30 bg-white/95 border border-slate-200 rounded-xl shadow-soft px-3 py-2 w-72">
                                     <div className="flex items-center justify-between gap-2">
@@ -3453,6 +3671,7 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                                     onRenameFolder={handleRenameFolder}
                                     onDeleteFolder={handleDeleteFolder}
                                     onMoveTranscript={handleMoveTranscriptToFolder}
+                                    onReorderTranscriptsInFolder={handleReorderTranscriptsInFolder}
                                     onRenameTranscript={handleRenameTranscript}
                                     onOpen={(id) => { setActiveId(id); setView('editor'); }}
                                     onDelete={handleDeleteTranscript}
@@ -4185,7 +4404,7 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
             );
         }
 
-        function Dashboard({ transcripts, folders, onDownloadApp, onCreate, onCreateFolder, onRenameFolder, onDeleteFolder, onMoveTranscript, onRenameTranscript, onOpen, onDelete, participants }) {
+        function Dashboard({ transcripts, folders, onDownloadApp, onCreate, onCreateFolder, onRenameFolder, onDeleteFolder, onMoveTranscript, onReorderTranscriptsInFolder, onRenameTranscript, onOpen, onDelete, participants }) {
             const [showModal, setShowModal] = useState(false);
             const [title, setTitle] = useState('');
             const [folder, setFolder] = useState('');
@@ -4200,6 +4419,7 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
             const [editingFolderId, setEditingFolderId] = useState(null);
             const [editingFolderValue, setEditingFolderValue] = useState('');
             const [moveToast, setMoveToast] = useState('');
+            const [dragOverTranscriptId, setDragOverTranscriptId] = useState(null);
 
             const folderList = ['Uncategorized', ...folders.filter(f => f !== 'Uncategorized')];
             const folderCounts = transcripts.reduce((acc, t) => {
@@ -4263,6 +4483,23 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                 setEditingFolderValue('');
             };
 
+            const canReorderWithinFolder = selectedFolder !== 'All';
+
+            const reorderWithinSelectedFolder = (draggedId, targetId) => {
+                if (!canReorderWithinFolder) return;
+                if (!draggedId || !targetId || draggedId === targetId) return;
+                const ids = visibleTranscripts.map(t => t.id);
+                const fromIndex = ids.indexOf(draggedId);
+                const toIndex = ids.indexOf(targetId);
+                if (fromIndex === -1 || toIndex === -1) return;
+                const nextIds = [...ids];
+                const [moved] = nextIds.splice(fromIndex, 1);
+                nextIds.splice(toIndex, 0, moved);
+                if (typeof onReorderTranscriptsInFolder === 'function') {
+                    onReorderTranscriptsInFolder(selectedFolder, nextIds);
+                }
+            };
+
             return (
                 <div className="p-8 h-full overflow-y-auto">
                     <div className="max-w-7xl mx-auto pt-2 space-y-8">
@@ -4270,7 +4507,7 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                                 <div>
                                     <h2 className="text-4xl font-display">Transcript Workspace</h2>
-                                    <p className="text-slate-500 mt-1">Drag transcript cards into the folder sidebar. Rename titles and manage folders inline.</p>
+                                    <p className="text-slate-500 mt-1">Drag transcript cards into the folder sidebar. In a selected folder view, drag cards onto each other to reorder them.</p>
                                     <div className="mt-4 p-3 rounded-xl border-2 border-teal-200 bg-teal-50 text-teal-900 max-w-3xl">
                                         <p className="text-sm font-semibold">Offline and device-local by default.</p>
                                         <p className="text-sm mt-1">Everything you enter is saved in this browser on this device only. Data leaves your device only when you intentionally export a backup file.</p>
@@ -4316,8 +4553,24 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                                                 onDragStart={() => setDragTranscriptId(t.id)}
                                                 onDragEnd={() => {
                                                     setDragTranscriptId(null);
+                                                    setDragOverTranscriptId(null);
                                                 }}
-                                                className="bg-white p-5 rounded-xl border shadow-sm cursor-pointer relative group transition hover:border-tide"
+                                                onDragOver={(e) => {
+                                                    if (!canReorderWithinFolder || !dragTranscriptId || dragTranscriptId === t.id) return;
+                                                    e.preventDefault();
+                                                    if (dragOverTranscriptId !== t.id) setDragOverTranscriptId(t.id);
+                                                }}
+                                                onDragLeave={() => {
+                                                    if (dragOverTranscriptId === t.id) setDragOverTranscriptId(null);
+                                                }}
+                                                onDrop={(e) => {
+                                                    if (!canReorderWithinFolder) return;
+                                                    e.preventDefault();
+                                                    reorderWithinSelectedFolder(dragTranscriptId, t.id);
+                                                    setDragOverTranscriptId(null);
+                                                    setDragTranscriptId(null);
+                                                }}
+                                                className={`bg-white p-5 rounded-xl border shadow-sm cursor-pointer relative group transition hover:border-tide ${dragOverTranscriptId === t.id ? 'ring-2 ring-tide border-tide' : ''}`}
                                                 onClick={() => editingTitleId !== t.id && onOpen(t.id)}
                                             >
                                                 <div className="pr-12">
