@@ -7296,17 +7296,7 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                     }))
                     : [];
 
-                const categories = normalizedCategories.length > 0
-                    ? normalizedCategories
-                    : (() => {
-                        const grouped = {};
-                        codeDetails.forEach((code, index) => {
-                            const categoryName = (code.category || 'Uncategorized').trim() || 'Uncategorized';
-                            if (!grouped[categoryName]) grouped[categoryName] = { id: `cat_inferred_${index}`, name: categoryName, code: `C${Object.keys(grouped).length + 1}`, codes: [] };
-                            grouped[categoryName].codes.push(code.name);
-                        });
-                        return Object.values(grouped).map((entry) => ({ ...entry, codes: [...new Set(entry.codes)] }));
-                    })();
+                const categories = normalizedCategories;
 
                 const themes = (canvas?.themes || []).map((theme, index) => {
                     const explicitCategories = Array.isArray(theme.categories)
@@ -7315,9 +7305,9 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                     const fallbackCategories = explicitCategories.length > 0
                         ? explicitCategories
                         : [...new Set((theme.codes || []).map((codeName) => {
-                            const found = codeDetailByName[codeName];
-                            return (found?.category || 'Uncategorized').trim() || 'Uncategorized';
-                        }))];
+                            const foundCategory = categories.find((category) => (category.codes || []).includes(codeName));
+                            return foundCategory?.name || '';
+                        }).filter(Boolean))];
                     return {
                         id: theme.id || `theme_${index}`,
                         name: (theme.name || '').trim() || `Theme ${index + 1}`,
@@ -7338,10 +7328,20 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                             connectionMatrix[sourceCode] = {};
                             categories.forEach((targetCategory) => {
                                 const targetCode = String(targetCategory.code || '').trim();
+                                if (sourceCode === targetCode) {
+                                    connectionMatrix[sourceCode][targetCode] = 0;
+                                    return;
+                                }
                                 const direct = rawConnections?.[sourceCode]?.[targetCode];
                                 const mirrored = rawConnections?.[targetCode]?.[sourceCode];
                                 const value = direct == null ? mirrored : direct;
-                                connectionMatrix[sourceCode][targetCode] = value === 1 || value === '1' || value === true ? 1 : 0;
+                                if (value === 1 || value === '1' || value === true) {
+                                    connectionMatrix[sourceCode][targetCode] = 1;
+                                } else if (value === 0 || value === '0' || value === false) {
+                                    connectionMatrix[sourceCode][targetCode] = 0;
+                                } else {
+                                    connectionMatrix[sourceCode][targetCode] = null;
+                                }
                             });
                         });
                         return connectionMatrix;
@@ -7705,14 +7705,16 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                 if (!activeCanvas) return [];
                 const categories = activeCanvas.categories || [];
                 const pairs = [];
-                categories.forEach((rowCategory) => {
-                    categories.forEach((columnCategory) => {
+                for (let rowIndex = 0; rowIndex < categories.length; rowIndex += 1) {
+                    for (let columnIndex = rowIndex + 1; columnIndex < categories.length; columnIndex += 1) {
+                        const rowCategory = categories[rowIndex];
+                        const columnCategory = categories[columnIndex];
                         pairs.push({
                             rowCode: rowCategory.code,
                             columnCode: columnCategory.code
                         });
-                    });
-                });
+                    }
+                }
                 return pairs;
             }, [activeCanvas]);
 
@@ -7722,8 +7724,19 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                 setSelectedMapNodeCode(null);
             }, [activeCanvasId, uniqueCategoryCount]);
 
+            const getConnectionValue = (rowCode, columnCode) => {
+                if (!activeCanvas || !rowCode || !columnCode) return null;
+                const value = activeCanvas.connections?.[rowCode]?.[columnCode];
+                if (value === 1 || value === '1' || value === true) return 1;
+                if (value === 0 || value === '0' || value === false) return 0;
+                return null;
+            };
+
+            const isConnectionIdentified = (rowCode, columnCode) => getConnectionValue(rowCode, columnCode) !== null;
+
             const updateConnectionValue = (rowCode, columnCode, nextValue) => {
                 if (!activeCanvas || !rowCode || !columnCode) return;
+                if (rowCode === columnCode) return;
                 const normalizedValue = Number(nextValue) === 1 ? 1 : 0;
                 const nextConnections = JSON.parse(JSON.stringify(activeCanvas.connections || {}));
                 if (!nextConnections[rowCode]) nextConnections[rowCode] = {};
@@ -7740,6 +7753,19 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                 ? connectingPairs[Math.max(0, Math.min(connectingCursor, connectingPairs.length - 1))]
                 : null;
 
+            const connectingProgress = useMemo(() => {
+                if (!currentConnectingPair && connectingPairs.length === 0) {
+                    return { identified: 0, total: 0, percent: 0 };
+                }
+                const identified = connectingPairs.filter((pair) => isConnectionIdentified(pair.rowCode, pair.columnCode)).length;
+                const total = connectingPairs.length;
+                return {
+                    identified,
+                    total,
+                    percent: total > 0 ? Math.round((identified / total) * 100) : 0
+                };
+            }, [connectingPairs, activeCanvas]);
+
             const handleGuidedConnectionAnswer = (value) => {
                 if (!currentConnectingPair) return;
                 updateConnectionValue(currentConnectingPair.rowCode, currentConnectingPair.columnCode, value);
@@ -7754,9 +7780,26 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                 const connectedCodes = (activeCanvas.categories || [])
                     .filter((category) => category.code !== categoryCode)
                     .map((category) => category.code)
-                    .filter((code) => (activeCanvas.connections?.[categoryCode]?.[code] || 0) === 1);
+                    .filter((code) => getConnectionValue(categoryCode, code) === 1);
                 if (connectedCodes.length === 0) return `${categoryCode}: none`;
                 return `${categoryCode}: ${connectedCodes.join(' - ')}`;
+            };
+
+            const buildCategoryLabelByCode = (categoryCode) => {
+                if (!activeCanvas || !categoryCode) return categoryCode || '';
+                const foundCategory = (activeCanvas.categories || []).find((category) => category.code === categoryCode);
+                if (!foundCategory) return categoryCode;
+                return `${foundCategory.code} (${foundCategory.name})`;
+            };
+
+            const buildNarrativeDefault = (categoryCode) => {
+                if (!activeCanvas || !categoryCode) return '';
+                const connectedCodes = (activeCanvas.categories || [])
+                    .filter((item) => item.code !== categoryCode)
+                    .map((item) => item.code)
+                    .filter((code) => getConnectionValue(categoryCode, code) === 1);
+                const labels = [categoryCode, ...connectedCodes].map((code) => buildCategoryLabelByCode(code));
+                return `Contents of ${labels.join(', ')}`;
             };
 
             const updateConnectionNote = (categoryCode, text) => {
@@ -7778,7 +7821,7 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                     const code = category.code;
                     const count = (activeCanvas.categories || []).reduce((acc, item) => {
                         if (item.code === code) return acc;
-                        return acc + ((activeCanvas.connections?.[code]?.[item.code] || 0) === 1 ? 1 : 0);
+                        return acc + (getConnectionValue(code, item.code) === 1 ? 1 : 0);
                     }, 0);
                     out[code] = count;
                 });
@@ -7834,7 +7877,7 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                     for (let j = i + 1; j < nodes.length; j++) {
                         const sourceCode = nodes[i].code;
                         const targetCode = nodes[j].code;
-                        if ((activeCanvas.connections?.[sourceCode]?.[targetCode] || 0) === 1) {
+                        if (getConnectionValue(sourceCode, targetCode) === 1) {
                             links.push({ sourceCode, targetCode });
                         }
                     }
@@ -7901,10 +7944,13 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                             <div className="text-center py-16 bg-white border rounded-2xl text-slate-500">Create or select a workspace to begin clustering.</div>
                         ) : (
                             <div className="space-y-6">
-                                <div className="flex justify-between items-center bg-white border rounded-2xl p-4 shadow-soft">
-                                    <h3 className="text-lg font-bold text-ink">{activeCanvas.name}</h3>
+                                <div className="flex justify-between items-center bg-gradient-to-r from-ink via-slate-800 to-slate-700 border border-slate-700 rounded-2xl p-5 shadow-soft">
+                                    <div>
+                                        <p className="text-[10px] uppercase tracking-[0.14em] text-slate-300 font-semibold">Active Workspace</p>
+                                        <h3 className="text-2xl md:text-3xl font-display text-white leading-tight">{activeCanvas.name}</h3>
+                                    </div>
                                     <div className="flex gap-2">
-                                        <button onClick={() => renameCanvas(activeCanvas.id)} className="px-3 py-1 text-sm bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 font-semibold">Rename</button>
+                                        <button onClick={() => renameCanvas(activeCanvas.id)} className="px-3 py-1 text-sm bg-white/90 text-blue-700 rounded-lg hover:bg-white font-semibold">Rename</button>
                                         <button onClick={() => deleteCanvas(activeCanvas.id)} className="px-3 py-1 text-sm bg-red-100 text-red-700 rounded-lg hover:bg-red-200 font-semibold">Delete</button>
                                     </div>
                                 </div>
@@ -8071,10 +8117,22 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                                                 {connectingPairs.length > 0 ? `Pair ${connectingCursor + 1} of ${connectingPairs.length}` : 'No categories yet'}
                                             </p>
                                         </div>
+                                        <div className="space-y-2">
+                                            <div className="flex items-center justify-between text-xs">
+                                                <p className="text-slate-600">Identified connections</p>
+                                                <p className="font-semibold text-slate-700">{connectingProgress.identified}/{connectingProgress.total} ({connectingProgress.percent}%)</p>
+                                            </div>
+                                            <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
+                                                <div className="h-full bg-emerald-500 transition-all" style={{ width: `${connectingProgress.percent}%` }} />
+                                            </div>
+                                        </div>
                                         {currentConnectingPair ? (
                                             <>
                                                 <p className="text-sm text-slate-700">
                                                     Is <span className="font-semibold">{currentConnectingPair.rowCode}</span> connected to <span className="font-semibold">{currentConnectingPair.columnCode}</span>?
+                                                </p>
+                                                <p className={`text-xs font-semibold ${isConnectionIdentified(currentConnectingPair.rowCode, currentConnectingPair.columnCode) ? 'text-emerald-700' : 'text-amber-700'}`}>
+                                                    {isConnectionIdentified(currentConnectingPair.rowCode, currentConnectingPair.columnCode) ? 'Status: Identified' : 'Status: Not identified yet'}
                                                 </p>
                                                 <div className="flex gap-2">
                                                     <button
@@ -8125,16 +8183,21 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                                                             <tr key={`row_${rowCategory.code}`} className="border-b">
                                                                 <td className="p-2 font-semibold">{rowCategory.code}</td>
                                                                 {(activeCanvas.categories || []).map((columnCategory) => {
-                                                                    const value = activeCanvas.connections?.[rowCategory.code]?.[columnCategory.code] || 0;
+                                                                    const isDiagonal = rowCategory.code === columnCategory.code;
+                                                                    const value = isDiagonal ? 0 : getConnectionValue(rowCategory.code, columnCategory.code);
                                                                     return (
                                                                         <td key={`cell_${rowCategory.code}_${columnCategory.code}`} className="p-1 text-center">
                                                                             <button
                                                                                 type="button"
-                                                                                onClick={() => updateConnectionValue(rowCategory.code, columnCategory.code, value === 1 ? 0 : 1)}
-                                                                                className={`h-8 w-8 rounded-full text-xs font-bold border transition ${value === 1 ? 'bg-emerald-100 border-emerald-300 text-emerald-800' : 'bg-slate-100 border-slate-300 text-slate-600'}`}
-                                                                                title={`Set ${rowCategory.code}-${columnCategory.code} to ${value === 1 ? 0 : 1}`}
+                                                                                onClick={() => {
+                                                                                    if (isDiagonal) return;
+                                                                                    updateConnectionValue(rowCategory.code, columnCategory.code, value === 1 ? 0 : 1);
+                                                                                }}
+                                                                                className={`h-8 w-8 rounded-full text-xs font-bold border transition ${isDiagonal ? 'bg-slate-50 border-slate-200 text-slate-300 cursor-not-allowed' : value === 1 ? 'bg-emerald-100 border-emerald-300 text-emerald-800' : value === 0 ? 'bg-slate-100 border-slate-300 text-slate-700' : 'bg-amber-50 border-amber-300 text-amber-700'}`}
+                                                                                title={isDiagonal ? 'Self-connection not applicable' : value === null ? `Mark ${rowCategory.code}-${columnCategory.code} as connected` : `Set ${rowCategory.code}-${columnCategory.code} to ${value === 1 ? 0 : 1}`}
+                                                                                disabled={isDiagonal}
                                                                             >
-                                                                                {value}
+                                                                                {isDiagonal ? '-' : value == null ? '?' : value}
                                                                             </button>
                                                                         </td>
                                                                     );
@@ -8154,11 +8217,7 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                                         ) : (
                                             <div className="space-y-3">
                                                 {(activeCanvas.categories || []).map((category) => {
-                                                    const connectedCodes = (activeCanvas.categories || [])
-                                                        .filter((item) => item.code !== category.code)
-                                                        .map((item) => item.code)
-                                                        .filter((code) => (activeCanvas.connections?.[category.code]?.[code] || 0) === 1);
-                                                    const defaultNarrative = `Contents of ${[category.code, ...connectedCodes].join(', ')}`;
+                                                    const defaultNarrative = buildNarrativeDefault(category.code);
                                                     const currentNarrative = (activeCanvas.connectionNotes || {})[category.code] || defaultNarrative;
                                                     return (
                                                         <div key={`narrative_${category.code}`} className="border border-slate-200 rounded-lg p-3">
@@ -8299,16 +8358,16 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                                                 <div className="flex flex-wrap gap-1.5 mb-3">
                                                     {(activeCanvas.categories || [])
                                                         .filter((category) => category.code !== selectedMapNodeCode)
-                                                        .filter((category) => (activeCanvas.connections?.[selectedMapNodeCode]?.[category.code] || 0) === 1)
+                                                        .filter((category) => getConnectionValue(selectedMapNodeCode, category.code) === 1)
                                                         .map((category) => (
                                                             <span key={`connected_${selectedMapNodeCode}_${category.code}`} className="text-xs bg-teal-100 text-teal-800 border border-teal-200 px-2 py-0.5 rounded-full">{category.code} - {category.name}</span>
                                                         ))}
-                                                    {(activeCanvas.categories || []).filter((category) => category.code !== selectedMapNodeCode).filter((category) => (activeCanvas.connections?.[selectedMapNodeCode]?.[category.code] || 0) === 1).length === 0 && (
+                                                    {(activeCanvas.categories || []).filter((category) => category.code !== selectedMapNodeCode).filter((category) => getConnectionValue(selectedMapNodeCode, category.code) === 1).length === 0 && (
                                                         <span className="text-xs text-slate-400">No connected categories.</span>
                                                     )}
                                                 </div>
                                                 <p className="text-xs text-slate-600 mb-1">Narrative text:</p>
-                                                <p className="text-sm text-slate-700 whitespace-pre-wrap">{(activeCanvas.connectionNotes || {})[selectedMapNodeCode] || `Contents of ${selectedMapNodeCode}`}</p>
+                                                <p className="text-sm text-slate-700 whitespace-pre-wrap">{(activeCanvas.connectionNotes || {})[selectedMapNodeCode] || buildNarrativeDefault(selectedMapNodeCode)}</p>
                                             </div>
                                         )}
                                     </div>
