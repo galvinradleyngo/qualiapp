@@ -7040,6 +7040,7 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
             const [legendFilter, setLegendFilter] = useState(null);
             const [selectedMapNodeCode, setSelectedMapNodeCode] = useState(null);
             const hasInitializedSourceFilter = useRef(false);
+            const guidedPromptQuestionRef = useRef(null);
 
             const parseCategoryCodeNumber = (value) => {
                 const match = /^C(\d+)$/i.exec(String(value || '').trim());
@@ -7753,6 +7754,19 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                 ? connectingPairs[Math.max(0, Math.min(connectingCursor, connectingPairs.length - 1))]
                 : null;
 
+            useEffect(() => {
+                if (!currentConnectingPair || !guidedPromptQuestionRef.current) return;
+                const el = guidedPromptQuestionRef.current;
+                const animation = el.animate([
+                    { opacity: 0, transform: 'translateX(16px) scale(0.985)' },
+                    { opacity: 1, transform: 'translateX(0) scale(1)' }
+                ], {
+                    duration: 280,
+                    easing: 'cubic-bezier(0.22, 1, 0.36, 1)'
+                });
+                return () => animation.cancel();
+            }, [currentConnectingPair?.rowCode, currentConnectingPair?.columnCode]);
+
             const getConnectingPairIndex = (rowCode, columnCode) => connectingPairs.findIndex((pair) => (
                 (pair.rowCode === rowCode && pair.columnCode === columnCode)
                 || (pair.rowCode === columnCode && pair.columnCode === rowCode)
@@ -8152,37 +8166,39 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                                         </div>
                                         {currentConnectingPair ? (
                                             <>
-                                                <p className="text-sm text-slate-700">
-                                                    Is <span className="font-semibold">{buildCategoryPromptLabelByCode(currentConnectingPair.rowCode)}</span> connected to <span className="font-semibold">{buildCategoryPromptLabelByCode(currentConnectingPair.columnCode)}</span>?
-                                                </p>
-                                                <p className="text-xs text-slate-600">
-                                                    Current response: <span className="font-semibold text-slate-800">{getConnectionResponseLabel(currentConnectingPair.rowCode, currentConnectingPair.columnCode)}</span>
-                                                </p>
-                                                <p className={`text-xs font-semibold ${isConnectionIdentified(currentConnectingPair.rowCode, currentConnectingPair.columnCode) ? 'text-emerald-700' : 'text-amber-700'}`}>
-                                                    {isConnectionIdentified(currentConnectingPair.rowCode, currentConnectingPair.columnCode) ? 'Status: Identified' : 'Status: Not identified yet'}
-                                                </p>
-                                                <div className="flex gap-2">
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => handleGuidedConnectionAnswer(1)}
-                                                        className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700"
-                                                    >
-                                                        Yes
-                                                    </button>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => handleGuidedConnectionAnswer(0)}
-                                                        className="px-4 py-2 rounded-lg bg-slate-200 text-slate-700 text-sm font-semibold hover:bg-slate-300"
-                                                    >
-                                                        No
-                                                    </button>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => setConnectingCursor((prev) => Math.max(0, prev - 1))}
-                                                        className="px-4 py-2 rounded-lg border border-slate-300 text-slate-700 text-sm font-semibold hover:bg-slate-50"
-                                                    >
-                                                        Previous
-                                                    </button>
+                                                <div ref={guidedPromptQuestionRef} className="space-y-2">
+                                                    <p className="text-sm text-slate-700">
+                                                        Is <span className="font-semibold">{buildCategoryPromptLabelByCode(currentConnectingPair.rowCode)}</span> connected to <span className="font-semibold">{buildCategoryPromptLabelByCode(currentConnectingPair.columnCode)}</span>?
+                                                    </p>
+                                                    <p className="text-xs text-slate-600">
+                                                        Current response: <span className="font-semibold text-slate-800">{getConnectionResponseLabel(currentConnectingPair.rowCode, currentConnectingPair.columnCode)}</span>
+                                                    </p>
+                                                    <p className={`text-xs font-semibold ${isConnectionIdentified(currentConnectingPair.rowCode, currentConnectingPair.columnCode) ? 'text-emerald-700' : 'text-amber-700'}`}>
+                                                        {isConnectionIdentified(currentConnectingPair.rowCode, currentConnectingPair.columnCode) ? 'Status: Identified' : 'Status: Not identified yet'}
+                                                    </p>
+                                                    <div className="flex gap-2">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleGuidedConnectionAnswer(1)}
+                                                            className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700"
+                                                        >
+                                                            Yes
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleGuidedConnectionAnswer(0)}
+                                                            className="px-4 py-2 rounded-lg bg-slate-200 text-slate-700 text-sm font-semibold hover:bg-slate-300"
+                                                        >
+                                                            No
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setConnectingCursor((prev) => Math.max(0, prev - 1))}
+                                                            className="px-4 py-2 rounded-lg border border-slate-300 text-slate-700 text-sm font-semibold hover:bg-slate-50"
+                                                        >
+                                                            Previous
+                                                        </button>
+                                                    </div>
                                                 </div>
                                             </>
                                         ) : (
