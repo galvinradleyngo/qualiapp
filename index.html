@@ -7032,6 +7032,10 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
             const [showExportMenu, setShowExportMenu] = useState(false);
             const [processStepView, setProcessStepView] = useState('both');
             const [expandedCategoryIds, setExpandedCategoryIds] = useState({});
+            const [connectingCursor, setConnectingCursor] = useState(0);
+            const [showRelationalMap, setShowRelationalMap] = useState(false);
+            const [legendFilter, setLegendFilter] = useState(null);
+            const [selectedMapNodeCode, setSelectedMapNodeCode] = useState(null);
             const hasInitializedSourceFilter = useRef(false);
 
             const parseCategoryCodeNumber = (value) => {
@@ -7322,7 +7326,24 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                     id: canvas?.id,
                     name: canvas?.name,
                     categories,
-                    themes
+                    themes,
+                    connections: (() => {
+                        const rawConnections = (canvas && typeof canvas.connections === 'object' && canvas.connections !== null) ? canvas.connections : {};
+                        const connectionMatrix = {};
+                        categories.forEach((sourceCategory) => {
+                            const sourceCode = String(sourceCategory.code || '').trim();
+                            connectionMatrix[sourceCode] = {};
+                            categories.forEach((targetCategory) => {
+                                const targetCode = String(targetCategory.code || '').trim();
+                                const direct = rawConnections?.[sourceCode]?.[targetCode];
+                                const mirrored = rawConnections?.[targetCode]?.[sourceCode];
+                                const value = direct == null ? mirrored : direct;
+                                connectionMatrix[sourceCode][targetCode] = value === 1 || value === '1' || value === true ? 1 : 0;
+                            });
+                        });
+                        return connectionMatrix;
+                    })(),
+                    connectionNotes: (canvas && typeof canvas.connectionNotes === 'object' && canvas.connectionNotes !== null) ? canvas.connectionNotes : {}
                 };
             };
 
@@ -7348,7 +7369,9 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                         code: String(category.code || '').trim(),
                         codes: [...new Set(category.codes || [])]
                     })),
-                    themes: serializedThemes
+                    themes: serializedThemes,
+                    connections: nextCanvas.connections || {},
+                    connectionNotes: nextCanvas.connectionNotes || {}
                 };
 
                 onUpdate(canvases.map((canvas) => canvas.id === payload.id ? payload : canvas));
@@ -7671,7 +7694,150 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
             const uniqueCategoryCount = new Set((activeCanvas?.categories || []).map((category) => category.name)).size;
             const uniqueThemeCount = new Set((activeCanvas?.themes || []).map((theme) => theme.name)).size;
             const showStep2 = processStepView !== 'step3';
+            const showConnecting = processStepView !== 'step3';
             const showStep3 = processStepView !== 'step2';
+
+            const connectingPairs = useMemo(() => {
+                if (!activeCanvas) return [];
+                const categories = activeCanvas.categories || [];
+                const pairs = [];
+                categories.forEach((rowCategory) => {
+                    categories.forEach((columnCategory) => {
+                        pairs.push({
+                            rowCode: rowCategory.code,
+                            columnCode: columnCategory.code
+                        });
+                    });
+                });
+                return pairs;
+            }, [activeCanvas]);
+
+            useEffect(() => {
+                setConnectingCursor(0);
+                setLegendFilter(null);
+                setSelectedMapNodeCode(null);
+            }, [activeCanvasId, uniqueCategoryCount]);
+
+            const updateConnectionValue = (rowCode, columnCode, nextValue) => {
+                if (!activeCanvas || !rowCode || !columnCode) return;
+                const normalizedValue = Number(nextValue) === 1 ? 1 : 0;
+                const nextConnections = JSON.parse(JSON.stringify(activeCanvas.connections || {}));
+                if (!nextConnections[rowCode]) nextConnections[rowCode] = {};
+                if (!nextConnections[columnCode]) nextConnections[columnCode] = {};
+                nextConnections[rowCode][columnCode] = normalizedValue;
+                nextConnections[columnCode][rowCode] = normalizedValue;
+                persistCanvas({
+                    ...activeCanvas,
+                    connections: nextConnections
+                });
+            };
+
+            const currentConnectingPair = connectingPairs.length > 0
+                ? connectingPairs[Math.max(0, Math.min(connectingCursor, connectingPairs.length - 1))]
+                : null;
+
+            const handleGuidedConnectionAnswer = (value) => {
+                if (!currentConnectingPair) return;
+                updateConnectionValue(currentConnectingPair.rowCode, currentConnectingPair.columnCode, value);
+                setConnectingCursor((prev) => {
+                    if (connectingPairs.length === 0) return 0;
+                    return (prev + 1) % connectingPairs.length;
+                });
+            };
+
+            const buildConnectionStatement = (categoryCode) => {
+                if (!activeCanvas || !categoryCode) return '';
+                const connectedCodes = (activeCanvas.categories || [])
+                    .filter((category) => category.code !== categoryCode)
+                    .map((category) => category.code)
+                    .filter((code) => (activeCanvas.connections?.[categoryCode]?.[code] || 0) === 1);
+                if (connectedCodes.length === 0) return `${categoryCode}: none`;
+                return `${categoryCode}: ${connectedCodes.join(' - ')}`;
+            };
+
+            const updateConnectionNote = (categoryCode, text) => {
+                if (!activeCanvas || !categoryCode) return;
+                const nextNotes = {
+                    ...(activeCanvas.connectionNotes || {}),
+                    [categoryCode]: text
+                };
+                persistCanvas({
+                    ...activeCanvas,
+                    connectionNotes: nextNotes
+                });
+            };
+
+            const categoryDegrees = useMemo(() => {
+                if (!activeCanvas) return {};
+                const out = {};
+                (activeCanvas.categories || []).forEach((category) => {
+                    const code = category.code;
+                    const count = (activeCanvas.categories || []).reduce((acc, item) => {
+                        if (item.code === code) return acc;
+                        return acc + ((activeCanvas.connections?.[code]?.[item.code] || 0) === 1 ? 1 : 0);
+                    }, 0);
+                    out[code] = count;
+                });
+                return out;
+            }, [activeCanvas]);
+
+            const degreeRangeLegend = useMemo(() => {
+                const degreeValues = Object.values(categoryDegrees);
+                if (degreeValues.length === 0) {
+                    return {
+                        min: 0,
+                        max: 0,
+                        lowMax: 0,
+                        midMax: 0
+                    };
+                }
+                const min = Math.min(...degreeValues);
+                const max = Math.max(...degreeValues);
+                const rangeSize = Math.max(1, Math.ceil((max - min + 1) / 3));
+                const lowMax = min + rangeSize - 1;
+                const midMax = lowMax + rangeSize;
+                return { min, max, lowMax, midMax };
+            }, [categoryDegrees]);
+
+            const getDegreeTier = (categoryCode) => {
+                const degree = categoryDegrees?.[categoryCode] || 0;
+                if (degree <= degreeRangeLegend.lowMax) return 'low';
+                if (degree <= degreeRangeLegend.midMax) return 'mid';
+                return 'high';
+            };
+
+            const relationalMapGeometry = useMemo(() => {
+                if (!activeCanvas) return null;
+                const categories = activeCanvas.categories || [];
+                const width = 980;
+                const height = 560;
+                const centerX = width / 2;
+                const centerY = height / 2;
+                const layoutRadius = Math.max(160, Math.min(230, categories.length * 24));
+                const nodes = categories.map((category, index) => {
+                    const angle = ((Math.PI * 2) / Math.max(categories.length, 1)) * index - Math.PI / 2;
+                    return {
+                        ...category,
+                        x: centerX + Math.cos(angle) * layoutRadius,
+                        y: centerY + Math.sin(angle) * layoutRadius,
+                        degree: categoryDegrees?.[category.code] || 0,
+                        tier: getDegreeTier(category.code)
+                    };
+                });
+
+                const links = [];
+                for (let i = 0; i < nodes.length; i++) {
+                    for (let j = i + 1; j < nodes.length; j++) {
+                        const sourceCode = nodes[i].code;
+                        const targetCode = nodes[j].code;
+                        if ((activeCanvas.connections?.[sourceCode]?.[targetCode] || 0) === 1) {
+                            links.push({ sourceCode, targetCode });
+                        }
+                    }
+                }
+
+                return { width, height, nodes, links };
+            }, [activeCanvas, categoryDegrees, degreeRangeLegend]);
 
             return (
                 <div className="p-8 h-full overflow-y-auto">
@@ -7870,6 +8036,271 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                                                 {activeCanvas.categories.length === 0 && <p className="text-sm text-slate-500">No categories yet. Create a category to start organizing in-vivo codes.</p>}
                                             </div>
                                         </div>
+                                    </div>
+                                </div>
+                                )}
+
+                                {showConnecting && (
+                                <div className="bg-white border rounded-2xl p-5 shadow-soft space-y-5">
+                                    <div>
+                                        <h3 className="font-bold text-ink mb-1">Connecting</h3>
+                                        <p className="text-sm text-slate-500">Identify whether categories are connected, then generate a one-mode network matrix and relational map.</p>
+                                    </div>
+
+                                    <div className="bg-slate-50 border rounded-xl p-4 space-y-3">
+                                        <p className="text-sm font-semibold text-slate-700">Guide for determining category connections</p>
+                                        <p className="text-xs text-slate-600">A. A category makes another category more specific.</p>
+                                        <p className="text-xs text-slate-600">B. A category is part of another category.</p>
+                                        <p className="text-xs text-slate-600">C. A category acts as a condition which enables (or constrains) another category to be what it is.</p>
+                                    </div>
+
+                                    <div className="border rounded-xl p-4 bg-white space-y-3">
+                                        <div className="flex items-center justify-between gap-3">
+                                            <p className="text-sm font-semibold text-ink">Guided Connection Prompt</p>
+                                            <p className="text-xs text-slate-500">
+                                                {connectingPairs.length > 0 ? `Pair ${connectingCursor + 1} of ${connectingPairs.length}` : 'No categories yet'}
+                                            </p>
+                                        </div>
+                                        {currentConnectingPair ? (
+                                            <>
+                                                <p className="text-sm text-slate-700">
+                                                    Is <span className="font-semibold">{currentConnectingPair.rowCode}</span> connected to <span className="font-semibold">{currentConnectingPair.columnCode}</span>?
+                                                </p>
+                                                <div className="flex gap-2">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleGuidedConnectionAnswer(1)}
+                                                        className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700"
+                                                    >
+                                                        Yes
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleGuidedConnectionAnswer(0)}
+                                                        className="px-4 py-2 rounded-lg bg-slate-200 text-slate-700 text-sm font-semibold hover:bg-slate-300"
+                                                    >
+                                                        No
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setConnectingCursor((prev) => Math.max(0, prev - 1))}
+                                                        className="px-4 py-2 rounded-lg border border-slate-300 text-slate-700 text-sm font-semibold hover:bg-slate-50"
+                                                    >
+                                                        Previous
+                                                    </button>
+                                                </div>
+                                            </>
+                                        ) : (
+                                            <p className="text-sm text-slate-500">Create categories in Clustering to begin guided connection prompts.</p>
+                                        )}
+                                    </div>
+
+                                    <div className="border rounded-xl p-4 bg-white">
+                                        <h4 className="text-sm font-semibold text-ink mb-3">One-mode Network Table (Matrix)</h4>
+                                        {!activeCanvas || (activeCanvas.categories || []).length === 0 ? (
+                                            <p className="text-sm text-slate-500">No categories available yet.</p>
+                                        ) : (
+                                            <div className="overflow-x-auto">
+                                                <table className="w-full text-sm border-collapse">
+                                                    <thead>
+                                                        <tr className="bg-slate-50 border-b">
+                                                            <th className="p-2 text-left">Category</th>
+                                                            {(activeCanvas.categories || []).map((category) => (
+                                                                <th key={`col_${category.code}`} className="p-2 text-center font-semibold">{category.code}</th>
+                                                            ))}
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {(activeCanvas.categories || []).map((rowCategory) => (
+                                                            <tr key={`row_${rowCategory.code}`} className="border-b">
+                                                                <td className="p-2 font-semibold">{rowCategory.code}</td>
+                                                                {(activeCanvas.categories || []).map((columnCategory) => {
+                                                                    const value = activeCanvas.connections?.[rowCategory.code]?.[columnCategory.code] || 0;
+                                                                    return (
+                                                                        <td key={`cell_${rowCategory.code}_${columnCategory.code}`} className="p-1 text-center">
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => updateConnectionValue(rowCategory.code, columnCategory.code, value === 1 ? 0 : 1)}
+                                                                                className={`h-8 w-8 rounded-full text-xs font-bold border transition ${value === 1 ? 'bg-emerald-100 border-emerald-300 text-emerald-800' : 'bg-slate-100 border-slate-300 text-slate-600'}`}
+                                                                                title={`Set ${rowCategory.code}-${columnCategory.code} to ${value === 1 ? 0 : 1}`}
+                                                                            >
+                                                                                {value}
+                                                                            </button>
+                                                                        </td>
+                                                                    );
+                                                                })}
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    <div className="border rounded-xl p-4 bg-white">
+                                        <h4 className="text-sm font-semibold text-ink mb-3">One-mode Network Table (Narrative)</h4>
+                                        {!activeCanvas || (activeCanvas.categories || []).length === 0 ? (
+                                            <p className="text-sm text-slate-500">No categories available yet.</p>
+                                        ) : (
+                                            <div className="space-y-3">
+                                                {(activeCanvas.categories || []).map((category) => {
+                                                    const connectedCodes = (activeCanvas.categories || [])
+                                                        .filter((item) => item.code !== category.code)
+                                                        .map((item) => item.code)
+                                                        .filter((code) => (activeCanvas.connections?.[category.code]?.[code] || 0) === 1);
+                                                    const defaultNarrative = `Contents of ${[category.code, ...connectedCodes].join(', ')}`;
+                                                    const currentNarrative = (activeCanvas.connectionNotes || {})[category.code] || defaultNarrative;
+                                                    return (
+                                                        <div key={`narrative_${category.code}`} className="border border-slate-200 rounded-lg p-3">
+                                                            <p className="text-sm font-semibold text-slate-800 mb-2">{buildConnectionStatement(category.code)}</p>
+                                                            <textarea
+                                                                value={currentNarrative}
+                                                                onChange={(e) => updateConnectionNote(category.code, e.target.value)}
+                                                                className="w-full min-h-[78px] border rounded-lg p-2 text-sm focus:outline-none focus:ring-2 focus:ring-tide"
+                                                            />
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    <div className="border rounded-xl p-4 bg-white space-y-4">
+                                        <div className="flex flex-wrap items-center gap-2 justify-between">
+                                            <h4 className="text-sm font-semibold text-ink">Relational Map</h4>
+                                            <div className="flex gap-2">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setShowRelationalMap(true)}
+                                                    className="px-3 py-2 rounded-lg bg-ink text-white text-sm font-semibold hover:bg-slate-800"
+                                                >
+                                                    Visualize connections
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setLegendFilter(null);
+                                                        setSelectedMapNodeCode(null);
+                                                    }}
+                                                    className="px-3 py-2 rounded-lg border border-slate-300 text-slate-700 text-sm font-semibold hover:bg-slate-50"
+                                                >
+                                                    Reset
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        <div className="flex flex-wrap gap-2 text-xs">
+                                            {[{
+                                                key: 'low',
+                                                label: `Low (${degreeRangeLegend.min}-${degreeRangeLegend.lowMax})`,
+                                                color: '#ef4444'
+                                            }, {
+                                                key: 'mid',
+                                                label: `Medium (${degreeRangeLegend.lowMax + 1}-${Math.min(degreeRangeLegend.midMax, degreeRangeLegend.max)})`,
+                                                color: '#3b82f6'
+                                            }, {
+                                                key: 'high',
+                                                label: `High (${Math.min(degreeRangeLegend.midMax + 1, degreeRangeLegend.max)}-${degreeRangeLegend.max})`,
+                                                color: '#16a34a'
+                                            }].map((item) => (
+                                                <button
+                                                    key={`legend_${item.key}`}
+                                                    type="button"
+                                                    onClick={() => setLegendFilter((prev) => prev === item.key ? null : item.key)}
+                                                    className={`inline-flex items-center gap-2 px-2.5 py-1.5 rounded-full border ${legendFilter === item.key ? 'border-slate-900' : 'border-slate-300'}`}
+                                                >
+                                                    <span className="h-3 w-3 rounded-full" style={{ backgroundColor: item.color }} />
+                                                    {item.label}
+                                                </button>
+                                            ))}
+                                        </div>
+
+                                        {showRelationalMap && relationalMapGeometry && relationalMapGeometry.nodes.length > 0 ? (
+                                            <div className="overflow-x-auto border rounded-lg p-2 bg-slate-50">
+                                                <svg width={relationalMapGeometry.width} height={relationalMapGeometry.height}>
+                                                    {relationalMapGeometry.links.map((link) => {
+                                                        const sourceNode = relationalMapGeometry.nodes.find((node) => node.code === link.sourceCode);
+                                                        const targetNode = relationalMapGeometry.nodes.find((node) => node.code === link.targetCode);
+                                                        if (!sourceNode || !targetNode) return null;
+                                                        const sourceActive = !legendFilter || sourceNode.tier === legendFilter;
+                                                        const targetActive = !legendFilter || targetNode.tier === legendFilter;
+                                                        const lineColor = sourceActive && targetActive ? '#64748b' : '#d1d5db';
+                                                        return (
+                                                            <line
+                                                                key={`link_${link.sourceCode}_${link.targetCode}`}
+                                                                x1={sourceNode.x}
+                                                                y1={sourceNode.y}
+                                                                x2={targetNode.x}
+                                                                y2={targetNode.y}
+                                                                stroke={lineColor}
+                                                                strokeWidth="2"
+                                                            />
+                                                        );
+                                                    })}
+
+                                                    {relationalMapGeometry.nodes.map((node) => {
+                                                        const tierColor = node.tier === 'low'
+                                                            ? '#ef4444'
+                                                            : node.tier === 'mid'
+                                                                ? '#3b82f6'
+                                                                : '#16a34a';
+                                                        const activeColor = !legendFilter || node.tier === legendFilter;
+                                                        return (
+                                                            <g key={`node_${node.code}`}>
+                                                                <circle
+                                                                    cx={node.x}
+                                                                    cy={node.y}
+                                                                    r="34"
+                                                                    fill={activeColor ? tierColor : '#d1d5db'}
+                                                                    stroke={selectedMapNodeCode === node.code ? '#0f172a' : '#ffffff'}
+                                                                    strokeWidth={selectedMapNodeCode === node.code ? '3' : '2'}
+                                                                    style={{ cursor: 'pointer' }}
+                                                                    onClick={() => setSelectedMapNodeCode(node.code)}
+                                                                />
+                                                                <text
+                                                                    x={node.x}
+                                                                    y={node.y}
+                                                                    textAnchor="middle"
+                                                                    dominantBaseline="middle"
+                                                                    fill="#ffffff"
+                                                                    fontWeight="700"
+                                                                    fontSize="12"
+                                                                    style={{ pointerEvents: 'none' }}
+                                                                >
+                                                                    {`${node.code} (${node.degree})`}
+                                                                </text>
+                                                            </g>
+                                                        );
+                                                    })}
+                                                </svg>
+                                            </div>
+                                        ) : (
+                                            <p className="text-sm text-slate-500">Click "Visualize connections" to render the relational map.</p>
+                                        )}
+
+                                        {selectedMapNodeCode && activeCanvas && (
+                                            <div className="border border-slate-200 rounded-lg p-3 bg-white">
+                                                <div className="flex items-center justify-between mb-2">
+                                                    <p className="text-sm font-semibold text-ink">{selectedMapNodeCode} details</p>
+                                                    <button type="button" onClick={() => setSelectedMapNodeCode(null)} className="text-xs font-semibold text-slate-500 hover:text-slate-700">Close</button>
+                                                </div>
+                                                <p className="text-xs text-slate-600 mb-2">{buildConnectionStatement(selectedMapNodeCode)}</p>
+                                                <p className="text-xs text-slate-600 mb-1">Connected categories:</p>
+                                                <div className="flex flex-wrap gap-1.5 mb-3">
+                                                    {(activeCanvas.categories || [])
+                                                        .filter((category) => category.code !== selectedMapNodeCode)
+                                                        .filter((category) => (activeCanvas.connections?.[selectedMapNodeCode]?.[category.code] || 0) === 1)
+                                                        .map((category) => (
+                                                            <span key={`connected_${selectedMapNodeCode}_${category.code}`} className="text-xs bg-teal-100 text-teal-800 border border-teal-200 px-2 py-0.5 rounded-full">{category.code} - {category.name}</span>
+                                                        ))}
+                                                    {(activeCanvas.categories || []).filter((category) => category.code !== selectedMapNodeCode).filter((category) => (activeCanvas.connections?.[selectedMapNodeCode]?.[category.code] || 0) === 1).length === 0 && (
+                                                        <span className="text-xs text-slate-400">No connected categories.</span>
+                                                    )}
+                                                </div>
+                                                <p className="text-xs text-slate-600 mb-1">Narrative text:</p>
+                                                <p className="text-sm text-slate-700 whitespace-pre-wrap">{(activeCanvas.connectionNotes || {})[selectedMapNodeCode] || `Contents of ${selectedMapNodeCode}`}</p>
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                                 )}
