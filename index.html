@@ -3798,6 +3798,7 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                                     artifacts={globalArtifacts}
                                     observations={observations}
                                     observationTags={observationTags}
+                                    analysisCanvases={analysisCanvases}
                                     sourceFilterPresets={sourceFilterPresets}
                                     codeDefinitions={codeDefinitions}
                                     categoryDefinitions={categoryDefinitions}
@@ -10301,7 +10302,7 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
             );
         }
 
-        function Codebook({ tags, transcripts, participants, artifacts, observations, observationTags, sourceFilterPresets, codeDefinitions, categoryDefinitions, onUpdateCodeDefinitions, onUpdateCategoryDefinitions, onSaveSourceFilterPreset, onDeleteSourceFilterPreset, onRenameCodeLabel, onRenameCategoryLabel }) {
+        function Codebook({ tags, transcripts, participants, artifacts, observations, observationTags, analysisCanvases, sourceFilterPresets, codeDefinitions, categoryDefinitions, onUpdateCodeDefinitions, onUpdateCategoryDefinitions, onSaveSourceFilterPreset, onDeleteSourceFilterPreset, onRenameCodeLabel, onRenameCategoryLabel }) {
             const [searchTerm, setSearchTerm] = useState('');
             const [sortBy, setSortBy] = useState('category');
             const [sortDirection, setSortDirection] = useState('asc');
@@ -10313,6 +10314,7 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
             const [renamingCategoryName, setRenamingCategoryName] = useState(null);
             const [renameCategoryValue, setRenameCategoryValue] = useState('');
             const hasInitializedSourceFilter = useRef(false);
+            const hasClearedCategoryDefinitions = useRef(false);
             const toggleRow = (name) => setEditingRows(prev => {
                 const next = new Set(prev);
                 if (next.has(name)) next.delete(name); else next.add(name);
@@ -10614,23 +10616,34 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                 });
             }, [tableData, codeDefinitions]);
 
+            const clusteringCategoryNames = useMemo(() => Array.from(new Set((analysisCanvases || [])
+                .flatMap((canvas) => canvas.categories || [])
+                .map((category) => String(category?.name || '').trim())
+                .filter(Boolean)
+            )).sort((a, b) => a.localeCompare(b)), [analysisCanvases]);
+
+            useEffect(() => {
+                if (hasClearedCategoryDefinitions.current) return;
+                hasClearedCategoryDefinitions.current = true;
+                const resetMap = {};
+                clusteringCategoryNames.forEach((name) => {
+                    resetMap[name] = { definition: '', inclusion: '', exclusion: '', exemplars: '' };
+                });
+                onUpdateCategoryDefinitions(resetMap);
+            }, [clusteringCategoryNames, onUpdateCategoryDefinitions]);
+
             const categoryRows = useMemo(() => {
-                const names = Array.from(new Set([
-                    ...tableData.map(item => item.category),
-                    ...Object.keys(categoryDefinitions || {})
-                ])).sort((a, b) => a.localeCompare(b));
+                const names = clusteringCategoryNames;
 
                 return names.map((name) => {
-                    const related = tableData.filter(item => item.category === name);
-                    const examples = pickExamples(related.flatMap(item => item.quotes));
                     const record = toDefinitionRecord((categoryDefinitions || {})[name]);
                     return {
                         name,
                         ...record,
-                        examples
+                        examples: []
                     };
                 });
-            }, [tableData, categoryDefinitions]);
+            }, [clusteringCategoryNames, categoryDefinitions]);
 
             const updateDefinitionMap = (currentMap, setter, key, field, value) => {
                 const next = { ...(currentMap || {}) };
@@ -10881,14 +10894,11 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                                         <div className="absolute right-0 mt-2 w-72 bg-white border border-slate-200 rounded-xl shadow-soft z-30 p-2">
                                             <p className="px-2 py-1 text-[11px] uppercase font-bold tracking-wide text-slate-500">CSV</p>
                                             <button type="button" onClick={() => { exportGroupedCodebookCsv(); setShowExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm text-slate-700">Codebook table (.csv)</button>
-                                            <button type="button" onClick={() => { exportCodeDefinitionsCsv(); setShowExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm text-slate-700">Code definitions (.csv)</button>
                                             <button type="button" onClick={() => { exportCategoryDefinitionsCsv(); setShowExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm text-slate-700">Category definitions (.csv)</button>
                                             <div className="my-1 border-t" />
                                             <p className="px-2 py-1 text-[11px] uppercase font-bold tracking-wide text-slate-500">APA7 Word (.doc)</p>
                                             <button type="button" onClick={() => { exportCodebookApaDoc(); setShowExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm text-slate-700">Codebook table APA7 (.doc)</button>
-                                            <button type="button" onClick={() => { exportCodeDefinitionsApaDoc(); setShowExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm text-slate-700">Code definitions APA7 (.doc)</button>
                                             <button type="button" onClick={() => { exportCategoryDefinitionsApaDoc(); setShowExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm text-slate-700">Category definitions APA7 (.doc)</button>
-                                            <button type="button" onClick={() => { exportAllApaDoc(); setShowExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm font-semibold text-ink">All codebook tables APA7 (.doc)</button>
                                         </div>
                                     )}
                                 </div>
@@ -10990,6 +11000,7 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                         </div>
 
                         <div className="mt-6 pb-6 space-y-6">
+                            {false && (
                             <section className="w-full bg-white border rounded-2xl shadow-sm overflow-hidden">
                                 <div className="p-4 border-b bg-slate-50 flex items-center justify-between">
                                     <div>
@@ -11134,6 +11145,7 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                                     </table>
                                 </div>
                             </section>
+                            )}
 
                             <section className="w-full bg-white border rounded-2xl shadow-sm overflow-hidden">
                                 <div className="p-4 border-b bg-slate-50 flex items-center justify-between">
