@@ -5628,6 +5628,9 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
             const [editingLogNote, setEditingLogNote] = useState('');
             const activityLog = transcript.activityLog || [];
 
+            const historyRef = useRef({ past: [], future: [] });
+            const historyLimit = 20;
+
             const textRef = useRef(null);
             const editableRef = useRef(null);
             const notesEditableRef = useRef(null);
@@ -5747,6 +5750,7 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                 setModality(transcript.modality || '');
                 setPlaybackRate(transcript.playbackRate || 1);
                 setSaveStatus('saved');
+                historyRef.current = { past: [], future: [] };
             }, [transcript.id]);
 
             useEffect(() => {
@@ -5863,9 +5867,112 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                     setCaretTextOffset(editableRef.current, caretOffset);
                 }
                 const finalHtml = editableRef.current.innerHTML;
+                const nextPlain = htmlToPlain(finalHtml);
+                const currentSnapshot = {
+                    contentHtml,
+                    content,
+                    notesHtml,
+                    notes,
+                    modality
+                };
+                const nextSnapshot = {
+                    contentHtml: finalHtml,
+                    content: nextPlain,
+                    notesHtml,
+                    notes,
+                    modality
+                };
+                if (currentSnapshot.contentHtml !== nextSnapshot.contentHtml || currentSnapshot.content !== nextSnapshot.content) {
+                    const history = historyRef.current;
+                    history.past = [...history.past.slice(-(historyLimit - 1)), currentSnapshot];
+                    history.future = [];
+                }
                 setContentHtml(finalHtml);
-                setContent(htmlToPlain(finalHtml));
+                setContent(nextPlain);
                 setSaveStatus('unsaved');
+            };
+
+            const handleNotesInput = () => {
+                if (!notesEditableRef.current) return;
+                const html = notesEditableRef.current.innerHTML;
+                const nextPlain = htmlToPlain(html);
+                const currentSnapshot = {
+                    contentHtml,
+                    content,
+                    notesHtml,
+                    notes,
+                    modality
+                };
+                const nextSnapshot = {
+                    contentHtml,
+                    content,
+                    notesHtml: html,
+                    notes: nextPlain,
+                    modality
+                };
+                if (currentSnapshot.notesHtml !== nextSnapshot.notesHtml || currentSnapshot.notes !== nextSnapshot.notes) {
+                    const history = historyRef.current;
+                    history.past = [...history.past.slice(-(historyLimit - 1)), currentSnapshot];
+                    history.future = [];
+                }
+                setNotesHtml(html);
+                setNotes(nextPlain);
+                setSaveStatus('unsaved');
+            };
+
+            const captureCurrentTranscriptSnapshot = () => ({
+                contentHtml,
+                content,
+                notesHtml,
+                notes,
+                modality
+            });
+
+            const applyTranscriptSnapshot = (snapshot) => {
+                if (!snapshot) return;
+                setContentHtml(snapshot.contentHtml || '');
+                setContent(snapshot.content || '');
+                setNotesHtml(snapshot.notesHtml || '');
+                setNotes(snapshot.notes || '');
+                setModality(snapshot.modality || '');
+                setSaveStatus('unsaved');
+
+                if (mode === 'edit' && editableRef.current) {
+                    editableRef.current.innerHTML = snapshot.contentHtml || plainToHtml(snapshot.content || '');
+                }
+                if (mode === 'notes' && notesEditableRef.current) {
+                    notesEditableRef.current.innerHTML = snapshot.notesHtml || plainToHtml(snapshot.notes || '');
+                }
+
+                persistTranscriptDraft(
+                    snapshot.contentHtml || plainToHtml(snapshot.content || ''),
+                    snapshot.content || '',
+                    snapshot.notes || '',
+                    snapshot.notesHtml || plainToHtml(snapshot.notes || '')
+                );
+            };
+
+            const canUndo = historyRef.current.past.length > 0;
+            const canRedo = historyRef.current.future.length > 0;
+
+            const undoEdit = () => {
+                const history = historyRef.current;
+                if (history.past.length === 0) return;
+                const previous = history.past[history.past.length - 1];
+                const current = captureCurrentTranscriptSnapshot();
+                history.past = history.past.slice(0, -1);
+                history.future = [current, ...history.future].slice(0, historyLimit);
+                applyTranscriptSnapshot(previous);
+            };
+
+            const redoEdit = () => {
+                const history = historyRef.current;
+                if (history.future.length === 0) return;
+                const next = history.future[0];
+                const current = captureCurrentTranscriptSnapshot();
+                history.future = history.future.slice(1);
+                history.past = [...history.past, current].slice(-(historyLimit));
+                applyTranscriptSnapshot(next);
             };
 
             const persistTranscriptDraft = (nextHtml, nextPlain, nextNotes, nextNotesHtml) => {
@@ -6055,6 +6162,28 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                 const timer = setTimeout(() => setShowSavedToast(false), 1800);
                 return () => clearTimeout(timer);
             }, [showSavedToast]);
+
+            useEffect(() => {
+                const onEditorShortcut = (e) => {
+                    if (!(mode === 'edit' || mode === 'notes')) return;
+                    const key = String(e.key || '').toLowerCase();
+                    const isUndo = (e.metaKey || e.ctrlKey) && !e.shiftKey && key === 'z';
+                    const isRedo = (e.metaKey || e.ctrlKey) && (key === 'y' || (e.shiftKey && key === 'z'));
+                    if (!isUndo && !isRedo) return;
+
+                    const activeElement = document.activeElement;
+                    const insideRelevantEditor = (mode === 'edit' && editableRef.current && editableRef.current.contains(activeElement))
+                        || (mode === 'notes' && notesEditableRef.current && notesEditableRef.current.contains(activeElement));
+                    if (!insideRelevantEditor) return;
+
+                    e.preventDefault();
+                    if (isUndo) undoEdit();
+                    if (isRedo) redoEdit();
+                };
+
+                window.addEventListener('keydown', onEditorShortcut);
+                return () => window.removeEventListener('keydown', onEditorShortcut);
+            }, [mode, contentHtml, content, notesHtml, notes, modality]);
 
             const saveStatusText = saveStatus === 'saving'
                 ? 'Saving...'
@@ -6632,6 +6761,26 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                                 )}
                             </div>
                             <button onClick={handleManualSave} className="px-3 py-2 rounded-md text-sm font-bold border border-ink text-ink hover:bg-slate-100 transition">Save</button>
+                            <div className="flex items-center gap-1 rounded-lg border border-slate-200 bg-white p-1">
+                                <button
+                                    type="button"
+                                    onClick={undoEdit}
+                                    disabled={!canUndo}
+                                    className="px-3 py-2 rounded-md text-sm font-bold transition-all text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                                    title="Undo (Cmd/Ctrl+Z)"
+                                >
+                                    Undo
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={redoEdit}
+                                    disabled={!canRedo}
+                                    className="px-3 py-2 rounded-md text-sm font-bold transition-all text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                                    title="Redo (Cmd/Ctrl+Shift+Z or Cmd/Ctrl+Y)"
+                                >
+                                    Redo
+                                </button>
+                            </div>
                             <div className="flex bg-slate-100 p-1 rounded-lg">
                                 <button onClick={() => {handleSave(); setMode('edit');}} className={`px-4 py-2 rounded-md text-sm font-bold transition-all ${mode==='edit'?'bg-amber-500 text-white':'text-slate-600 hover:bg-slate-200'}`}>Edit</button>
                                 <button onClick={() => {handleSave(); setMode('code');}} className={`px-4 py-2 rounded-md text-sm font-bold transition-all ${mode==='code'?'bg-tide text-white':'text-slate-600 hover:bg-slate-200'}`}>Code</button>
@@ -6774,13 +6923,7 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                                             ref={notesEditableRef}
                                             contentEditable
                                             suppressContentEditableWarning
-                                            onInput={() => {
-                                                if (!notesEditableRef.current) return;
-                                                const html = notesEditableRef.current.innerHTML;
-                                                setNotesHtml(html);
-                                                setNotes(htmlToPlain(html));
-                                                setSaveStatus('unsaved');
-                                            }}
+                                            onInput={handleNotesInput}
                                             onBlur={handleSave}
                                             className="flex-1 w-full outline-none border border-slate-300 bg-white p-6 rounded-xl text-lg text-slate-800 leading-relaxed shadow-sm focus:ring-2 ring-ink transition whitespace-pre-wrap min-h-[400px]"
                                             data-placeholder="Type overarching observations and context for this transcript..."
@@ -6992,8 +7135,15 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                                                     </button>
                                                     <button
                                                         type="button"
-                                                        onClick={(e) => {
+                                                        onClick={async (e) => {
                                                             e.stopPropagation();
+                                                            const shouldDelete = await requestConfirmation({
+                                                                title: 'Delete Code',
+                                                                message: 'Delete this code?',
+                                                                confirmLabel: 'Delete Code',
+                                                                tone: 'warning'
+                                                            });
+                                                            if (!shouldDelete) return;
                                                             if (editingTagId === tag.id) setEditingTagId(null);
                                                             setSelectedTagId(null);
                                                             onRemoveTag(tag.id);
@@ -7039,6 +7189,7 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
             const [showRelationalMap, setShowRelationalMap] = useState(false);
             const [legendFilter, setLegendFilter] = useState(null);
             const [selectedMapNodeCode, setSelectedMapNodeCode] = useState(null);
+            const [selectedInVivoPopup, setSelectedInVivoPopup] = useState(null);
             const hasInitializedSourceFilter = useRef(false);
             const guidedPromptQuestionRef = useRef(null);
 
@@ -7747,6 +7898,7 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                 setConnectingCursor(0);
                 setLegendFilter(null);
                 setSelectedMapNodeCode(null);
+                setSelectedInVivoPopup(null);
             }, [activeCanvasId, uniqueCategoryCount]);
 
             const getConnectionValue = (rowCode, columnCode) => {
@@ -7889,6 +8041,19 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                     .filter((code) => getConnectionValue(categoryCode, code) === 1);
                 const labels = [categoryCode, ...connectedCodes].map((code) => buildCategoryLabelByCode(code));
                 return `Contents of ${labels.join(', ')}`;
+            };
+
+            const toggleInVivoPopup = (codeName, origin = null) => {
+                if (!codeName) return;
+                setSelectedInVivoPopup((prev) => {
+                    if (prev && prev.codeName === codeName && prev.origin === origin) return null;
+                    return { codeName, origin };
+                });
+            };
+
+            const getTranscriptQuotesForCode = (codeName) => {
+                const detail = codeDetailByName[codeName];
+                return (detail?.quotes || []).filter((quote) => quote.source === 'Transcript');
             };
 
             const updateConnectionNote = (categoryCode, text) => {
@@ -8114,7 +8279,13 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                                                         onDragStart={(e) => e.dataTransfer.setData('text/plain', code.name)}
                                                         className="border rounded-lg p-3 bg-white cursor-grab hover:border-tide transition"
                                                     >
-                                                        <div className="font-semibold text-sm text-ink">{code.name}</div>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => toggleInVivoPopup(code.name, `unassigned_${code.name}`)}
+                                                            className="font-semibold text-sm text-ink hover:text-tide text-left"
+                                                        >
+                                                            {code.name}
+                                                        </button>
                                                         <div className="text-xs text-slate-500 mt-1">{code.count} quotes • {code.source}</div>
                                                         <select
                                                             value=""
@@ -8168,7 +8339,13 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                                                             <div className="flex flex-wrap gap-2">
                                                                 {category.codes.filter((codeName) => !!codeDetailByName[codeName]).map((codeName) => (
                                                                     <span key={`${category.id}_${codeName}`} className="inline-flex items-center gap-2 text-xs bg-white border border-slate-300 px-3 py-1 rounded-full">
-                                                                        <span className="font-semibold">{codeName}</span>
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => toggleInVivoPopup(codeName, `category_${category.id}_${codeName}`)}
+                                                                            className="font-semibold hover:text-tide"
+                                                                        >
+                                                                            {codeName}
+                                                                        </button>
                                                                         <span className="text-slate-500">({codeDetailByName[codeName]?.count || 0})</span>
                                                                         <button onClick={() => unassignCode(codeName)} className="text-red-600 hover:text-red-700">x</button>
                                                                     </span>
@@ -8341,14 +8518,40 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                                                 {(activeCanvas.categories || []).map((category) => {
                                                     const defaultNarrative = buildNarrativeDefault(category.code);
                                                     const currentNarrative = (activeCanvas.connectionNotes || {})[category.code] || defaultNarrative;
+                                                    const visibleCodes = (category.codes || []).filter((codeName) => !!codeDetailByName[codeName]);
                                                     return (
                                                         <div key={`narrative_${category.code}`} className="border border-slate-200 rounded-lg p-3">
                                                             <p className="text-sm font-semibold text-slate-800 mb-2">{buildConnectionStatement(category.code)}</p>
-                                                            <textarea
-                                                                value={currentNarrative}
-                                                                onChange={(e) => updateConnectionNote(category.code, e.target.value)}
-                                                                className="w-full min-h-[78px] border rounded-lg p-2 text-sm focus:outline-none focus:ring-2 focus:ring-tide"
-                                                            />
+                                                            <div className="grid lg:grid-cols-2 gap-3">
+                                                                <div>
+                                                                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1.5">Draft narrative</p>
+                                                                    <textarea
+                                                                        value={currentNarrative}
+                                                                        onChange={(e) => updateConnectionNote(category.code, e.target.value)}
+                                                                        className="w-full min-h-[96px] border rounded-lg p-2 text-sm focus:outline-none focus:ring-2 focus:ring-tide"
+                                                                    />
+                                                                </div>
+                                                                <div className="relative">
+                                                                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1.5">In-vivo codes</p>
+                                                                    <div className="flex flex-wrap gap-1.5">
+                                                                        {visibleCodes.map((codeName) => {
+                                                                            const isSelected = selectedInVivoPopup?.codeName === codeName;
+                                                                            return (
+                                                                                <button
+                                                                                    key={`narrative_code_${category.code}_${codeName}`}
+                                                                                    type="button"
+                                                                                    onClick={() => toggleInVivoPopup(codeName, `narrative_${category.code}_${codeName}`)}
+                                                                                    className={`text-xs px-2.5 py-1 rounded-full border transition ${isSelected ? 'bg-ink text-white border-ink' : 'bg-white text-slate-700 border-slate-300 hover:border-slate-400'}`}
+                                                                                    title="Show transcript quote"
+                                                                                >
+                                                                                    {codeName}
+                                                                                </button>
+                                                                            );
+                                                                        })}
+                                                                        {visibleCodes.length === 0 && <span className="text-xs text-slate-400">No in-vivo codes assigned.</span>}
+                                                                    </div>
+                                                                </div>
+                                                            </div>
                                                         </div>
                                                     );
                                                 })}
@@ -8568,7 +8771,14 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                                                                         {expandedCategoryIds[category?.id || `theme_${theme.id}_${categoryName}`] !== false && (
                                                                             <div className="flex flex-wrap gap-1.5">
                                                                                 {visibleCodes.map((codeName) => (
-                                                                                    <span key={`${theme.id}_${categoryName}_${codeName}`} className="text-[11px] bg-teal-100 text-teal-900 px-2 py-0.5 rounded-full border border-teal-200">{codeName}</span>
+                                                                                    <button
+                                                                                        key={`${theme.id}_${categoryName}_${codeName}`}
+                                                                                        type="button"
+                                                                                        onClick={() => toggleInVivoPopup(codeName, `theme_${theme.id}_${categoryName}_${codeName}`)}
+                                                                                        className="text-[11px] bg-teal-100 text-teal-900 px-2 py-0.5 rounded-full border border-teal-200 hover:border-teal-400"
+                                                                                    >
+                                                                                        {codeName}
+                                                                                    </button>
                                                                                 ))}
                                                                                 {visibleCodes.length === 0 && <span className="text-xs text-slate-400">No filtered in-vivo codes in this category.</span>}
                                                                             </div>
@@ -8606,7 +8816,17 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                                                         <tr key={`${row.theme}_${row.category}_${row.code}_${idx}`} className="border-b align-top">
                                                             <td className="p-3 font-semibold">{row.theme}</td>
                                                             <td className="p-3">{row.category}</td>
-                                                            <td className="p-3">{row.code || '-'}</td>
+                                                            <td className="p-3">
+                                                                {row.code ? (
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => toggleInVivoPopup(row.code, `thematic_table_${row.theme}_${row.category}_${row.code}_${idx}`)}
+                                                                        className="text-slate-700 hover:text-tide font-semibold"
+                                                                    >
+                                                                        {row.code}
+                                                                    </button>
+                                                                ) : '-'}
+                                                            </td>
                                                             <td className="p-3">{row.quoteCount}</td>
                                                         </tr>
                                                     ))}
@@ -8620,6 +8840,29 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                             </div>
                         )}
                     </div>
+
+                    {selectedInVivoPopup?.codeName && (
+                        <div className="fixed inset-0 z-40 bg-slate-900/35 flex items-center justify-center p-4" onClick={() => setSelectedInVivoPopup(null)}>
+                            <div className="w-full max-w-2xl bg-white border border-slate-200 rounded-2xl shadow-soft p-4 space-y-3" onClick={(e) => e.stopPropagation()}>
+                                <div className="flex items-center justify-between gap-3">
+                                    <h4 className="text-base font-bold text-ink">Transcript Quotes: {selectedInVivoPopup.codeName}</h4>
+                                    <button type="button" onClick={() => setSelectedInVivoPopup(null)} className="text-xs font-semibold text-slate-500 hover:text-slate-700">Close</button>
+                                </div>
+                                <div className="max-h-[55vh] overflow-y-auto pr-1 space-y-2">
+                                    {getTranscriptQuotesForCode(selectedInVivoPopup.codeName).map((quote, quoteIndex) => (
+                                        <div key={`popup_quote_${selectedInVivoPopup.codeName}_${quoteIndex}`} className="border border-slate-200 rounded-lg p-3 bg-slate-50">
+                                            <p className="text-[11px] font-semibold text-slate-600 mb-1">{quote.ref || 'Transcript'}</p>
+                                            <p className="text-xs text-slate-700 whitespace-pre-wrap">{quote.text || 'No quote text available.'}</p>
+                                        </div>
+                                    ))}
+                                    {getTranscriptQuotesForCode(selectedInVivoPopup.codeName).length === 0 && (
+                                        <p className="text-sm text-slate-500">No transcript quote available for this in-vivo code.</p>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
                     {confirmationDialog}
                     {inputDialog}
                 </div>
@@ -10025,7 +10268,19 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                                             {selectedTagId === tag.id && (
                                                 <div className="mt-3 flex gap-2">
                                                     <button type="button" onClick={(e) => { e.stopPropagation(); openEditTag(tag); }} className="flex-1 py-1.5 bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 text-xs font-semibold rounded">Edit</button>
-                                                    <button type="button" onClick={(e) => { e.stopPropagation(); if (editingTagId === tag.id) setEditingTagId(null); setSelectedTagId(null); onRemoveTag(tag.id); }} className="flex-1 py-1.5 bg-red-50 border border-red-200 hover:bg-red-100 text-red-700 text-xs font-semibold rounded">Delete</button>
+                                                    <button type="button" onClick={async (e) => {
+                                                        e.stopPropagation();
+                                                        const shouldDelete = await requestConfirmation({
+                                                            title: 'Delete Code',
+                                                            message: 'Delete this code?',
+                                                            confirmLabel: 'Delete Code',
+                                                            tone: 'warning'
+                                                        });
+                                                        if (!shouldDelete) return;
+                                                        if (editingTagId === tag.id) setEditingTagId(null);
+                                                        setSelectedTagId(null);
+                                                        onRemoveTag(tag.id);
+                                                    }} className="flex-1 py-1.5 bg-red-50 border border-red-200 hover:bg-red-100 text-red-700 text-xs font-semibold rounded">Delete</button>
                                                 </div>
                                             )}
                                         </div>
