@@ -7330,7 +7330,7 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                             categories.forEach((targetCategory) => {
                                 const targetCode = String(targetCategory.code || '').trim();
                                 if (sourceCode === targetCode) {
-                                    connectionMatrix[sourceCode][targetCode] = 0;
+                                    connectionMatrix[sourceCode][targetCode] = 1;
                                     return;
                                 }
                                 const direct = rawConnections?.[sourceCode]?.[targetCode];
@@ -7347,7 +7347,27 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                         });
                         return connectionMatrix;
                     })(),
-                    connectionNotes: (canvas && typeof canvas.connectionNotes === 'object' && canvas.connectionNotes !== null) ? canvas.connectionNotes : {}
+                    connectionNotes: (canvas && typeof canvas.connectionNotes === 'object' && canvas.connectionNotes !== null) ? canvas.connectionNotes : {},
+                    connectionRationales: (() => {
+                        const rawRationales = (canvas && typeof canvas.connectionRationales === 'object' && canvas.connectionRationales !== null) ? canvas.connectionRationales : {};
+                        const rationaleMatrix = {};
+                        categories.forEach((sourceCategory) => {
+                            const sourceCode = String(sourceCategory.code || '').trim();
+                            rationaleMatrix[sourceCode] = {};
+                            categories.forEach((targetCategory) => {
+                                const targetCode = String(targetCategory.code || '').trim();
+                                if (sourceCode === targetCode) {
+                                    rationaleMatrix[sourceCode][targetCode] = '';
+                                    return;
+                                }
+                                const direct = rawRationales?.[sourceCode]?.[targetCode];
+                                const mirrored = rawRationales?.[targetCode]?.[sourceCode];
+                                const value = direct == null ? mirrored : direct;
+                                rationaleMatrix[sourceCode][targetCode] = value === 'A' || value === 'B' || value === 'C' ? value : '';
+                            });
+                        });
+                        return rationaleMatrix;
+                    })()
                 };
             };
 
@@ -7375,7 +7395,8 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                     })),
                     themes: serializedThemes,
                     connections: nextCanvas.connections || {},
-                    connectionNotes: nextCanvas.connectionNotes || {}
+                    connectionNotes: nextCanvas.connectionNotes || {},
+                    connectionRationales: nextCanvas.connectionRationales || {}
                 };
 
                 onUpdate(canvases.map((canvas) => canvas.id === payload.id ? payload : canvas));
@@ -7387,7 +7408,10 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                     id: Date.now().toString(),
                     name: newCanvasName.trim(),
                     categories: [],
-                    themes: []
+                    themes: [],
+                    connections: {},
+                    connectionNotes: {},
+                    connectionRationales: {}
                 };
                 onUpdate([canvas, ...canvases]);
                 setActiveCanvasId(canvas.id);
@@ -7735,6 +7759,12 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
 
             const isConnectionIdentified = (rowCode, columnCode) => getConnectionValue(rowCode, columnCode) !== null;
 
+            const getConnectionRationale = (rowCode, columnCode) => {
+                if (!activeCanvas || !rowCode || !columnCode) return '';
+                const value = activeCanvas.connectionRationales?.[rowCode]?.[columnCode];
+                return value === 'A' || value === 'B' || value === 'C' ? value : '';
+            };
+
             const updateConnectionValue = (rowCode, columnCode, nextValue) => {
                 if (!activeCanvas || !rowCode || !columnCode) return;
                 if (rowCode === columnCode) return;
@@ -7747,6 +7777,21 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                 persistCanvas({
                     ...activeCanvas,
                     connections: nextConnections
+                });
+            };
+
+            const updateConnectionRationale = (rowCode, columnCode, rationaleCode) => {
+                if (!activeCanvas || !rowCode || !columnCode) return;
+                if (rowCode === columnCode) return;
+                const normalizedRationale = rationaleCode === 'A' || rationaleCode === 'B' || rationaleCode === 'C' ? rationaleCode : '';
+                const nextRationales = JSON.parse(JSON.stringify(activeCanvas.connectionRationales || {}));
+                if (!nextRationales[rowCode]) nextRationales[rowCode] = {};
+                if (!nextRationales[columnCode]) nextRationales[columnCode] = {};
+                nextRationales[rowCode][columnCode] = normalizedRationale;
+                nextRationales[columnCode][rowCode] = normalizedRationale;
+                persistCanvas({
+                    ...activeCanvas,
+                    connectionRationales: nextRationales
                 });
             };
 
@@ -7783,6 +7828,12 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                 if (value === 0) return 'No';
                 return 'Not identified yet';
             };
+
+            const rationaleOptions = [
+                { code: 'A', label: 'A. A category makes another category more specific.' },
+                { code: 'B', label: 'B. A category is part of another category.' },
+                { code: 'C', label: 'C. A category acts as a condition which enables (or constrains) another category to be what it is.' }
+            ];
 
             const connectingProgress = useMemo(() => {
                 if (!currentConnectingPair && connectingPairs.length === 0) {
@@ -8176,6 +8227,26 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                                                     <p className={`text-xs font-semibold ${isConnectionIdentified(currentConnectingPair.rowCode, currentConnectingPair.columnCode) ? 'text-emerald-700' : 'text-amber-700'}`}>
                                                         {isConnectionIdentified(currentConnectingPair.rowCode, currentConnectingPair.columnCode) ? 'Status: Identified' : 'Status: Not identified yet'}
                                                     </p>
+                                                    <div className="rounded-lg border border-slate-200 bg-white p-3 space-y-2">
+                                                        <p className="text-xs font-semibold text-slate-700">Select rationale for this connection</p>
+                                                        {!isConnectionIdentified(currentConnectingPair.rowCode, currentConnectingPair.columnCode) ? (
+                                                            <p className="text-xs text-amber-700">Set Yes or No first, then choose one rationale (A, B, or C).</p>
+                                                        ) : (
+                                                            <div className="space-y-1.5">
+                                                                {rationaleOptions.map((option) => (
+                                                                    <label key={`rationale_${option.code}`} className="flex items-start gap-2 text-xs text-slate-700 cursor-pointer">
+                                                                        <input
+                                                                            type="radio"
+                                                                            name={`rationale_${currentConnectingPair.rowCode}_${currentConnectingPair.columnCode}`}
+                                                                            checked={getConnectionRationale(currentConnectingPair.rowCode, currentConnectingPair.columnCode) === option.code}
+                                                                            onChange={() => updateConnectionRationale(currentConnectingPair.rowCode, currentConnectingPair.columnCode, option.code)}
+                                                                        />
+                                                                        <span>{option.label}</span>
+                                                                    </label>
+                                                                ))}
+                                                            </div>
+                                                        )}
+                                                    </div>
                                                     <div className="flex gap-2">
                                                         <button
                                                             type="button"
@@ -8227,20 +8298,28 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                                                                 <td className="p-2 font-semibold">{rowCategory.code}</td>
                                                                 {(activeCanvas.categories || []).map((columnCategory) => {
                                                                     const isDiagonal = rowCategory.code === columnCategory.code;
-                                                                    const value = isDiagonal ? 0 : getConnectionValue(rowCategory.code, columnCategory.code);
+                                                                    const value = isDiagonal ? 1 : getConnectionValue(rowCategory.code, columnCategory.code);
                                                                     return (
                                                                         <td key={`cell_${rowCategory.code}_${columnCategory.code}`} className="p-1 text-center">
                                                                             <button
                                                                                 type="button"
-                                                                                onClick={() => {
+                                                                                onClick={async () => {
                                                                                     if (isDiagonal) return;
+                                                                                    if (value === 0 || value === 1) {
+                                                                                        const shouldChange = await requestConfirmation({
+                                                                                            title: 'Change Connection',
+                                                                                            message: 'Do you want to change the connection?',
+                                                                                            confirmLabel: 'Change Connection'
+                                                                                        });
+                                                                                        if (!shouldChange) return;
+                                                                                    }
                                                                                     focusConnectingPair(rowCategory.code, columnCategory.code);
                                                                                 }}
-                                                                                className={`h-8 w-8 rounded-full text-xs font-bold border transition ${isDiagonal ? 'bg-slate-50 border-slate-200 text-slate-300 cursor-not-allowed' : value === 1 ? 'bg-emerald-100 border-emerald-300 text-emerald-800' : value === 0 ? 'bg-slate-100 border-slate-300 text-slate-700' : 'bg-amber-50 border-amber-300 text-amber-700'}`}
-                                                                                title={isDiagonal ? 'Self-connection not applicable' : `Edit ${rowCategory.code}-${columnCategory.code} in guided prompt (current: ${getConnectionResponseLabel(rowCategory.code, columnCategory.code)})`}
+                                                                                className={`h-8 w-8 rounded-full text-xs font-bold border transition ${isDiagonal ? 'bg-emerald-100 border-emerald-300 text-emerald-800 cursor-not-allowed' : value === 1 ? 'bg-emerald-100 border-emerald-300 text-emerald-800' : value === 0 ? 'bg-slate-100 border-slate-300 text-slate-700' : 'bg-amber-50 border-amber-300 text-amber-700'}`}
+                                                                                title={isDiagonal ? 'Self-connection is always 1' : `Edit ${rowCategory.code}-${columnCategory.code} in guided prompt (current: ${getConnectionResponseLabel(rowCategory.code, columnCategory.code)})`}
                                                                                 disabled={isDiagonal}
                                                                             >
-                                                                                {isDiagonal ? '-' : value == null ? '?' : value}
+                                                                                {value == null ? '?' : value}
                                                                             </button>
                                                                         </td>
                                                                     );
