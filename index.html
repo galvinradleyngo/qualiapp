@@ -388,6 +388,7 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
         const audioMigrationVersionKey = 'audio_migration_v3';
         const fileOptimizationVersionKey = 'file_optimization_v1';
         const fileOptimizationCheckpointKey = 'file_optimization_checkpoint_v1';
+        const workspaceResumeStateKey = 'workspace_resume_state_v1';
 
         let _dbCache = null;
         const openDB = () => {
@@ -1692,8 +1693,12 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
             const [observationTags, setObservationTags] = useState([]);
             const [activeObservationId, setActiveObservationId] = useState(null);
             const [activeId, setActiveId] = useState(null);
+            const [analysisResumeState, setAnalysisResumeState] = useState(null);
+            const [connectingResumeState, setConnectingResumeState] = useState(null);
+            const [codebookResumeState, setCodebookResumeState] = useState(null);
             const [isReady, setIsReady] = useState(false);
             const [autoLockEnabled, setAutoLockEnabled] = useState(true);
+            const skipResumeRestoreRef = useRef(false);
             const buildAudioMigrationState = (overrides = {}) => ({
                 running: false,
                 processed: 0,
@@ -2080,7 +2085,7 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
 
             useEffect(() => {
                 const loadData = async () => {
-                    const keys = ['transcripts','folders','transcript_folders','tags','global_artifacts','artifact_folders','participants','analysis_canvases','source_filter_presets','triangulation_sessions','triangulation_assignment_meta','code_definitions','category_definitions','observations','observation_folders','observation_tags','activityTypes'];
+                    const keys = ['transcripts','folders','transcript_folders','tags','global_artifacts','artifact_folders','participants','analysis_canvases','source_filter_presets','triangulation_sessions','triangulation_assignment_meta','code_definitions','category_definitions','observations','observation_folders','observation_tags','activityTypes', workspaceResumeStateKey];
                     const d = await dbBatchGet('data', keys);
                     setTranscripts(d['transcripts'] || []);
                     if (d['folders']) {
@@ -2101,10 +2106,50 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                     setObservations(d['observations'] || []);
                     setObservationTags(d['observation_tags'] || []);
                     if (d['activityTypes']) setActivityTypes(d['activityTypes']);
+
+                    const savedWorkspaceState = d[workspaceResumeStateKey] || null;
+                    const shouldApplyResumeState = !skipResumeRestoreRef.current;
+                    if (shouldApplyResumeState) {
+                        const resumeView = String(savedWorkspaceState?.view || 'dashboard');
+                        const allowedViews = new Set(['dashboard', 'artifacts', 'observations', 'participants', 'analysis', 'connecting', 'triangulation', 'backup', 'editor', 'codebook']);
+                        const resumeTranscriptId = String(savedWorkspaceState?.activeTranscriptId || '');
+                        const resumeObservationId = String(savedWorkspaceState?.activeObservationId || '');
+                        const transcriptExists = (d['transcripts'] || []).some((item) => String(item.id) === resumeTranscriptId);
+                        const observationExists = (d['observations'] || []).some((item) => String(item.id) === resumeObservationId);
+
+                        if (resumeTranscriptId && transcriptExists) setActiveId(resumeTranscriptId);
+                        if (resumeObservationId && observationExists) setActiveObservationId(resumeObservationId);
+
+                        if (resumeView === 'editor') {
+                            setView(transcriptExists ? 'editor' : 'dashboard');
+                        } else if (allowedViews.has(resumeView)) {
+                            setView(resumeView);
+                        }
+
+                        setAnalysisResumeState(savedWorkspaceState?.analysis || null);
+                        setConnectingResumeState(savedWorkspaceState?.connecting || null);
+                        setCodebookResumeState(savedWorkspaceState?.codebook || null);
+                    }
+
                     setIsReady(true);
+                    skipResumeRestoreRef.current = false;
                 };
                 if (startupState === 'open') loadData();
             }, [startupState]);
+
+            useEffect(() => {
+                if (!(isReady && startupState === 'open')) return;
+                const nextState = {
+                    view,
+                    activeTranscriptId: view === 'editor' ? (activeId || null) : null,
+                    activeObservationId: view === 'observations' ? (activeObservationId || null) : null,
+                    analysis: analysisResumeState || null,
+                    connecting: connectingResumeState || null,
+                    codebook: codebookResumeState || null,
+                    updatedAt: new Date().toISOString()
+                };
+                dbSet('data', workspaceResumeStateKey, nextState).catch(() => {});
+            }, [view, activeId, activeObservationId, analysisResumeState, connectingResumeState, codebookResumeState, isReady, startupState]);
 
             useEffect(() => {
                 if (isReady && startupState === 'open') {
@@ -2146,6 +2191,40 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
             const handleDeleteSourceFilterPreset = (presetId) => {
                 setSourceFilterPresets((prev) => prev.filter((entry) => entry.id !== presetId));
             };
+
+            const handleUpdateTranscriptSessionState = useCallback((transcriptId, sessionPatch) => {
+                if (!transcriptId || !sessionPatch) return;
+                setTranscripts((prev) => {
+                    let changed = false;
+                    const next = prev.map((item) => {
+                        if (item.id !== transcriptId) return item;
+                        const merged = { ...item, ...sessionPatch };
+                        const hasDifference = Object.keys(sessionPatch).some((key) => item[key] !== merged[key]);
+                        if (!hasDifference) return item;
+                        changed = true;
+                        return merged;
+                    });
+                    if (changed) dbSet('data', 'transcripts', next).catch(() => {});
+                    return next;
+                });
+            }, []);
+
+            const handleUpdateObservationSessionState = useCallback((observationId, sessionPatch) => {
+                if (!observationId || !sessionPatch) return;
+                setObservations((prev) => {
+                    let changed = false;
+                    const next = prev.map((item) => {
+                        if (item.id !== observationId) return item;
+                        const merged = { ...item, ...sessionPatch };
+                        const hasDifference = Object.keys(sessionPatch).some((key) => item[key] !== merged[key]);
+                        if (!hasDifference) return item;
+                        changed = true;
+                        return merged;
+                    });
+                    if (changed) dbSet('data', 'observations', next).catch(() => {});
+                    return next;
+                });
+            }, []);
 
             const activeTranscript = transcripts.find(t => t.id === activeId);
             const artifactSuggestionTags = useMemo(
@@ -3344,7 +3423,7 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
             };
 
             if (startupState === 'checking') return <div className="h-screen w-screen bg-hero flex flex-col"><div className="flex-1 flex items-center justify-center">Loading...</div><AppFooter /></div>;
-            if (startupState === 'welcome') return <WelcomeScreen hasPassword={hasAppPassword} hasRecovery={hasRecoverySetup} onConfigureNewProjectSecurity={handleConfigureNewProjectSecurity} onStartNew={() => setStartupState('open')} onRestoreExisting={() => { setStartupState('open'); setView('backup'); }} />;
+            if (startupState === 'welcome') return <WelcomeScreen hasPassword={hasAppPassword} hasRecovery={hasRecoverySetup} onConfigureNewProjectSecurity={handleConfigureNewProjectSecurity} onStartNew={() => setStartupState('open')} onRestoreExisting={() => { skipResumeRestoreRef.current = true; setStartupState('open'); setView('backup'); }} />;
             if (startupState === 'locked') return <LockScreen onUnlock={() => setStartupState('open')} />;
             if (!isReady) return <div className="h-screen w-screen bg-hero flex flex-col"><div className="flex-1 flex items-center justify-center">Loading...</div><AppFooter /></div>;
 
@@ -3695,6 +3774,8 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                             {view === 'observations' && (
                                 <ObservationsView
                                     observations={observations}
+                                    initialActiveObservationId={activeObservationId}
+                                    onActiveObservationChange={setActiveObservationId}
                                     observationTags={observationTags}
                                     allTags={crossSourceTagSuggestions}
                                     compressAudioFile={getSmallerAudioBlob}
@@ -3715,7 +3796,9 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                                         }
                                         setObservations(prev => prev.filter(o => o.id !== id));
                                         setObservationTags(prev => prev.filter(t => t.observationId !== id));
+                                        if (String(activeObservationId || '') === String(id)) setActiveObservationId(null);
                                     }}
+                                    onUpdateObservationSessionState={handleUpdateObservationSessionState}
                                     onAddObservationTag={(tag) => setObservationTags(prev => [...prev, tag])}
                                     onUpdateObservationTag={(updated) => setObservationTags(prev => prev.map(t => t.id === updated.id ? updated : t))}
                                     onRemoveObservationTag={(id) => setObservationTags(prev => prev.filter(t => t.id !== id))}
@@ -3727,8 +3810,8 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                                 />
                             )}
                             {view === 'participants' && <ParticipantVault participants={participants} onUpdate={setParticipants} />}
-                            {view === 'analysis' && <AnalysisBoard tags={tags} canvases={analysisCanvases} onUpdate={setAnalysisCanvases} artifacts={globalArtifacts} transcripts={transcripts} participants={participants} observations={observations} observationTags={observationTags} sourceFilterPresets={sourceFilterPresets} onSaveSourceFilterPreset={handleSaveSourceFilterPreset} onDeleteSourceFilterPreset={handleDeleteSourceFilterPreset} panelMode="analysis" />}
-                            {view === 'connecting' && <AnalysisBoard tags={tags} canvases={analysisCanvases} onUpdate={setAnalysisCanvases} artifacts={globalArtifacts} transcripts={transcripts} participants={participants} observations={observations} observationTags={observationTags} sourceFilterPresets={sourceFilterPresets} onSaveSourceFilterPreset={handleSaveSourceFilterPreset} onDeleteSourceFilterPreset={handleDeleteSourceFilterPreset} panelMode="connecting" />}
+                            {view === 'analysis' && <AnalysisBoard tags={tags} canvases={analysisCanvases} onUpdate={setAnalysisCanvases} artifacts={globalArtifacts} transcripts={transcripts} participants={participants} observations={observations} observationTags={observationTags} sourceFilterPresets={sourceFilterPresets} onSaveSourceFilterPreset={handleSaveSourceFilterPreset} onDeleteSourceFilterPreset={handleDeleteSourceFilterPreset} panelMode="analysis" resumeState={analysisResumeState} onResumeStateChange={setAnalysisResumeState} />}
+                            {view === 'connecting' && <AnalysisBoard tags={tags} canvases={analysisCanvases} onUpdate={setAnalysisCanvases} artifacts={globalArtifacts} transcripts={transcripts} participants={participants} observations={observations} observationTags={observationTags} sourceFilterPresets={sourceFilterPresets} onSaveSourceFilterPreset={handleSaveSourceFilterPreset} onDeleteSourceFilterPreset={handleDeleteSourceFilterPreset} panelMode="connecting" resumeState={connectingResumeState} onResumeStateChange={setConnectingResumeState} />}
                             {view === 'triangulation' && (
                                 <TriangulationDashboard
                                     transcripts={transcripts}
@@ -3758,7 +3841,8 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                                     tags={tags.filter(t => t.transcriptId === activeTranscript.id)}
                                     activityTypes={activityTypes}
                                     onAddActivityType={(newType) => !activityTypes.includes(newType) && setActivityTypes([...activityTypes, newType])}
-                                    onBack={() => setView('dashboard')}
+                                    onBack={() => { setView('dashboard'); setActiveId(null); }}
+                                    onUpdateSessionState={handleUpdateTranscriptSessionState}
                                     onUpdateTranscript={(updated) => {
                                         setTranscripts((prev) => {
                                             const next = prev.map(t => t.id === updated.id ? updated : t);
@@ -3800,6 +3884,8 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                                     observationTags={observationTags}
                                     analysisCanvases={analysisCanvases}
                                     sourceFilterPresets={sourceFilterPresets}
+                                    resumeState={codebookResumeState}
+                                    onResumeStateChange={setCodebookResumeState}
                                     codeDefinitions={codeDefinitions}
                                     categoryDefinitions={categoryDefinitions}
                                     onUpdateCodeDefinitions={setCodeDefinitions}
@@ -5594,10 +5680,10 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
             );
         }
 
-        function Editor({ transcript, tags, allTags, activityTypes, onAddActivityType, onBack, onUpdateTranscript, onAddTag, onUpdateTag, onRemoveTag }) {
+        function Editor({ transcript, tags, allTags, activityTypes, onAddActivityType, onBack, onUpdateTranscript, onUpdateSessionState, onAddTag, onUpdateTag, onRemoveTag }) {
             const { requestConfirmation, confirmationDialog } = useConfirmationDialog();
             const { showNotice, noticeDialog } = useNoticeDialog();
-            const [mode, setMode] = useState('edit');
+            const [mode, setMode] = useState(transcript.resumeMode || 'edit');
             const [content, setContent] = useState(transcript.content || '');
             const [contentHtml, setContentHtml] = useState(transcript.contentHtml || '');
             const [notes, setNotes] = useState(transcript.notes || '');
@@ -5637,7 +5723,27 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
             const notesEditableRef = useRef(null);
             const audioRef = useRef(null);
             const audioTrackUrlsRef = useRef([]);
+            const lastSessionPersistAtRef = useRef(0);
+            const hasRestoredAudioPositionRef = useRef(false);
             const SPEED_STEPS = [0.5, 0.75, 1, 1.25, 1.5, 2];
+
+            const persistSessionState = useCallback((force = false) => {
+                if (typeof onUpdateSessionState !== 'function') return;
+                const now = Date.now();
+                if (!force && now - lastSessionPersistAtRef.current < 1500) return;
+                lastSessionPersistAtRef.current = now;
+
+                const currentAudioTime = audioRef.current
+                    ? Number((audioRef.current.currentTime || 0).toFixed(2))
+                    : Number(transcript.resumeAudioTimeSec || 0);
+
+                onUpdateSessionState(transcript.id, {
+                    resumeMode: mode,
+                    resumeAudioTrackId: activeAudioTrackId || null,
+                    resumeAudioTimeSec: Number.isFinite(currentAudioTime) ? currentAudioTime : 0,
+                    lastVisitedAt: new Date().toISOString()
+                });
+            }, [onUpdateSessionState, transcript.id, transcript.resumeAudioTimeSec, mode, activeAudioTrackId]);
 
             const escapeHtml = (value) => String(value || '')
                 .replace(/&/g, '&amp;')
@@ -5750,8 +5856,10 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                 setNotesHtml(transcript.notesHtml || plainToHtml(nextNotes));
                 setModality(transcript.modality || '');
                 setPlaybackRate(transcript.playbackRate || 1);
+                setMode(transcript.resumeMode || 'edit');
                 setSaveStatus('saved');
                 historyRef.current = { past: [], future: [] };
+                hasRestoredAudioPositionRef.current = false;
             }, [transcript.id]);
 
             useEffect(() => {
@@ -5773,19 +5881,26 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                         return;
                     }
                     setAudioProgressPct(Math.max(0, Math.min(100, (current / duration) * 100)));
+                    persistSessionState(false);
                 };
                 updateProgress();
+                const persistOnPause = () => persistSessionState(true);
+                const persistOnEnded = () => persistSessionState(true);
                 player.addEventListener('timeupdate', updateProgress);
                 player.addEventListener('loadedmetadata', updateProgress);
                 player.addEventListener('durationchange', updateProgress);
                 player.addEventListener('seeked', updateProgress);
+                player.addEventListener('pause', persistOnPause);
+                player.addEventListener('ended', persistOnEnded);
                 return () => {
                     player.removeEventListener('timeupdate', updateProgress);
                     player.removeEventListener('loadedmetadata', updateProgress);
                     player.removeEventListener('durationchange', updateProgress);
                     player.removeEventListener('seeked', updateProgress);
+                    player.removeEventListener('pause', persistOnPause);
+                    player.removeEventListener('ended', persistOnEnded);
                 };
-            }, [audioUrl, activeAudioTrackId]);
+            }, [audioUrl, activeAudioTrackId, persistSessionState]);
 
             useEffect(() => {
                 if (!editableRef.current) return;
@@ -5840,8 +5955,9 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                     audioTrackUrlsRef.current = loaded.map((track) => track.url);
                     setAudioTracks(loaded);
                     if (loaded.length > 0) {
-                        setActiveAudioTrackId(loaded[0].id);
-                        setAudioUrl(loaded[0].url);
+                        const preferredTrack = loaded.find((track) => track.id === transcript.resumeAudioTrackId) || loaded[0];
+                        setActiveAudioTrackId(preferredTrack.id);
+                        setAudioUrl(preferredTrack.url);
                     }
                 };
 
@@ -5857,6 +5973,40 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                 const activeTrack = audioTracks.find((track) => track.id === activeAudioTrackId);
                 setAudioUrl(activeTrack ? activeTrack.url : null);
             }, [audioTracks, activeAudioTrackId]);
+
+            useEffect(() => {
+                const player = audioRef.current;
+                const savedTime = Number(transcript.resumeAudioTimeSec || 0);
+                if (!player || !audioUrl || !Number.isFinite(savedTime) || savedTime <= 0 || hasRestoredAudioPositionRef.current) return;
+                if (transcript.resumeAudioTrackId && activeAudioTrackId && transcript.resumeAudioTrackId !== activeAudioTrackId) return;
+
+                const applySavedPosition = () => {
+                    const duration = Number(player.duration);
+                    const boundedTime = Number.isFinite(duration) && duration > 0
+                        ? Math.max(0, Math.min(savedTime, Math.max(0, duration - 0.1)))
+                        : Math.max(0, savedTime);
+                    player.currentTime = boundedTime;
+                    hasRestoredAudioPositionRef.current = true;
+                };
+
+                if (player.readyState >= 1) {
+                    applySavedPosition();
+                    return;
+                }
+
+                player.addEventListener('loadedmetadata', applySavedPosition, { once: true });
+                return () => player.removeEventListener('loadedmetadata', applySavedPosition);
+            }, [audioUrl, activeAudioTrackId, transcript.id, transcript.resumeAudioTimeSec, transcript.resumeAudioTrackId]);
+
+            useEffect(() => {
+                persistSessionState(true);
+            }, [mode, activeAudioTrackId, persistSessionState]);
+
+            useEffect(() => {
+                return () => {
+                    persistSessionState(true);
+                };
+            }, [persistSessionState]);
 
             const handleEditableInput = () => {
                 if (!editableRef.current) return;
@@ -7173,7 +7323,7 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
             );
         }
 
-        function AnalysisBoard({ tags, canvases, onUpdate, artifacts, transcripts, participants, observations, observationTags, sourceFilterPresets, onSaveSourceFilterPreset, onDeleteSourceFilterPreset, panelMode = 'analysis' }) {
+        function AnalysisBoard({ tags, canvases, onUpdate, artifacts, transcripts, participants, observations, observationTags, sourceFilterPresets, onSaveSourceFilterPreset, onDeleteSourceFilterPreset, panelMode = 'analysis', resumeState, onResumeStateChange }) {
             const { requestConfirmation, confirmationDialog } = useConfirmationDialog();
             const { requestInput, inputDialog } = useInputDialog();
             const isConnectingMode = panelMode === 'connecting';
@@ -7193,6 +7343,7 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
             const [selectedMapNodeCode, setSelectedMapNodeCode] = useState(null);
             const [selectedInVivoPopup, setSelectedInVivoPopup] = useState(null);
             const hasInitializedSourceFilter = useRef(false);
+            const hasAppliedResumeRef = useRef(false);
             const guidedPromptQuestionRef = useRef(null);
 
             const parseCategoryCodeNumber = (value) => {
@@ -7440,10 +7591,76 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
             }, [transcripts, artifacts, observations]);
 
             useEffect(() => {
+                if (hasAppliedResumeRef.current) return;
+                hasAppliedResumeRef.current = true;
+
+                if (!resumeState || typeof resumeState !== 'object') return;
+
+                const resumeCanvasId = String(resumeState.activeCanvasId || '');
+                if (resumeCanvasId && canvases.some((canvas) => String(canvas.id) === resumeCanvasId)) {
+                    setActiveCanvasId(resumeCanvasId);
+                }
+
+                if (Array.isArray(resumeState.selectedFolders)) {
+                    const validFolders = resumeState.selectedFolders
+                        .map((folder) => String(folder || '').trim())
+                        .filter((folder) => folder && availableFolders.includes(folder));
+                    setSelectedFolders(validFolders);
+                }
+
+                if (Array.isArray(resumeState.selectedSourceIds)) {
+                    const allSourceIds = new Set(sourceFilterGroups.flatMap((group) => group.items.map((item) => item.filterId)));
+                    const validSourceIds = resumeState.selectedSourceIds
+                        .map((id) => String(id || '').trim())
+                        .filter((id) => id && allSourceIds.has(id));
+                    hasInitializedSourceFilter.current = true;
+                    setSelectedSourceIds(validSourceIds);
+                }
+
+                if (resumeState.processStepView === 'step2' || resumeState.processStepView === 'step3' || resumeState.processStepView === 'both') {
+                    setProcessStepView(resumeState.processStepView);
+                }
+
+                if (Number.isFinite(resumeState.connectingCursor)) {
+                    setConnectingCursor(Math.max(0, Math.floor(resumeState.connectingCursor)));
+                }
+
+                setShowRelationalMap(Boolean(resumeState.showRelationalMap));
+
+                const resumeLegendFilter = resumeState.legendFilter;
+                if (resumeLegendFilter === 'low' || resumeLegendFilter === 'mid' || resumeLegendFilter === 'high') {
+                    setLegendFilter(resumeLegendFilter);
+                } else {
+                    setLegendFilter(null);
+                }
+
+                const resumeMapNodeCode = String(resumeState.selectedMapNodeCode || '');
+                if (resumeMapNodeCode) {
+                    setSelectedMapNodeCode(resumeMapNodeCode);
+                }
+            }, [resumeState, canvases, availableFolders, sourceFilterGroups]);
+
+            useEffect(() => {
                 if (selectedFolders.length === 0 && availableFolders.length > 0) {
                     setSelectedFolders(availableFolders);
                 }
             }, [availableFolders, selectedFolders.length]);
+
+            useEffect(() => {
+                if (typeof onResumeStateChange !== 'function') return;
+                onResumeStateChange({
+                    panelMode,
+                    activeCanvasId: activeCanvasId || null,
+                    selectedFolders,
+                    selectedSourceIds,
+                    processStepView,
+                    connectingCursor,
+                    showRelationalMap,
+                    legendFilter: legendFilter || null,
+                    selectedMapNodeCode: selectedMapNodeCode || null,
+                    updatedAt: new Date().toISOString()
+                });
+            }, [panelMode, activeCanvasId, selectedFolders, selectedSourceIds, processStepView, connectingCursor, showRelationalMap, legendFilter, selectedMapNodeCode, onResumeStateChange]);
 
             const selectedFolderSet = useMemo(() => new Set(selectedFolders), [selectedFolders]);
             const includeAllSources = selectedSourceSet.size === 0;
@@ -9466,9 +9683,13 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
             );
         }
 
-        function ObservationsView({ observations, folders = [], onCreateFolder, onRenameFolder, onDeleteFolder, onMoveObservation, observationTags, allTags, compressAudioFile, onAddObservation, onUpdateObservation, onDeleteObservation, onAddObservationTag, onUpdateObservationTag, onRemoveObservationTag }) {
+        function ObservationsView({ observations, folders = [], initialActiveObservationId, onActiveObservationChange, onCreateFolder, onRenameFolder, onDeleteFolder, onMoveObservation, observationTags, allTags, compressAudioFile, onAddObservation, onUpdateObservation, onDeleteObservation, onUpdateObservationSessionState, onAddObservationTag, onUpdateObservationTag, onRemoveObservationTag }) {
             const { requestConfirmation, confirmationDialog } = useConfirmationDialog();
-            const [activeObsId, setActiveObsId] = useState(observations[0]?.id || null);
+            const [activeObsId, setActiveObsId] = useState(() => {
+                const preferred = String(initialActiveObservationId || '');
+                if (preferred && observations.some((item) => String(item.id) === preferred)) return preferred;
+                return observations[0]?.id || null;
+            });
             const [showNewForm, setShowNewForm] = useState(false);
             const [newTitle, setNewTitle] = useState('');
             const [newLocation, setNewLocation] = useState('');
@@ -9482,6 +9703,25 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
 
             const activeObs = observations.find(o => o.id === activeObsId) || null;
             const activeTags = observationTags.filter(t => t.observationId === activeObsId);
+
+            useEffect(() => {
+                const preferred = String(initialActiveObservationId || '');
+                if (!preferred) return;
+                if (!observations.some((item) => String(item.id) === preferred)) return;
+                setActiveObsId((prev) => (String(prev || '') === preferred ? prev : preferred));
+            }, [initialActiveObservationId, observations]);
+
+            useEffect(() => {
+                if (!activeObsId && observations.length > 0) {
+                    setActiveObsId(observations[0].id);
+                }
+            }, [activeObsId, observations]);
+
+            useEffect(() => {
+                if (typeof onActiveObservationChange === 'function') {
+                    onActiveObservationChange(activeObsId || null);
+                }
+            }, [activeObsId, onActiveObservationChange]);
 
             const handleCreate = async (e) => {
                 e.preventDefault();
@@ -9666,6 +9906,7 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                             onAddTag={onAddObservationTag}
                             onUpdateTag={onUpdateObservationTag}
                             onRemoveTag={onRemoveObservationTag}
+                            onUpdateSessionState={onUpdateObservationSessionState}
                         />
                     ) : (
                         <div className="flex-1 flex items-center justify-center text-slate-400 italic text-lg">
@@ -9677,10 +9918,10 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
             );
         }
 
-        function ObservationEditor({ observation, tags, allTags, observationTags, observationFolders = [], compressAudioFile, onUpdate, onDelete, onAddTag, onUpdateTag, onRemoveTag }) {
+        function ObservationEditor({ observation, tags, allTags, observationTags, observationFolders = [], compressAudioFile, onUpdate, onDelete, onAddTag, onUpdateTag, onRemoveTag, onUpdateSessionState }) {
             const { requestConfirmation, confirmationDialog } = useConfirmationDialog();
             const { showNotice, noticeDialog } = useNoticeDialog();
-            const [mode, setMode] = useState('edit');
+            const [mode, setMode] = useState(observation.resumeMode === 'code' || observation.resumeMode === 'notes' ? observation.resumeMode : 'edit');
             const [content, setContent] = useState(observation.content || '');
             const [contentHtml, setContentHtml] = useState(observation.contentHtml || '');
             const [notes, setNotes] = useState(observation.notes || '');
@@ -9708,7 +9949,34 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
             const notesEditableRef = useRef(null);
             const audioRef = useRef(null);
             const audioTrackUrlsRef = useRef([]);
+            const syncTimerRef = useRef(null);
+            const latestTrackIdRef = useRef(null);
             const SPEED_STEPS = [0.5, 0.75, 1, 1.25, 1.5, 2];
+
+            const persistSessionState = useCallback((patch) => {
+                if (!patch || typeof onUpdateSessionState !== 'function') return;
+                onUpdateSessionState(observation.id, {
+                    ...patch,
+                    sessionUpdatedAt: new Date().toISOString()
+                });
+            }, [observation.id, onUpdateSessionState]);
+
+            const scheduleAudioTimeSync = useCallback((timeValue) => {
+                if (!Number.isFinite(timeValue) || timeValue < 0) return;
+                if (syncTimerRef.current) return;
+                syncTimerRef.current = setTimeout(() => {
+                    syncTimerRef.current = null;
+                    const player = audioRef.current;
+                    const timeToPersist = Number.isFinite(timeValue)
+                        ? timeValue
+                        : (player ? player.currentTime : null);
+                    if (!Number.isFinite(timeToPersist) || timeToPersist < 0) return;
+                    persistSessionState({
+                        resumeAudioTrackId: latestTrackIdRef.current || null,
+                        resumeAudioTime: Number(timeToPersist.toFixed(2))
+                    });
+                }, 700);
+            }, [persistSessionState]);
 
             const escapeHtml = (v) => String(v || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;');
             const plainToHtml = (v) => escapeHtml(v).replace(/\n/g, '<br>');
@@ -9730,7 +9998,12 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                 setFolderInput(observation.folder || '');
                 setEditingFolder(false);
                 setPlaybackRate(observation.playbackRate || 1);
+                setMode(observation.resumeMode === 'code' || observation.resumeMode === 'notes' ? observation.resumeMode : 'edit');
             }, [observation.id]);
+
+            useEffect(() => {
+                persistSessionState({ resumeMode: mode });
+            }, [mode, persistSessionState]);
 
             useEffect(() => {
                 if (!audioRef.current) return;
@@ -9816,8 +10089,11 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                     audioTrackUrlsRef.current = loaded.map((track) => track.url);
                     setAudioTracks(loaded);
                     if (loaded.length > 0) {
-                        setActiveAudioTrackId(loaded[0].id);
-                        setAudioUrl(loaded[0].url);
+                        const preferredId = String(observation.resumeAudioTrackId || '');
+                        const preferredTrack = preferredId ? loaded.find((track) => String(track.id) === preferredId) : null;
+                        const selectedTrack = preferredTrack || loaded[0];
+                        setActiveAudioTrackId(selectedTrack.id);
+                        setAudioUrl(selectedTrack.url);
                     }
                 };
 
@@ -9831,8 +10107,74 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
 
             useEffect(() => {
                 const activeTrack = audioTracks.find((track) => track.id === activeAudioTrackId);
+                latestTrackIdRef.current = activeTrack ? activeTrack.id : null;
                 setAudioUrl(activeTrack ? activeTrack.url : null);
             }, [audioTracks, activeAudioTrackId]);
+
+            useEffect(() => {
+                persistSessionState({ resumeAudioTrackId: activeAudioTrackId || null });
+            }, [activeAudioTrackId, persistSessionState]);
+
+            useEffect(() => {
+                const player = audioRef.current;
+                if (!player || !audioUrl) return;
+                const savedTime = Number(observation.resumeAudioTime);
+                if (!Number.isFinite(savedTime) || savedTime <= 0) return;
+
+                const applySavedTime = () => {
+                    const duration = Number(player.duration) || Number.MAX_SAFE_INTEGER;
+                    const clamped = Math.max(0, Math.min(savedTime, duration));
+                    player.currentTime = clamped;
+                };
+
+                applySavedTime();
+                player.addEventListener('loadedmetadata', applySavedTime);
+                return () => {
+                    player.removeEventListener('loadedmetadata', applySavedTime);
+                };
+            }, [audioUrl, observation.id]);
+
+            useEffect(() => {
+                const player = audioRef.current;
+                if (!player || !audioUrl) return;
+
+                const handleTimeUpdate = () => scheduleAudioTimeSync(player.currentTime);
+                const handlePause = () => {
+                    if (!Number.isFinite(player.currentTime)) return;
+                    persistSessionState({
+                        resumeAudioTrackId: latestTrackIdRef.current || null,
+                        resumeAudioTime: Number(player.currentTime.toFixed(2))
+                    });
+                };
+
+                player.addEventListener('timeupdate', handleTimeUpdate);
+                player.addEventListener('pause', handlePause);
+                player.addEventListener('ended', handlePause);
+                return () => {
+                    player.removeEventListener('timeupdate', handleTimeUpdate);
+                    player.removeEventListener('pause', handlePause);
+                    player.removeEventListener('ended', handlePause);
+                };
+            }, [audioUrl, scheduleAudioTimeSync, persistSessionState]);
+
+            useEffect(() => {
+                return () => {
+                    if (syncTimerRef.current) {
+                        clearTimeout(syncTimerRef.current);
+                        syncTimerRef.current = null;
+                    }
+                    if (audioRef.current) {
+                        const currentTime = Number(audioRef.current.currentTime) || 0;
+                        persistSessionState({
+                            resumeAudioTrackId: latestTrackIdRef.current || null,
+                            resumeAudioTime: Number(currentTime.toFixed(2)),
+                            resumeMode: mode
+                        });
+                    } else {
+                        persistSessionState({ resumeMode: mode });
+                    }
+                };
+            }, [mode, persistSessionState]);
 
             const handleAudioUpload = async (e) => {
                 const files = Array.from(e.target.files || []);
@@ -10573,13 +10915,14 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
             );
         }
 
-        function Codebook({ tags, transcripts, participants, artifacts, observations, observationTags, sourceFilterPresets, onSaveSourceFilterPreset, onDeleteSourceFilterPreset }) {
+        function Codebook({ tags, transcripts, participants, artifacts, observations, observationTags, analysisCanvases, sourceFilterPresets, onSaveSourceFilterPreset, onDeleteSourceFilterPreset, resumeState, onResumeStateChange }) {
             const [searchTerm, setSearchTerm] = useState('');
             const [sortBy, setSortBy] = useState('category');
             const [sortDirection, setSortDirection] = useState('asc');
             const [selectedSourceIds, setSelectedSourceIds] = useState([]);
             const [showExportMenu, setShowExportMenu] = useState(false);
             const hasInitializedSourceFilter = useRef(false);
+            const hasAppliedResumeRef = useRef(false);
 
             const csvEscape = (value) => {
                 const text = String(value ?? '');
@@ -10661,6 +11004,34 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
             ]), [transcripts, artifacts, observations]);
 
             useEffect(() => {
+                if (hasAppliedResumeRef.current) return;
+                hasAppliedResumeRef.current = true;
+
+                if (!resumeState || typeof resumeState !== 'object') return;
+
+                if (typeof resumeState.searchTerm === 'string') {
+                    setSearchTerm(resumeState.searchTerm);
+                }
+
+                if (resumeState.sortBy === 'category' || resumeState.sortBy === 'code') {
+                    setSortBy(resumeState.sortBy);
+                }
+
+                if (resumeState.sortDirection === 'asc' || resumeState.sortDirection === 'desc') {
+                    setSortDirection(resumeState.sortDirection);
+                }
+
+                if (Array.isArray(resumeState.selectedSourceIds)) {
+                    const allSourceIds = new Set(sourceFilterGroups.flatMap((group) => group.items.map((item) => item.filterId)));
+                    const validSourceIds = resumeState.selectedSourceIds
+                        .map((id) => String(id || '').trim())
+                        .filter((id) => id && allSourceIds.has(id));
+                    hasInitializedSourceFilter.current = true;
+                    setSelectedSourceIds(validSourceIds);
+                }
+            }, [resumeState, sourceFilterGroups]);
+
+            useEffect(() => {
                 const allIds = sourceFilterGroups.flatMap((group) => group.items.map((item) => item.filterId));
                 setSelectedSourceIds((prev) => {
                     if (!hasInitializedSourceFilter.current) {
@@ -10673,6 +11044,17 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                     return [...retained, ...added];
                 });
             }, [sourceFilterGroups]);
+
+            useEffect(() => {
+                if (typeof onResumeStateChange !== 'function') return;
+                onResumeStateChange({
+                    searchTerm,
+                    sortBy,
+                    sortDirection,
+                    selectedSourceIds,
+                    updatedAt: new Date().toISOString()
+                });
+            }, [searchTerm, sortBy, sortDirection, selectedSourceIds, onResumeStateChange]);
 
             const selectedSourceSet = useMemo(() => new Set(selectedSourceIds), [selectedSourceIds]);
 
@@ -10706,6 +11088,23 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                         : [...new Set([...prev, ...groupIds])];
                 });
             };
+
+            const clusteringCategoriesByCode = useMemo(() => {
+                const map = {};
+                (analysisCanvases || []).forEach((canvas) => {
+                    (canvas.categories || []).forEach((category) => {
+                        const categoryName = String(category?.name || '').trim();
+                        if (!categoryName) return;
+                        (category.codes || []).forEach((codeName) => {
+                            const key = String(codeName || '').trim();
+                            if (!key) return;
+                            if (!map[key]) map[key] = new Set();
+                            map[key].add(categoryName);
+                        });
+                    });
+                });
+                return map;
+            }, [analysisCanvases]);
 
             const tableData = useMemo(() => {
                 const participantCodeById = {};
@@ -10750,21 +11149,31 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
                 });
 
                 const groupedRows = Object.values([...transcriptRows, ...artifactRows, ...observationRows].reduce((acc, item) => {
-                    const groupKey = [item.category || 'Uncategorized', item.tagName].join('::');
-                    if (!acc[groupKey]) {
-                        acc[groupKey] = {
-                            id: groupKey,
-                            tagName: item.tagName,
-                            category: item.category,
-                            quotes: []
-                        };
-                    }
+                    const codeName = String(item.tagName || '').trim();
+                    const fallbackCategory = String(item.category || '').trim() || 'Uncategorized';
+                    const clusteringCategories = codeName && clusteringCategoriesByCode[codeName]
+                        ? Array.from(clusteringCategoriesByCode[codeName])
+                        : [];
+                    const categoriesForRow = clusteringCategories.length > 0 ? clusteringCategories : [fallbackCategory];
 
-                    if (item.textSnippet && item.textSnippet.trim()) {
-                        acc[groupKey].quotes.push({
-                            text: item.textSnippet.trim()
-                        });
-                    }
+                    categoriesForRow.forEach((categoryName) => {
+                        const groupKey = [categoryName || 'Uncategorized', codeName].join('::');
+                        if (!acc[groupKey]) {
+                            acc[groupKey] = {
+                                id: groupKey,
+                                tagName: codeName,
+                                category: categoryName || 'Uncategorized',
+                                quotes: []
+                            };
+                        }
+
+                        if (item.textSnippet && item.textSnippet.trim()) {
+                            acc[groupKey].quotes.push({
+                                text: item.textSnippet.trim()
+                            });
+                        }
+                    });
+
                     return acc;
                 }, {}));
 
@@ -10795,7 +11204,7 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
 
                     return a.tagName.localeCompare(b.tagName);
                 });
-            }, [tags, transcripts, participants, artifacts, observations, observationTags, searchTerm, sortBy, sortDirection, selectedSourceSet]);
+            }, [tags, transcripts, participants, artifacts, observations, observationTags, searchTerm, sortBy, sortDirection, selectedSourceSet, clusteringCategoriesByCode]);
 
             const uniqueCodeCount = useMemo(() => new Set(tableData.map(t => t.tagName)).size, [tableData]);
             const uniqueCategoryCount = useMemo(() => new Set(tableData.map(t => t.category)).size, [tableData]);
