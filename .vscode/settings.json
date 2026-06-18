@@ -3,6 +3,7 @@
         "/^cd /workspaces/qualiapp && tmp=\\$\\(mktemp\\) && awk '\nBEGIN \\{ in_babel=0; babel_count=0; skip=0 \\}\n/\\^    <script>!function\\\\\\(e,t\\\\\\)\\\\\\{\"object\"==typeof exports&&\"undefined\"!=typeof module\\\\\\?t\\\\\\(exports\\\\\\):\"function\"==typeof define&&define\\\\\\.amd\\\\\\?define\\\\\\(\\\\\\[\"exports\"\\\\\\],t\\\\\\):t\\\\\\(\\\\\\(e=\"undefined\"!=typeof globalThis\\\\\\?globalThis:e\\\\\\|\\\\\\|self\\\\\\)\\\\\\.Babel=\\\\\\{\\\\\\}\\\\\\)\\\\\\}\\\\\\(this,function\\\\\\(e\\\\\\)\\\\\\{\"use strict\"/ \\{\n  babel_count\\+\\+;\n  in_babel=1;\n  skip=\\(babel_count > 1\\);\n\\}\n\\{\n  if \\(!skip\\) print;\n\\}\nin_babel && /\\^<\\\\/script>\\$/ \\{\n  in_babel=0;\n  skip=0;\n\\}\n' index\\.html > \"\\$tmp\" && mv \"\\$tmp\" index\\.html$/": {
             "approve": true,
             "matchCommandLine": true
-        }
+        },
+        "awk": true
     }
 }

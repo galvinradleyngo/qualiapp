@@ -283,11 +283,9 @@ c.useEffect=function(a,b){return g.current.useEffect(a,b)};c.useId=function(){re
 c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=function(a,b,c){return g.current.useSyncExternalStore(a,b,c)};c.useTransition=function(){return g.current.useTransition()};c.version="18.3.1"});
 })();
 </script>
-    <!-- Runtime: local vendor/ files when available (after running serve-local.sh / install.bat), CDN otherwise -->
-    <script src="./vendor/react-dom.production.min.js"></script>
-    <script>window.ReactDOM || document.write('<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"><\/script>')</script>
-    <script src="./vendor/babel.min.js"></script>
-    <script>window.Babel || document.write('<script src="https://unpkg.com/@babel/standalone/babel.min.js"><\/script>')</script>
+    <!-- Runtime loader: use direct CDN scripts to avoid document.write parser-blocking fallback issues. -->
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script>
         tailwind.config = {
             theme: {
@@ -376,7 +374,7 @@ c.useState=function(a){return g.current.useState(a)};c.useSyncExternalStore=func
 <body class="bg-mist text-ink font-sans">
     <div id="root"></div>
 
-    <script type="text/babel">
+    <script type="text/babel" data-presets="env" data-plugins="transform-react-jsx">
         const { useState, useEffect, useRef, useMemo, useCallback } = React;
 
         const dbName = 'QualiMacDB_v7';
