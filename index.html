@@ -1454,8 +1454,84 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
             });
             const [audioMigrationProgress, setAudioMigrationProgress] = useState(buildAudioMigrationState());
             const [isProgressMinimized, setIsProgressMinimized] = useState(false);
+            const [pomodoroOpen, setPomodoroOpen] = useState(false);
+            const [pomodoroMinimized, setPomodoroMinimized] = useState(false);
+            const [pomodoroDurationMinutes, setPomodoroDurationMinutes] = useState(20);
+            const [pomodoroRemainingSeconds, setPomodoroRemainingSeconds] = useState(20 * 60);
+            const [pomodoroRunning, setPomodoroRunning] = useState(false);
             const audioOptimizationBusyRef = useRef(false);
             const autoOptimizationTriggeredRef = useRef(false);
+
+            // Pomodoro utilities
+            const formatPomodoroTime = (totalSeconds) => {
+                const safe = Math.max(0, Number(totalSeconds) || 0);
+                const minutes = Math.floor(safe / 60);
+                const seconds = safe % 60;
+                return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+            };
+
+            const playPomodoroChime = () => {
+                try {
+                    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                    if (!AudioCtx) return;
+                    const ctx = new AudioCtx();
+                    const now = ctx.currentTime;
+                    const gain = ctx.createGain();
+                    gain.gain.setValueAtTime(0.0001, now);
+                    gain.gain.exponentialRampToValueAtTime(0.08, now + 0.02);
+                    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.35);
+                    const osc = ctx.createOscillator();
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(660, now);
+                    osc.frequency.linearRampToValueAtTime(520, now + 0.35);
+                    osc.connect(gain);
+                    gain.connect(ctx.destination);
+                    osc.start(now);
+                    osc.stop(now + 0.36);
+                    setTimeout(() => {
+                        ctx.close().catch(() => {});
+                    }, 450);
+                } catch (err) {
+                    // Silent fallback when browser blocks autoplay or WebAudio
+                }
+            };
+
+            const adjustPomodoroMinutes = (delta) => {
+                if (pomodoroRunning) return;
+                const next = Math.min(180, Math.max(1, pomodoroDurationMinutes + delta));
+                setPomodoroDurationMinutes(next);
+                setPomodoroRemainingSeconds(next * 60);
+            };
+
+            const startPomodoro = () => {
+                setPomodoroRemainingSeconds(pomodoroDurationMinutes * 60);
+                setPomodoroRunning(true);
+            };
+
+            const resetPomodoro = () => {
+                setPomodoroRunning(false);
+                setPomodoroRemainingSeconds(pomodoroDurationMinutes * 60);
+            };
+
+            // Pomodoro timer
+            useEffect(() => {
+                if (!pomodoroRunning) return;
+                const intervalId = setInterval(() => {
+                    setPomodoroRemainingSeconds((prev) => {
+                        if (prev <= 1) {
+                            clearInterval(intervalId);
+                            setPomodoroRunning(false);
+                            setPomodoroOpen(true);
+                            setPomodoroMinimized(false);
+                            playPomodoroChime();
+                            alert('Pomodoro Complete! congratulations! Take a quick break!');
+                            return pomodoroDurationMinutes * 60;
+                        }
+                        return prev - 1;
+                    });
+                }, 1000);
+                return () => clearInterval(intervalId);
+            }, [pomodoroRunning, pomodoroDurationMinutes]);
 
             useEffect(() => {
                 const detectStartupState = async () => {
