@@ -1801,7 +1801,6 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
             const [audioMigrationProgress, setAudioMigrationProgress] = useState(buildAudioMigrationState());
             const [isProgressMinimized, setIsProgressMinimized] = useState(false);
             const [pomodoroOpen, setPomodoroOpen] = useState(false);
-            const [pomodoroMinimized, setPomodoroMinimized] = useState(false);
             const [pomodoroDurationMinutes, setPomodoroDurationMinutes] = useState(20);
             const [pomodoroRemainingSeconds, setPomodoroRemainingSeconds] = useState(20 * 60);
             const [pomodoroRunning, setPomodoroRunning] = useState(false);
@@ -1868,7 +1867,6 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                             clearInterval(intervalId);
                             setPomodoroRunning(false);
                             setPomodoroOpen(true);
-                            setPomodoroMinimized(false);
                             playPomodoroChime();
                             alert('Pomodoro Complete! congratulations! Take a quick break!');
                             return pomodoroDurationMinutes * 60;
@@ -3484,20 +3482,32 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                                     )}
                                 </div>
                             )}
-                            <div className="absolute bottom-3 right-3 z-30 w-72 bg-white/95 border border-slate-200 rounded-xl shadow-soft p-3">
-                                <div className="flex items-center justify-between">
-                                    <p className="text-xs font-semibold text-slate-700">Pomodoro Timer</p>
-                                    <button
-                                        type="button"
-                                        onClick={() => setPomodoroMinimized((v) => !v)}
-                                        className="text-slate-400 hover:text-slate-600 text-sm"
-                                        title={pomodoroMinimized ? 'Expand Pomodoro' : 'Minimize Pomodoro'}
-                                    >
-                                        {pomodoroMinimized ? '+' : '−'}
-                                    </button>
-                                </div>
-                                {!pomodoroMinimized && (
-                                    <>
+                            <div className={`absolute ${audioMigrationProgress.running ? 'top-28' : 'top-3'} right-3 z-30`}>
+                                <button
+                                    type="button"
+                                    onClick={() => setPomodoroOpen((v) => !v)}
+                                    className="bg-white/95 border border-slate-200 rounded-xl shadow-soft px-3 py-2 flex items-center gap-2 hover:bg-white transition"
+                                    title={pomodoroOpen ? 'Close pomodoro settings' : 'Open pomodoro settings'}
+                                >
+                                    <span className="text-lg leading-none" aria-hidden="true">🍅</span>
+                                    <span className="text-left">
+                                        <span className="block text-[11px] font-semibold text-slate-700">Pomodoro</span>
+                                        <span className="block text-xs text-slate-500">{formatPomodoroTime(pomodoroRemainingSeconds)} {pomodoroRunning ? '• Running' : '• Ready'}</span>
+                                    </span>
+                                </button>
+                                {pomodoroOpen && (
+                                    <div className="mt-2 w-72 bg-white/95 border border-slate-200 rounded-xl shadow-soft p-3">
+                                        <div className="flex items-center justify-between">
+                                            <p className="text-xs font-semibold text-slate-700">Timer Settings</p>
+                                            <button
+                                                type="button"
+                                                onClick={() => setPomodoroOpen(false)}
+                                                className="text-slate-400 hover:text-slate-600 text-sm"
+                                                title="Close timer settings"
+                                            >
+                                                ×
+                                            </button>
+                                        </div>
                                         <p className="mt-2 text-3xl font-display text-ink tracking-wide text-center">{formatPomodoroTime(pomodoroRemainingSeconds)}</p>
                                         <div className="mt-2 flex items-center justify-center gap-2">
                                             <button
@@ -3544,7 +3554,7 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                                                 Reset
                                             </button>
                                         </div>
-                                    </>
+                                    </div>
                                 )}
                             </div>
                             {showRecoveryPrompt && startupState === 'open' && (
