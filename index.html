@@ -945,6 +945,347 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
             return currentIds.filter((id) => selectedSet.has(id) || !availableSetAtSave.has(id));
         };
 
+        function ConfirmationDialog({ open, title, message, confirmLabel = 'Confirm', cancelLabel = 'Cancel', onConfirm, onCancel, tone = 'danger' }) {
+            const confirmBtnRef = useRef(null);
+            const closeBtnRef = useRef(null);
+            const openerRef = useRef(null);
+
+            useEffect(() => {
+                if (!open) return;
+                openerRef.current = document.activeElement;
+                const onKeyDown = (event) => {
+                    if (event.key === 'Escape') {
+                        event.preventDefault();
+                        onCancel();
+                    }
+                };
+                document.addEventListener('keydown', onKeyDown);
+                const timer = setTimeout(() => {
+                    if (confirmBtnRef.current) confirmBtnRef.current.focus();
+                }, 0);
+                return () => {
+                    clearTimeout(timer);
+                    document.removeEventListener('keydown', onKeyDown);
+                    if (openerRef.current && typeof openerRef.current.focus === 'function') {
+                        openerRef.current.focus();
+                    }
+                };
+            }, [open, onCancel]);
+
+            if (!open) return null;
+
+            const confirmClasses = tone === 'warning'
+                ? 'bg-amber-600 hover:bg-amber-700 focus:ring-amber-500'
+                : 'bg-rose-600 hover:bg-rose-700 focus:ring-rose-500';
+
+            return (
+                <div className="fixed inset-0 z-[80] bg-slate-900/60 flex items-center justify-center p-4">
+                    <div
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby="confirmation-dialog-title"
+                        className="w-full max-w-md rounded-2xl border bg-white shadow-soft p-5"
+                    >
+                        <div className="flex items-start justify-between gap-3">
+                            <h3 id="confirmation-dialog-title" className="text-xl font-bold text-ink">{title}</h3>
+                            <button
+                                ref={closeBtnRef}
+                                type="button"
+                                onClick={onCancel}
+                                aria-label="Close confirmation dialog"
+                                className="text-slate-400 hover:text-slate-700 text-xl leading-none"
+                            >
+                                ×
+                            </button>
+                        </div>
+                        <p className="mt-3 text-sm text-slate-600">{message}</p>
+                        <div className="mt-5 flex justify-end gap-2">
+                            <button
+                                type="button"
+                                onClick={onCancel}
+                                className="px-4 py-2 rounded-lg bg-slate-100 text-slate-700 font-semibold hover:bg-slate-200"
+                            >
+                                {cancelLabel}
+                            </button>
+                            <button
+                                ref={confirmBtnRef}
+                                type="button"
+                                onClick={onConfirm}
+                                className={`px-4 py-2 rounded-lg text-white font-semibold focus:outline-none focus:ring-2 ${confirmClasses}`}
+                            >
+                                {confirmLabel}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        function useConfirmationDialog() {
+            const confirmResolverRef = useRef(null);
+            const [confirmDialog, setConfirmDialog] = useState({
+                open: false,
+                title: '',
+                message: '',
+                confirmLabel: 'Confirm',
+                cancelLabel: 'Cancel',
+                tone: 'danger'
+            });
+
+            const requestConfirmation = (options) => new Promise((resolve) => {
+                confirmResolverRef.current = resolve;
+                setConfirmDialog({
+                    open: true,
+                    title: options.title || 'Please Confirm',
+                    message: options.message || 'Are you sure?',
+                    confirmLabel: options.confirmLabel || 'Confirm',
+                    cancelLabel: options.cancelLabel || 'Cancel',
+                    tone: options.tone || 'danger'
+                });
+            });
+
+            const closeConfirmDialog = (accepted) => {
+                setConfirmDialog((prev) => ({ ...prev, open: false }));
+                const resolver = confirmResolverRef.current;
+                confirmResolverRef.current = null;
+                if (resolver) resolver(Boolean(accepted));
+            };
+
+            return {
+                requestConfirmation,
+                confirmationDialog: (
+                    <ConfirmationDialog
+                        open={confirmDialog.open}
+                        title={confirmDialog.title}
+                        message={confirmDialog.message}
+                        confirmLabel={confirmDialog.confirmLabel}
+                        cancelLabel={confirmDialog.cancelLabel}
+                        tone={confirmDialog.tone}
+                        onConfirm={() => closeConfirmDialog(true)}
+                        onCancel={() => closeConfirmDialog(false)}
+                    />
+                )
+            };
+        }
+
+        function useNoticeDialog() {
+            const [noticeDialog, setNoticeDialog] = useState({
+                open: false,
+                title: 'Notice',
+                message: '',
+                tone: 'warning'
+            });
+
+            const showNotice = useCallback((options = {}) => {
+                setNoticeDialog({
+                    open: true,
+                    title: options.title || 'Notice',
+                    message: options.message || '',
+                    tone: options.tone || 'warning'
+                });
+            }, []);
+
+            const closeNotice = useCallback(() => {
+                setNoticeDialog((prev) => ({ ...prev, open: false }));
+            }, []);
+
+            return {
+                showNotice,
+                noticeDialog: (
+                    <ConfirmationDialog
+                        open={noticeDialog.open}
+                        title={noticeDialog.title}
+                        message={noticeDialog.message}
+                        confirmLabel="OK"
+                        cancelLabel="Close"
+                        tone={noticeDialog.tone}
+                        onConfirm={closeNotice}
+                        onCancel={closeNotice}
+                    />
+                )
+            };
+        }
+
+        function InputDialog({
+            open,
+            title,
+            message,
+            label = 'Value',
+            placeholder = '',
+            initialValue = '',
+            inputType = 'text',
+            confirmLabel = 'Save',
+            cancelLabel = 'Cancel',
+            validator,
+            onConfirm,
+            onCancel
+        }) {
+            const inputRef = useRef(null);
+            const closeBtnRef = useRef(null);
+            const openerRef = useRef(null);
+            const [value, setValue] = useState(initialValue || '');
+            const [error, setError] = useState('');
+
+            useEffect(() => {
+                if (!open) return;
+                openerRef.current = document.activeElement;
+                setValue(initialValue || '');
+                setError('');
+                const onKeyDown = (event) => {
+                    if (event.key === 'Escape') {
+                        event.preventDefault();
+                        onCancel();
+                    }
+                };
+                document.addEventListener('keydown', onKeyDown);
+                const timer = setTimeout(() => {
+                    if (inputRef.current) {
+                        inputRef.current.focus();
+                        inputRef.current.select();
+                    }
+                }, 0);
+                return () => {
+                    clearTimeout(timer);
+                    document.removeEventListener('keydown', onKeyDown);
+                    if (openerRef.current && typeof openerRef.current.focus === 'function') {
+                        openerRef.current.focus();
+                    }
+                };
+            }, [open, initialValue, onCancel]);
+
+            if (!open) return null;
+
+            const handleConfirm = () => {
+                const validationError = typeof validator === 'function' ? validator(value) : '';
+                if (validationError) {
+                    setError(validationError);
+                    return;
+                }
+                onConfirm(value);
+            };
+
+            return (
+                <div className="fixed inset-0 z-[80] bg-slate-900/60 flex items-center justify-center p-4">
+                    <div
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby="input-dialog-title"
+                        className="w-full max-w-md rounded-2xl border bg-white shadow-soft p-5"
+                    >
+                        <div className="flex items-start justify-between gap-3">
+                            <h3 id="input-dialog-title" className="text-xl font-bold text-ink">{title}</h3>
+                            <button
+                                ref={closeBtnRef}
+                                type="button"
+                                onClick={onCancel}
+                                aria-label="Close input dialog"
+                                className="text-slate-400 hover:text-slate-700 text-xl leading-none"
+                            >
+                                ×
+                            </button>
+                        </div>
+                        {message ? <p className="mt-3 text-sm text-slate-600">{message}</p> : null}
+                        <div className="mt-4 space-y-2">
+                            <label className="block text-sm font-medium text-slate-700">{label}</label>
+                            <input
+                                ref={inputRef}
+                                type={inputType}
+                                value={value}
+                                onChange={(e) => {
+                                    setValue(e.target.value);
+                                    if (error) setError('');
+                                }}
+                                onKeyDown={(event) => {
+                                    if (event.key === 'Enter') {
+                                        event.preventDefault();
+                                        handleConfirm();
+                                    }
+                                }}
+                                placeholder={placeholder}
+                                className="w-full border rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-ink"
+                            />
+                            {error ? <p className="text-xs text-rose-600">{error}</p> : null}
+                        </div>
+                        <div className="mt-5 flex justify-end gap-2">
+                            <button
+                                type="button"
+                                onClick={onCancel}
+                                className="px-4 py-2 rounded-lg bg-slate-100 text-slate-700 font-semibold hover:bg-slate-200"
+                            >
+                                {cancelLabel}
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleConfirm}
+                                className="px-4 py-2 rounded-lg bg-tide hover:bg-teal-600 text-white font-semibold focus:outline-none focus:ring-2 focus:ring-tide"
+                            >
+                                {confirmLabel}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        function useInputDialog() {
+            const resolverRef = useRef(null);
+            const [dialog, setDialog] = useState({
+                open: false,
+                title: 'Input Required',
+                message: '',
+                label: 'Value',
+                placeholder: '',
+                initialValue: '',
+                inputType: 'text',
+                confirmLabel: 'Save',
+                cancelLabel: 'Cancel',
+                validator: null
+            });
+
+            const requestInput = (options = {}) => new Promise((resolve) => {
+                resolverRef.current = resolve;
+                setDialog({
+                    open: true,
+                    title: options.title || 'Input Required',
+                    message: options.message || '',
+                    label: options.label || 'Value',
+                    placeholder: options.placeholder || '',
+                    initialValue: options.initialValue || '',
+                    inputType: options.inputType || 'text',
+                    confirmLabel: options.confirmLabel || 'Save',
+                    cancelLabel: options.cancelLabel || 'Cancel',
+                    validator: options.validate || null
+                });
+            });
+
+            const closeDialog = (result) => {
+                setDialog((prev) => ({ ...prev, open: false }));
+                const resolver = resolverRef.current;
+                resolverRef.current = null;
+                if (resolver) resolver(result);
+            };
+
+            return {
+                requestInput,
+                inputDialog: (
+                    <InputDialog
+                        open={dialog.open}
+                        title={dialog.title}
+                        message={dialog.message}
+                        label={dialog.label}
+                        placeholder={dialog.placeholder}
+                        initialValue={dialog.initialValue}
+                        inputType={dialog.inputType}
+                        confirmLabel={dialog.confirmLabel}
+                        cancelLabel={dialog.cancelLabel}
+                        validator={dialog.validator}
+                        onConfirm={(value) => closeDialog(value)}
+                        onCancel={() => closeDialog(null)}
+                    />
+                )
+            };
+        }
+
         function SourceItemFilterPanel({ title = 'Source Filter', description, groups, selectedIds, onToggleItem, onSelectAll, onClearAll, onToggleGroup, presets = [], onApplyPreset, onSavePreset, onDeletePreset }) {
             const selectedSet = new Set(selectedIds);
             const totalItemCount = groups.reduce((sum, group) => sum + group.items.length, 0);
@@ -1437,6 +1778,9 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
             const [observationTags, setObservationTags] = useState([]);
             const [activeObservationId, setActiveObservationId] = useState(null);
             const [activeId, setActiveId] = useState(null);
+            const [analysisResumeState, setAnalysisResumeState] = useState(null);
+            const [connectingResumeState, setConnectingResumeState] = useState(null);
+            const [codebookResumeState, setCodebookResumeState] = useState(null);
             const [isReady, setIsReady] = useState(false);
             const [autoLockEnabled, setAutoLockEnabled] = useState(true);
             const skipResumeRestoreRef = useRef(false);
@@ -1815,7 +2159,7 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                     setObservationTags(d['observation_tags'] || []);
                     const savedWorkspaceState = d[workspaceResumeStateKey] || null;
                     if (savedWorkspaceState && !skipResumeRestoreRef.current) {
-                        const allowedViews = new Set(['dashboard', 'artifacts', 'observations', 'participants', 'analysis', 'codebook', 'triangulation', 'backup', 'editor']);
+                        const allowedViews = new Set(['dashboard', 'artifacts', 'observations', 'participants', 'analysis', 'connecting', 'codebook', 'triangulation', 'backup', 'editor']);
                         const resumeView = String(savedWorkspaceState.view || 'dashboard');
                         const resumeTranscriptId = String(savedWorkspaceState.activeTranscriptId || '');
                         const resumeObservationId = String(savedWorkspaceState.activeObservationId || '');
@@ -1837,6 +2181,10 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                                 setView(resumeView);
                             }
                         }
+
+                        setAnalysisResumeState(savedWorkspaceState.analysis || null);
+                        setConnectingResumeState(savedWorkspaceState.connecting || null);
+                        setCodebookResumeState(savedWorkspaceState.codebook || null);
                     }
                     if (d['activityTypes']) setActivityTypes(d['activityTypes']);
                     setIsReady(true);
@@ -1846,7 +2194,7 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
 
             useEffect(() => {
                 if (!isReady || startupState !== 'open') return;
-                const allowedViews = new Set(['dashboard', 'artifacts', 'observations', 'participants', 'analysis', 'codebook', 'triangulation', 'backup', 'editor']);
+                const allowedViews = new Set(['dashboard', 'artifacts', 'observations', 'participants', 'analysis', 'connecting', 'codebook', 'triangulation', 'backup', 'editor']);
                 const safeView = allowedViews.has(view) ? view : 'dashboard';
                 const transcriptExists = !!transcripts.find((t) => String(t.id) === String(activeId || ''));
                 const observationExists = !!observations.find((o) => String(o.id) === String(activeObservationId || ''));
@@ -1856,11 +2204,14 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                     activeTranscriptId: transcriptExists ? String(activeId) : null,
                     activeObservationId: observationExists ? String(activeObservationId) : null,
                     isSidebarCollapsed: !!isSidebarCollapsed,
+                    analysis: analysisResumeState || null,
+                    connecting: connectingResumeState || null,
+                    codebook: codebookResumeState || null,
                     updatedAt: new Date().toISOString()
                 };
 
                 dbSet('data', workspaceResumeStateKey, nextState).catch(() => {});
-            }, [isReady, startupState, view, activeId, activeObservationId, isSidebarCollapsed, transcripts, observations]);
+            }, [isReady, startupState, view, activeId, activeObservationId, isSidebarCollapsed, analysisResumeState, connectingResumeState, codebookResumeState, transcripts, observations]);
 
             useEffect(() => {
                 if (isReady && startupState === 'open') {
@@ -3062,6 +3413,7 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                                 <NavButton active={view === 'observations'} label="Onsite Observations" onClick={() => setView('observations')} />
                                 <NavButton active={view === 'participants'} label="Participant Coding" onClick={() => setView('participants')} />
                                 <NavButton active={view === 'analysis'} label="Analysis Canvas" onClick={() => setView('analysis')} />
+                                <NavButton active={view === 'connecting'} label="Connecting Analysis" onClick={() => setView('connecting')} />
                                 <NavButton active={view === 'codebook'} label="Codebook" onClick={() => setView('codebook')} />
                                 <NavButton active={view === 'triangulation'} label="Triangulation" onClick={() => setView('triangulation')} />
                                 <NavButton active={view === 'backup'} label="Backup & Restore" onClick={() => setView('backup')} />
@@ -3306,7 +3658,8 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                                 />
                             )}
                             {view === 'participants' && <ParticipantVault participants={participants} onUpdate={setParticipants} />}
-                            {view === 'analysis' && <AnalysisBoard tags={tags} canvases={analysisCanvases} onUpdate={setAnalysisCanvases} artifacts={globalArtifacts} transcripts={transcripts} participants={participants} observations={observations} observationTags={observationTags} sourceFilterPresets={sourceFilterPresets} onSaveSourceFilterPreset={handleSaveSourceFilterPreset} onDeleteSourceFilterPreset={handleDeleteSourceFilterPreset} />}
+                            {view === 'analysis' && <AnalysisBoard tags={tags} canvases={analysisCanvases} onUpdate={setAnalysisCanvases} artifacts={globalArtifacts} transcripts={transcripts} participants={participants} observations={observations} observationTags={observationTags} sourceFilterPresets={sourceFilterPresets} onSaveSourceFilterPreset={handleSaveSourceFilterPreset} onDeleteSourceFilterPreset={handleDeleteSourceFilterPreset} panelMode="analysis" resumeState={analysisResumeState} onResumeStateChange={setAnalysisResumeState} />}
+                            {view === 'connecting' && <AnalysisBoard tags={tags} canvases={analysisCanvases} onUpdate={setAnalysisCanvases} artifacts={globalArtifacts} transcripts={transcripts} participants={participants} observations={observations} observationTags={observationTags} sourceFilterPresets={sourceFilterPresets} onSaveSourceFilterPreset={handleSaveSourceFilterPreset} onDeleteSourceFilterPreset={handleDeleteSourceFilterPreset} panelMode="connecting" resumeState={connectingResumeState} onResumeStateChange={setConnectingResumeState} />}
                             {view === 'triangulation' && (
                                 <TriangulationDashboard
                                     transcripts={transcripts}
@@ -3391,6 +3744,8 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                                     onUpdateCategoryDefinitions={setCategoryDefinitions}
                                     onSaveSourceFilterPreset={handleSaveSourceFilterPreset}
                                     onDeleteSourceFilterPreset={handleDeleteSourceFilterPreset}
+                                    resumeState={codebookResumeState}
+                                    onResumeStateChange={setCodebookResumeState}
                                     onRenameCodeLabel={(oldName, newName) => {
                                         const previous = String(oldName || '').trim();
                                         const next = String(newName || '').trim();
@@ -6233,17 +6588,41 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
             );
         }
 
-        function AnalysisBoard({ tags, canvases, onUpdate, artifacts, transcripts, participants, observations, observationTags, sourceFilterPresets, onSaveSourceFilterPreset, onDeleteSourceFilterPreset }) {
+        function AnalysisBoard({ tags, canvases, onUpdate, artifacts, transcripts, participants, observations, observationTags, sourceFilterPresets, onSaveSourceFilterPreset, onDeleteSourceFilterPreset, panelMode = 'analysis', resumeState, onResumeStateChange }) {
+            const { requestConfirmation, confirmationDialog } = useConfirmationDialog();
+            const { requestInput, inputDialog } = useInputDialog();
+            const isConnectingMode = panelMode === 'connecting';
             const [newCanvasName, setNewCanvasName] = useState('');
             const [activeCanvasId, setActiveCanvasId] = useState(canvases[0]?.id || null);
             const [newCategoryName, setNewCategoryName] = useState('');
             const [newThemeName, setNewThemeName] = useState('');
-            const [editingThemeId, setEditingThemeId] = useState(null);
-            const [editThemeName, setEditThemeName] = useState('');
             const [selectedFolders, setSelectedFolders] = useState([]);
             const [selectedSourceIds, setSelectedSourceIds] = useState([]);
             const [showExportMenu, setShowExportMenu] = useState(false);
+            const [showConnectingExportMenu, setShowConnectingExportMenu] = useState(false);
+            const [processStepView, setProcessStepView] = useState('both');
+            const [expandedCategoryIds, setExpandedCategoryIds] = useState({});
+            const [connectingCursor, setConnectingCursor] = useState(0);
+            const [showRelationalMap, setShowRelationalMap] = useState(false);
+            const [legendFilter, setLegendFilter] = useState(null);
+            const [selectedMapNodeCode, setSelectedMapNodeCode] = useState(null);
+            const [selectedInVivoPopup, setSelectedInVivoPopup] = useState(null);
             const hasInitializedSourceFilter = useRef(false);
+            const hasAppliedResumeRef = useRef(false);
+            const guidedPromptQuestionRef = useRef(null);
+
+            const parseCategoryCodeNumber = (value) => {
+                const match = /^C(\d+)$/i.exec(String(value || '').trim());
+                return match ? Number(match[1]) : null;
+            };
+
+            const getNextCategoryCode = (categories = []) => {
+                const max = categories.reduce((acc, category) => {
+                    const parsed = parseCategoryCodeNumber(category.code);
+                    return parsed && parsed > acc ? parsed : acc;
+                }, 0);
+                return `C${max + 1}`;
+            };
 
             const csvEscape = (value) => {
                 const text = String(value ?? '');
@@ -6294,19 +6673,100 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                 `;
             };
 
+            const buildApaFigureHtml = (figureNumber, title, figureInnerHtml, noteText) => `
+                <div style="font-family:'Times New Roman',serif;font-size:12pt;line-height:1.35;margin-bottom:24px;">
+                    <div style="font-weight:700;">Figure ${figureNumber}</div>
+                    <div style="font-style:italic;margin:4px 0 10px 0;">${escapeForHtml(title)}</div>
+                    <div style="border-top:1.5px solid #000;padding-top:10px;">${figureInnerHtml}</div>
+                    <div style="margin-top:6px;"><span style="font-style:italic;">Note.</span> ${escapeForHtml(noteText)}</div>
+                </div>
+            `;
+
+            const buildRelationalMapSvgMarkup = (geometry) => {
+                if (!geometry || !geometry.nodes || geometry.nodes.length === 0) return '';
+                const width = Number(geometry.width || 980);
+                const height = Number(geometry.height || 640);
+
+                const linkMarkup = (geometry.links || []).map((link) => {
+                    const sourceNode = geometry.nodes.find((node) => node.code === link.sourceCode);
+                    const targetNode = geometry.nodes.find((node) => node.code === link.targetCode);
+                    if (!sourceNode || !targetNode) return '';
+                    return `<line x1="${sourceNode.x}" y1="${sourceNode.y}" x2="${targetNode.x}" y2="${targetNode.y}" stroke="#64748b" stroke-width="2" />`;
+                }).join('');
+
+                const nodeMarkup = geometry.nodes.map((node) => {
+                    const tierColor = node.tier === 'low'
+                        ? '#ef4444'
+                        : node.tier === 'mid'
+                            ? '#3b82f6'
+                            : '#16a34a';
+
+                    return `
+                        <g>
+                            <circle cx="${node.x}" cy="${node.y}" r="34" fill="${tierColor}" stroke="#ffffff" stroke-width="2" />
+                            <text x="${node.x}" y="${node.y}" text-anchor="middle" dominant-baseline="middle" fill="#ffffff" font-weight="700" font-size="12">${escapeForHtml(`${node.code} (${node.degree})`)}</text>
+                        </g>
+                    `;
+                }).join('');
+
+                return `
+                    <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+                        <rect x="0" y="0" width="100%" height="100%" fill="#f8fafc" />
+                        ${linkMarkup}
+                        ${nodeMarkup}
+                    </svg>
+                `;
+            };
+
+            const renderSvgToPngDataUrl = (svgMarkup, width, height) => new Promise((resolve, reject) => {
+                const svgBlob = new Blob([svgMarkup], { type: 'image/svg+xml;charset=utf-8' });
+                const svgUrl = URL.createObjectURL(svgBlob);
+                const image = new Image();
+
+                image.onload = () => {
+                    try {
+                        const canvas = document.createElement('canvas');
+                        canvas.width = width;
+                        canvas.height = height;
+                        const context = canvas.getContext('2d');
+                        if (!context) {
+                            URL.revokeObjectURL(svgUrl);
+                            reject(new Error('Canvas context unavailable'));
+                            return;
+                        }
+                        context.fillStyle = '#ffffff';
+                        context.fillRect(0, 0, width, height);
+                        context.drawImage(image, 0, 0, width, height);
+                        const pngDataUrl = canvas.toDataURL('image/png');
+                        URL.revokeObjectURL(svgUrl);
+                        resolve(pngDataUrl);
+                    } catch (error) {
+                        URL.revokeObjectURL(svgUrl);
+                        reject(error);
+                    }
+                };
+
+                image.onerror = () => {
+                    URL.revokeObjectURL(svgUrl);
+                    reject(new Error('Failed to render SVG image'));
+                };
+
+                image.src = svgUrl;
+            });
+
             useEffect(() => {
                 if (!activeCanvasId && canvases[0]) setActiveCanvasId(canvases[0].id);
             }, [canvases, activeCanvasId]);
 
             const transcriptById = useMemo(() => {
                 const out = {};
-                transcripts.forEach(t => { out[t.id] = t; });
+                transcripts.forEach((t) => { out[t.id] = t; });
                 return out;
             }, [transcripts]);
 
             const participantCodeById = useMemo(() => {
                 const out = {};
-                (participants || []).forEach(p => { out[p.id] = p.pseudonym || p.id; });
+                (participants || []).forEach((p) => { out[p.id] = p.pseudonym || p.id; });
                 return out;
             }, [participants]);
 
@@ -6389,11 +6849,61 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
 
             const availableFolders = useMemo(() => {
                 const set = new Set();
-                transcripts.forEach(t => set.add(t.folder || 'Uncategorized'));
-                (artifacts || []).forEach(a => set.add(a.folder || 'Uncategorized'));
-                (observations || []).forEach(o => set.add(o.location || 'Onsite Observation'));
+                transcripts.forEach((t) => set.add(t.folder || 'Uncategorized'));
+                (artifacts || []).forEach((a) => set.add(a.folder || 'Uncategorized'));
+                (observations || []).forEach((o) => set.add(o.location || 'Onsite Observation'));
                 return Array.from(set).sort((a, b) => a.localeCompare(b));
             }, [transcripts, artifacts, observations]);
+
+            useEffect(() => {
+                if (hasAppliedResumeRef.current) return;
+                hasAppliedResumeRef.current = true;
+
+                if (!resumeState || typeof resumeState !== 'object') return;
+
+                const resumeCanvasId = String(resumeState.activeCanvasId || '');
+                if (resumeCanvasId && canvases.some((canvas) => String(canvas.id) === resumeCanvasId)) {
+                    setActiveCanvasId(resumeCanvasId);
+                }
+
+                if (Array.isArray(resumeState.selectedFolders)) {
+                    const validFolders = resumeState.selectedFolders
+                        .map((folder) => String(folder || '').trim())
+                        .filter((folder) => folder && availableFolders.includes(folder));
+                    setSelectedFolders(validFolders);
+                }
+
+                if (Array.isArray(resumeState.selectedSourceIds)) {
+                    const allSourceIds = new Set(sourceFilterGroups.flatMap((group) => group.items.map((item) => item.filterId)));
+                    const validSourceIds = resumeState.selectedSourceIds
+                        .map((id) => String(id || '').trim())
+                        .filter((id) => id && allSourceIds.has(id));
+                    hasInitializedSourceFilter.current = true;
+                    setSelectedSourceIds(validSourceIds);
+                }
+
+                if (resumeState.processStepView === 'step2' || resumeState.processStepView === 'step3' || resumeState.processStepView === 'both') {
+                    setProcessStepView(resumeState.processStepView);
+                }
+
+                if (Number.isFinite(resumeState.connectingCursor)) {
+                    setConnectingCursor(Math.max(0, Math.floor(resumeState.connectingCursor)));
+                }
+
+                setShowRelationalMap(Boolean(resumeState.showRelationalMap));
+
+                const resumeLegendFilter = resumeState.legendFilter;
+                if (resumeLegendFilter === 'low' || resumeLegendFilter === 'mid' || resumeLegendFilter === 'high') {
+                    setLegendFilter(resumeLegendFilter);
+                } else {
+                    setLegendFilter(null);
+                }
+
+                const resumeMapNodeCode = String(resumeState.selectedMapNodeCode || '');
+                if (resumeMapNodeCode) {
+                    setSelectedMapNodeCode(resumeMapNodeCode);
+                }
+            }, [resumeState, canvases, availableFolders, sourceFilterGroups]);
 
             useEffect(() => {
                 if (selectedFolders.length === 0 && availableFolders.length > 0) {
@@ -6401,15 +6911,33 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                 }
             }, [availableFolders, selectedFolders.length]);
 
+            useEffect(() => {
+                if (typeof onResumeStateChange !== 'function') return;
+                onResumeStateChange({
+                    panelMode,
+                    activeCanvasId: activeCanvasId || null,
+                    selectedFolders,
+                    selectedSourceIds,
+                    processStepView,
+                    connectingCursor,
+                    showRelationalMap,
+                    legendFilter: legendFilter || null,
+                    selectedMapNodeCode: selectedMapNodeCode || null,
+                    updatedAt: new Date().toISOString()
+                });
+            }, [panelMode, activeCanvasId, selectedFolders, selectedSourceIds, processStepView, connectingCursor, showRelationalMap, legendFilter, selectedMapNodeCode, onResumeStateChange]);
+
             const selectedFolderSet = useMemo(() => new Set(selectedFolders), [selectedFolders]);
+            const includeAllSources = selectedSourceSet.size === 0;
+            const includeAllFolders = selectedFolderSet.size === 0;
 
             const codeDetails = useMemo(() => {
                 const map = {};
-                tags.forEach(t => {
+                tags.forEach((t) => {
                     const parent = transcriptById[t.transcriptId];
                     const folder = parent?.folder || 'Uncategorized';
-                    if (!selectedSourceSet.has(buildSourceFilterId('transcript', t.transcriptId))) return;
-                    if (!selectedFolderSet.has(folder)) return;
+                    if (!includeAllSources && !selectedSourceSet.has(buildSourceFilterId('transcript', t.transcriptId))) return;
+                    if (!includeAllFolders && !selectedFolderSet.has(folder)) return;
                     if (!map[t.tagName]) {
                         map[t.tagName] = {
                             name: t.tagName,
@@ -6432,11 +6960,11 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                     });
                 });
 
-                (artifacts || []).forEach(art => {
+                (artifacts || []).forEach((art) => {
                     const folder = art.folder || 'Uncategorized';
-                    if (!selectedSourceSet.has(buildSourceFilterId('artifact', art.id))) return;
-                    if (!selectedFolderSet.has(folder)) return;
-                    (art.codes || []).forEach(codeName => {
+                    if (!includeAllSources && !selectedSourceSet.has(buildSourceFilterId('artifact', art.id))) return;
+                    if (!includeAllFolders && !selectedFolderSet.has(folder)) return;
+                    (art.codes || []).forEach((codeName) => {
                         if (!map[codeName]) {
                             map[codeName] = {
                                 name: codeName,
@@ -6460,11 +6988,11 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                     });
                 });
 
-                (observationTags || []).forEach(t => {
-                    const parent = (observations || []).find(o => o.id === t.observationId);
+                (observationTags || []).forEach((t) => {
+                    const parent = (observations || []).find((o) => o.id === t.observationId);
                     const folder = parent?.location || 'Onsite Observation';
-                    if (!selectedSourceSet.has(buildSourceFilterId('observation', t.observationId))) return;
-                    if (!selectedFolderSet.has(folder)) return;
+                    if (!includeAllSources && !selectedSourceSet.has(buildSourceFilterId('observation', t.observationId))) return;
+                    if (!includeAllFolders && !selectedFolderSet.has(folder)) return;
                     if (!map[t.tagName]) {
                         map[t.tagName] = {
                             name: t.tagName,
@@ -6499,112 +7027,174 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                         })()
                     }))
                     .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
-            }, [tags, artifacts, observationTags, observations, transcriptById, selectedFolderSet, participantCodeById, selectedSourceSet]);
+            }, [tags, artifacts, observationTags, observations, transcriptById, participantCodeById, selectedSourceSet, selectedFolderSet, includeAllSources, includeAllFolders]);
+
+            const codeDetailByName = useMemo(() => {
+                const out = {};
+                codeDetails.forEach((item) => {
+                    out[item.name] = item;
+                });
+                return out;
+            }, [codeDetails]);
 
             const normalizeCanvas = (canvas) => {
-                if (!canvas) return null;
-                const sourceCategories = Array.isArray(canvas.categories) ? canvas.categories : [];
-                const categories = sourceCategories.map((category, index) => ({
-                    id: category.id || `cat_${index}_${Date.now()}`,
-                    name: String(category.name || '').trim() || `Category ${index + 1}`,
-                    code: String(category.code || '').trim() || String(index + 1),
-                    codes: Array.from(new Set((category.codes || []).map((codeName) => String(codeName || '').trim()).filter(Boolean)))
-                }));
+                const normalizedCategories = Array.isArray(canvas?.categories)
+                    ? canvas.categories.map((category, index) => ({
+                        id: category.id || `cat_${index}`,
+                        name: (category.name || '').trim() || `Category ${index + 1}`,
+                        code: String(category.code || `C${index + 1}`).trim() || `C${index + 1}`,
+                        codes: [...new Set((category.codes || []).map((name) => String(name || '').trim()).filter(Boolean))]
+                    }))
+                    : [];
 
-                const categoryNameByCode = {};
-                categories.forEach((category) => {
-                    category.codes.forEach((codeName) => {
-                        categoryNameByCode[codeName] = category.name;
-                    });
-                });
+                const categories = normalizedCategories;
 
-                const themes = (canvas.themes || []).map((theme, index) => {
+                const themes = (canvas?.themes || []).map((theme, index) => {
                     const explicitCategories = Array.isArray(theme.categories)
                         ? theme.categories.map((name) => String(name || '').trim()).filter(Boolean)
                         : [];
                     const fallbackCategories = explicitCategories.length > 0
                         ? explicitCategories
                         : [...new Set((theme.codes || []).map((codeName) => {
-                            const cleanedCode = String(codeName || '').trim();
-                            if (!cleanedCode) return '';
-                            if (categoryNameByCode[cleanedCode]) return categoryNameByCode[cleanedCode];
-                            const found = codeDetails.find((detail) => detail.name === cleanedCode);
-                            return (found?.category || 'Uncategorized').trim() || 'Uncategorized';
+                            const foundCategory = categories.find((category) => (category.codes || []).includes(codeName));
+                            return foundCategory?.name || '';
                         }).filter(Boolean))];
-
                     return {
                         id: theme.id || `theme_${index}`,
                         name: (theme.name || '').trim() || `Theme ${index + 1}`,
-                        categories: Array.from(new Set(fallbackCategories))
+                        categories: fallbackCategories
                     };
                 });
 
                 return {
-                    id: canvas.id,
-                    name: canvas.name,
+                    id: canvas?.id,
+                    name: canvas?.name,
                     categories,
-                    themes
+                    themes,
+                    connections: (() => {
+                        const rawConnections = (canvas && typeof canvas.connections === 'object' && canvas.connections !== null) ? canvas.connections : {};
+                        const connectionMatrix = {};
+                        categories.forEach((sourceCategory) => {
+                            const sourceCode = String(sourceCategory.code || '').trim();
+                            connectionMatrix[sourceCode] = {};
+                            categories.forEach((targetCategory) => {
+                                const targetCode = String(targetCategory.code || '').trim();
+                                if (sourceCode === targetCode) {
+                                    connectionMatrix[sourceCode][targetCode] = 1;
+                                    return;
+                                }
+                                const direct = rawConnections?.[sourceCode]?.[targetCode];
+                                const mirrored = rawConnections?.[targetCode]?.[sourceCode];
+                                const value = direct == null ? mirrored : direct;
+                                if (value === 1 || value === '1' || value === true) {
+                                    connectionMatrix[sourceCode][targetCode] = 1;
+                                } else if (value === 0 || value === '0' || value === false) {
+                                    connectionMatrix[sourceCode][targetCode] = 0;
+                                } else {
+                                    connectionMatrix[sourceCode][targetCode] = null;
+                                }
+                            });
+                        });
+                        return connectionMatrix;
+                    })(),
+                    connectionNotes: (canvas && typeof canvas.connectionNotes === 'object' && canvas.connectionNotes !== null) ? canvas.connectionNotes : {},
+                    connectionRationales: (() => {
+                        const rawRationales = (canvas && typeof canvas.connectionRationales === 'object' && canvas.connectionRationales !== null) ? canvas.connectionRationales : {};
+                        const rationaleMatrix = {};
+                        categories.forEach((sourceCategory) => {
+                            const sourceCode = String(sourceCategory.code || '').trim();
+                            rationaleMatrix[sourceCode] = {};
+                            categories.forEach((targetCategory) => {
+                                const targetCode = String(targetCategory.code || '').trim();
+                                if (sourceCode === targetCode) {
+                                    rationaleMatrix[sourceCode][targetCode] = '';
+                                    return;
+                                }
+                                const direct = rawRationales?.[sourceCode]?.[targetCode];
+                                const mirrored = rawRationales?.[targetCode]?.[sourceCode];
+                                const value = direct == null ? mirrored : direct;
+                                rationaleMatrix[sourceCode][targetCode] = value === 'A' || value === 'B' || value === 'C' ? value : '';
+                            });
+                        });
+                        return rationaleMatrix;
+                    })()
                 };
             };
 
+            const activeCanvasRaw = canvases.find((c) => c.id === activeCanvasId) || null;
+            const activeCanvas = useMemo(() => (activeCanvasRaw ? normalizeCanvas(activeCanvasRaw) : null), [activeCanvasRaw, codeDetailByName, codeDetails]);
+
             const persistCanvas = (nextCanvas) => {
+                const serializedThemes = (nextCanvas.themes || []).map((theme) => {
+                    const selectedCodes = (nextCanvas.categories || [])
+                        .filter((category) => theme.categories.includes(category.name))
+                        .flatMap((category) => category.codes || []);
+                    return {
+                        ...theme,
+                        categories: [...theme.categories],
+                        codes: [...new Set(selectedCodes)]
+                    };
+                });
+
                 const payload = {
                     ...nextCanvas,
                     categories: (nextCanvas.categories || []).map((category) => ({
                         ...category,
                         code: String(category.code || '').trim(),
-                        codes: [...new Set((category.codes || []).map((codeName) => String(codeName || '').trim()).filter(Boolean))]
+                        codes: [...new Set(category.codes || [])]
                     })),
-                    themes: (nextCanvas.themes || []).map((theme) => ({
-                        ...theme,
-                        categories: [...new Set((theme.categories || []).map((name) => String(name || '').trim()).filter(Boolean))]
-                    }))
+                    themes: serializedThemes,
+                    connections: nextCanvas.connections || {},
+                    connectionNotes: nextCanvas.connectionNotes || {},
+                    connectionRationales: nextCanvas.connectionRationales || {}
                 };
+
                 onUpdate(canvases.map((canvas) => canvas.id === payload.id ? payload : canvas));
             };
 
-            const getNextCategoryCode = (categories) => {
-                const used = new Set((categories || []).map((category) => String(category.code || '').trim()).filter(Boolean));
-                for (let i = 1; i <= 999; i++) {
-                    const candidate = String(i);
-                    if (!used.has(candidate)) return candidate;
-                }
-                return String(Date.now()).slice(-3);
-            };
-
-            const activeCanvasRaw = canvases.find((c) => c.id === activeCanvasId) || null;
-            const activeCanvas = useMemo(() => (activeCanvasRaw ? normalizeCanvas(activeCanvasRaw) : null), [activeCanvasRaw, codeDetails]);
-            const uniqueCodeCount = useMemo(() => new Set(codeDetails.map(c => (c.name || '').trim()).filter(Boolean)).size, [codeDetails]);
-            const uniqueCategoryCount = useMemo(() => {
-                if (!activeCanvas) return 0;
-                return new Set((activeCanvas.categories || []).map((category) => (category.name || '').trim()).filter(Boolean)).size;
-            }, [activeCanvas]);
-            const uniqueThemeCount = useMemo(() => {
-                if (!activeCanvas) return 0;
-                return new Set((activeCanvas.themes || []).map(t => (t.name || '').trim()).filter(Boolean)).size;
-            }, [activeCanvas]);
-
             const createCanvas = () => {
                 if (!newCanvasName.trim()) return;
-                const c = { id: Date.now().toString(), name: newCanvasName.trim(), categories: [], themes: [] };
-                onUpdate([c, ...canvases]);
-                setActiveCanvasId(c.id);
+                const canvas = {
+                    id: Date.now().toString(),
+                    name: newCanvasName.trim(),
+                    categories: [],
+                    themes: [],
+                    connections: {},
+                    connectionNotes: {},
+                    connectionRationales: {}
+                };
+                onUpdate([canvas, ...canvases]);
+                setActiveCanvasId(canvas.id);
                 setNewCanvasName('');
             };
 
-            const deleteCanvas = (canvasId) => {
-                if (confirm('Delete this clustering workspace and all thematic mappings?')) {
-                    const updated = canvases.filter(c => c.id !== canvasId);
-                    onUpdate(updated);
-                    if (activeCanvasId === canvasId) setActiveCanvasId(updated[0]?.id || null);
-                }
+            const deleteCanvas = async (canvasId) => {
+                const shouldDelete = await requestConfirmation({
+                    title: 'Delete Workspace',
+                    message: 'Delete this clustering workspace and all thematic mappings?',
+                    confirmLabel: 'Delete Workspace'
+                });
+                if (!shouldDelete) return;
+                const updated = canvases.filter((canvas) => canvas.id !== canvasId);
+                onUpdate(updated);
+                if (activeCanvasId === canvasId) setActiveCanvasId(updated[0]?.id || null);
             };
 
-            const renameCanvas = (canvasId) => {
-                const newName = prompt('Enter a new name for this clustering workspace.');
-                if (newName && newName.trim()) {
-                    onUpdate(canvases.map(c => c.id === canvasId ? { ...c, name: newName.trim() } : c));
-                }
+            const renameCanvas = async (canvasId) => {
+                const currentCanvas = canvases.find((canvas) => canvas.id === canvasId);
+                const nextName = await requestInput({
+                    title: 'Rename Workspace',
+                    message: 'Enter a new name for this clustering workspace.',
+                    label: 'Workspace name',
+                    initialValue: currentCanvas?.name || '',
+                    confirmLabel: 'Rename',
+                    validate: (value) => {
+                        if (!(value || '').trim()) return 'Workspace name is required.';
+                        return '';
+                    }
+                });
+                if (nextName == null) return;
+                onUpdate(canvases.map((canvas) => canvas.id === canvasId ? { ...canvas, name: nextName.trim() } : canvas));
             };
 
             const addCategory = () => {
@@ -6618,35 +7208,61 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                 setNewCategoryName('');
             };
 
-            const removeCategory = (categoryId) => {
+            const toggleCategoryCodes = (categoryId) => {
+                const currentlyExpanded = expandedCategoryIds[categoryId] !== false;
+                setExpandedCategoryIds((prev) => ({
+                    ...prev,
+                    [categoryId]: !currentlyExpanded
+                }));
+            };
+
+            const removeCategory = async (categoryId) => {
                 if (!activeCanvas) return;
                 const categoryToDelete = activeCanvas.categories.find((category) => category.id === categoryId);
                 if (!categoryToDelete) return;
-                if (!confirm(`Delete category "${categoryToDelete.name}" and unassign its in-vivo codes?`)) return;
+                const shouldDelete = await requestConfirmation({
+                    title: 'Delete Category',
+                    message: `Delete category "${categoryToDelete.name}" and unassign its in-vivo codes?`,
+                    confirmLabel: 'Delete Category'
+                });
+                if (!shouldDelete) return;
+
                 const nextCanvas = {
                     ...activeCanvas,
                     categories: activeCanvas.categories.filter((category) => category.id !== categoryId),
                     themes: activeCanvas.themes.map((theme) => ({
                         ...theme,
-                        categories: (theme.categories || []).filter((name) => name !== categoryToDelete.name)
+                        categories: theme.categories.filter((name) => name !== categoryToDelete.name)
                     }))
                 };
                 persistCanvas(nextCanvas);
             };
 
-            const renameCategory = (categoryId) => {
+            const renameCategory = async (categoryId) => {
                 if (!activeCanvas) return;
                 const target = activeCanvas.categories.find((category) => category.id === categoryId);
                 if (!target) return;
-                const trimmed = String(prompt('Enter a new category name.', target.name) || '').trim();
-                if (!trimmed || trimmed === target.name) return;
-                if (activeCanvas.categories.some((category) => category.id !== categoryId && category.name.toLowerCase() === trimmed.toLowerCase())) return;
+                const nextName = await requestInput({
+                    title: 'Rename Category',
+                    message: 'Enter a new category name.',
+                    label: 'Category name',
+                    initialValue: target.name,
+                    confirmLabel: 'Rename',
+                    validate: (value) => {
+                        if (!(value || '').trim()) return 'Category name is required.';
+                        return '';
+                    }
+                });
+                if (nextName == null) return;
+                const trimmed = nextName.trim();
+                if (!trimmed) return;
+
                 const nextCanvas = {
                     ...activeCanvas,
                     categories: activeCanvas.categories.map((category) => category.id === categoryId ? { ...category, name: trimmed } : category),
                     themes: activeCanvas.themes.map((theme) => ({
                         ...theme,
-                        categories: (theme.categories || []).map((name) => name === target.name ? trimmed : name)
+                        categories: theme.categories.map((name) => name === target.name ? trimmed : name)
                     }))
                 };
                 persistCanvas(nextCanvas);
@@ -6656,79 +7272,105 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                 if (!activeCanvas || !codeName) return;
                 const cleanedCode = String(codeName || '').trim();
                 if (!cleanedCode) return;
+
                 const nextCategories = activeCanvas.categories.map((category) => ({
                     ...category,
-                    codes: (category.codes || []).filter((code) => code !== cleanedCode)
+                    codes: category.codes.filter((code) => code !== cleanedCode)
                 }));
                 const targetIndex = nextCategories.findIndex((category) => category.id === categoryId);
-                if (targetIndex < 0) return;
+                if (targetIndex === -1) return;
                 nextCategories[targetIndex].codes = [...nextCategories[targetIndex].codes, cleanedCode];
                 persistCanvas({ ...activeCanvas, categories: nextCategories });
             };
 
-            const unassignCodeFromCategory = (categoryId, codeName) => {
+            const unassignCode = (codeName) => {
                 if (!activeCanvas || !codeName) return;
                 const cleanedCode = String(codeName || '').trim();
-                const nextCategories = activeCanvas.categories.map((category) => category.id === categoryId
-                    ? { ...category, codes: (category.codes || []).filter((code) => code !== cleanedCode) }
-                    : category
-                );
+                const nextCategories = activeCanvas.categories.map((category) => ({
+                    ...category,
+                    codes: category.codes.filter((code) => code !== cleanedCode)
+                }));
                 persistCanvas({ ...activeCanvas, categories: nextCategories });
             };
 
             const addTheme = () => {
                 if (!activeCanvas || !newThemeName.trim()) return;
-                const updated = { ...activeCanvas, themes: [...activeCanvas.themes, { id: Date.now().toString(), name: newThemeName.trim(), categories: [] }] };
-                persistCanvas(updated);
+                const nextCanvas = {
+                    ...activeCanvas,
+                    themes: [...activeCanvas.themes, { id: Date.now().toString(), name: newThemeName.trim(), categories: [] }]
+                };
+                persistCanvas(nextCanvas);
                 setNewThemeName('');
             };
 
-            const deleteTheme = (themeId) => {
+            const removeTheme = async (themeId) => {
                 if (!activeCanvas) return;
-                if (confirm('Delete this theme?')) {
-                    const updated = { ...activeCanvas, themes: activeCanvas.themes.filter(t => t.id !== themeId) };
-                    persistCanvas(updated);
-                }
+                const shouldDelete = await requestConfirmation({
+                    title: 'Delete Theme',
+                    message: 'Delete this theme grouping?',
+                    confirmLabel: 'Delete Theme'
+                });
+                if (!shouldDelete) return;
+                const nextCanvas = { ...activeCanvas, themes: activeCanvas.themes.filter((theme) => theme.id !== themeId) };
+                persistCanvas(nextCanvas);
             };
 
-            const startEditTheme = (theme) => {
-                setEditingThemeId(theme.id);
-                setEditThemeName(theme.name);
-            };
+            const renameTheme = async (themeId) => {
+                if (!activeCanvas) return;
+                const target = activeCanvas.themes.find((theme) => theme.id === themeId);
+                if (!target) return;
+                const nextName = await requestInput({
+                    title: 'Rename Theme',
+                    message: 'Enter a new theme label.',
+                    label: 'Theme name',
+                    initialValue: target.name,
+                    confirmLabel: 'Rename',
+                    validate: (value) => {
+                        if (!(value || '').trim()) return 'Theme name is required.';
+                        return '';
+                    }
+                });
+                if (nextName == null) return;
+                const trimmed = nextName.trim();
+                if (!trimmed) return;
 
-            const saveEditTheme = () => {
-                if (!activeCanvas || !editingThemeId) return;
-                const updated = { ...activeCanvas, themes: activeCanvas.themes.map(t => t.id === editingThemeId ? { ...t, name: editThemeName.trim() } : t) };
-                persistCanvas(updated);
-                setEditingThemeId(null);
-                setEditThemeName('');
+                const nextCanvas = {
+                    ...activeCanvas,
+                    themes: activeCanvas.themes.map((theme) => theme.id === themeId ? { ...theme, name: trimmed } : theme)
+                };
+                persistCanvas(nextCanvas);
             };
 
             const assignCategoryToTheme = (themeId, categoryName) => {
                 if (!activeCanvas || !themeId || !categoryName) return;
                 const cleanedCategory = String(categoryName || '').trim();
                 if (!cleanedCategory) return;
+
                 const nextThemes = activeCanvas.themes.map((theme) => ({
                     ...theme,
-                    categories: (theme.categories || []).filter((name) => name !== cleanedCategory)
+                    categories: theme.categories.filter((name) => name !== cleanedCategory)
                 }));
                 const targetIndex = nextThemes.findIndex((theme) => theme.id === themeId);
-                if (targetIndex < 0) return;
+                if (targetIndex === -1) return;
                 nextThemes[targetIndex].categories = [...nextThemes[targetIndex].categories, cleanedCategory];
                 persistCanvas({ ...activeCanvas, themes: nextThemes });
             };
 
-            const removeCategoryFromTheme = (themeId, categoryName) => {
+            const unassignCategoryFromTheme = (themeId, categoryName) => {
                 if (!activeCanvas) return;
-                const updated = {
+                const nextCanvas = {
                     ...activeCanvas,
                     themes: activeCanvas.themes.map((theme) => (
                         theme.id === themeId
-                            ? { ...theme, categories: (theme.categories || []).filter((name) => name !== categoryName) }
+                            ? { ...theme, categories: theme.categories.filter((name) => name !== categoryName) }
                             : theme
                     ))
                 };
-                persistCanvas(updated);
+                persistCanvas(nextCanvas);
+            };
+
+            const toggleFolder = (folder) => {
+                setSelectedFolders((prev) => prev.includes(folder) ? prev.filter((name) => name !== folder) : [...prev, folder]);
             };
 
             const categoryByCode = useMemo(() => {
@@ -6742,161 +7384,508 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
             }, [activeCanvas]);
 
             const assignedCodes = useMemo(() => new Set(Object.keys(categoryByCode)), [categoryByCode]);
-            const unassignedCodes = codeDetails.filter((code) => !assignedCodes.has(code.name));
+            const unassignedCodes = useMemo(() => codeDetails.filter((code) => !assignedCodes.has(code.name)), [codeDetails, assignedCodes]);
+
             const unassignedCategories = useMemo(() => {
                 if (!activeCanvas) return [];
-                const assignedCategoryNames = new Set(activeCanvas.themes.flatMap((theme) => theme.categories || []));
+                const assignedCategoryNames = new Set(activeCanvas.themes.flatMap((theme) => theme.categories));
                 return activeCanvas.categories.filter((category) => !assignedCategoryNames.has(category.name));
             }, [activeCanvas]);
-
-            const codeDetailByName = useMemo(() => {
-                const detailByCode = {};
-                codeDetails.forEach((c) => {
-                    detailByCode[c.name] = c;
-                });
-                return detailByCode;
-            }, [codeDetails]);
-
-            const buildCanvasTableRows = (canvas) => {
-                if (!canvas) return [];
-                const normalizedCanvas = normalizeCanvas(canvas);
-                if (!normalizedCanvas) return [];
-                const rows = [];
-                const categoryMap = {};
-                (normalizedCanvas.categories || []).forEach((category) => {
-                    categoryMap[category.name] = category;
-                });
-                (normalizedCanvas.themes || []).forEach((theme) => {
-                    (theme.categories || []).forEach((categoryName) => {
-                        const foundCategory = categoryMap[categoryName] || { name: categoryName, codes: [] };
-                        (foundCategory.codes || []).forEach((codeName) => {
-                            const d = codeDetailByName[codeName] || { count: 0, quotes: [], category: categoryName || 'Uncategorized' };
-                            rows.push({
-                                theme: theme.name,
-                                code: codeName,
-                                category: categoryName || d.category,
-                                quoteCount: d.count,
-                                quotes: d.quotes
-                            });
-                        });
-                    });
-                });
-                return rows;
-            };
 
             const clusteringRows = useMemo(() => codeDetails.map((code) => ({
                 code: code.name,
                 category: categoryByCode[code.name] || 'Unassigned',
                 quoteCount: code.count,
-                quotes: code.quotes
+                source: code.source,
+                folders: Array.from(code.folders || []).join(' | ')
             })), [codeDetails, categoryByCode]);
 
-            const tableRows = useMemo(() => buildCanvasTableRows(activeCanvas), [activeCanvas, codeDetailByName]);
+            const thematicRows = useMemo(() => {
+                if (!activeCanvas) return [];
+                const rows = [];
+                activeCanvas.themes.forEach((theme) => {
+                    theme.categories.forEach((categoryName) => {
+                        const foundCategory = activeCanvas.categories.find((category) => category.name === categoryName);
+                        const categoryCodes = (foundCategory?.codes || []).filter((codeName) => !!codeDetailByName[codeName]);
+                        if (categoryCodes.length === 0) {
+                            rows.push({
+                                theme: theme.name,
+                                category: categoryName,
+                                code: '',
+                                quoteCount: 0,
+                                source: '',
+                                folders: ''
+                            });
+                        } else {
+                            categoryCodes.forEach((codeName) => {
+                                const detail = codeDetailByName[codeName];
+                                rows.push({
+                                    theme: theme.name,
+                                    category: categoryName,
+                                    code: codeName,
+                                    quoteCount: detail?.count || 0,
+                                    source: detail?.source || '',
+                                    folders: Array.from(detail?.folders || []).join(' | ')
+                                });
+                            });
+                        }
+                    });
+                });
+                return rows;
+            }, [activeCanvas, codeDetailByName]);
 
-            const exportClusteringCsv = () => {
+            const exportClusteringTable = () => {
                 if (!activeCanvas) return;
-                const lines = ['Code,Category,Quote Count,Quotes'];
+                const lines = ['In-vivo Code,Category Code,Category,Quote Count,Source,Folders'];
                 clusteringRows.forEach((row) => {
-                    const quotes = row.quotes.map((q) => `[${q.source}] ${q.ref}: ${q.text}`).join(' || ');
+                    const foundCategory = (activeCanvas.categories || []).find((category) => category.name === row.category);
                     lines.push([
                         csvEscape(row.code),
+                        csvEscape(foundCategory?.code || ''),
                         csvEscape(row.category),
                         csvEscape(row.quoteCount),
-                        csvEscape(quotes)
+                        csvEscape(row.source),
+                        csvEscape(row.folders)
                     ].join(','));
                 });
                 downloadCsv(`${activeCanvas.name.replace(/\s+/g, '_')}_clustering_table.csv`, lines);
             };
 
-            const exportCanvasCsv = () => {
+            const exportThematicTable = () => {
                 if (!activeCanvas) return;
-                const lines = ['Theme,Code,Category,Quote Count,Quotes'];
-                tableRows.forEach((r) => {
-                    const quotes = r.quotes.map(q => `[${q.source}] ${q.ref}: ${q.text}`).join(' || ');
+                const lines = ['Theme,Category Code,Category,In-vivo Code,Quote Count,Source,Folders'];
+                thematicRows.forEach((row) => {
+                    const foundCategory = (activeCanvas.categories || []).find((category) => category.name === row.category);
                     lines.push([
-                        csvEscape(r.theme),
-                        csvEscape(r.code),
-                        csvEscape(r.category),
-                        csvEscape(r.quoteCount),
-                        csvEscape(quotes)
+                        csvEscape(row.theme),
+                        csvEscape(foundCategory?.code || ''),
+                        csvEscape(row.category),
+                        csvEscape(row.code),
+                        csvEscape(row.quoteCount),
+                        csvEscape(row.source),
+                        csvEscape(row.folders)
                     ].join(','));
                 });
-                downloadCsv(`${activeCanvas.name.replace(/\s+/g, '_')}_analysis_table.csv`, lines);
+                downloadCsv(`${activeCanvas.name.replace(/\s+/g, '_')}_thematic_table.csv`, lines);
             };
 
-            const exportAllCanvasTablesCsv = () => {
-                const lines = ['Canvas,Theme,Code,Category,Quote Count,Quotes'];
-                canvases.forEach((canvas) => {
-                    const rows = buildCanvasTableRows(canvas);
-                    rows.forEach((r) => {
-                        const quotes = r.quotes.map(q => `[${q.source}] ${q.ref}: ${q.text}`).join(' || ');
-                        lines.push([
-                            csvEscape(canvas.name),
-                            csvEscape(r.theme),
-                            csvEscape(r.code),
-                            csvEscape(r.category),
-                            csvEscape(r.quoteCount),
-                            csvEscape(quotes)
-                        ].join(','));
-                    });
-                });
-                downloadCsv(`QualiApp_Analysis_Canvas_Tables_${new Date().toISOString().slice(0, 10)}.csv`, lines);
-            };
-
-            const exportCanvasApaDoc = () => {
+            const exportClusteringTableApaDoc = () => {
                 if (!activeCanvas) return;
                 const html = buildApaTableHtml(
                     1,
-                    `${activeCanvas.name} Analysis Table`,
-                    ['Theme', 'Code', 'Category', 'Quote Count', 'Quotes'],
-                    tableRows.map((row) => [
-                        row.theme,
-                        row.code,
-                        row.category,
-                        String(row.quoteCount),
-                        row.quotes.map(q => `[${q.source}] ${q.ref} (${q.folder}): ${q.text}`).join(' | ')
-                    ]),
-                    'Quotes are exported from current folder-filtered analysis rows and may be truncated for long entries.'
-                );
-                downloadWordDoc(`${activeCanvas.name.replace(/\s+/g, '_')}_APA7_analysis_table.doc`, html);
-            };
-
-            const exportAllCanvasApaDoc = () => {
-                const html = canvases.map((canvas, index) => {
-                    const rows = buildCanvasTableRows(canvas);
-                    return buildApaTableHtml(
-                        index + 1,
-                        `${canvas.name} Analysis Table`,
-                        ['Theme', 'Code', 'Category', 'Quote Count', 'Quotes'],
-                        rows.map((row) => [
-                            row.theme,
+                    'Clustering Table',
+                    ['In-vivo Code', 'Category Code', 'Category', 'Quote Count', 'Source', 'Folders'],
+                    clusteringRows.map((row) => {
+                        const foundCategory = (activeCanvas.categories || []).find((category) => category.name === row.category);
+                        return [
                             row.code,
+                            foundCategory?.code || '',
                             row.category,
                             String(row.quoteCount),
-                            row.quotes.map(q => `[${q.source}] ${q.ref} (${q.folder}): ${q.text}`).join(' | ')
-                        ]),
-                        'Quotes are exported from current folder-filtered analysis rows and may be truncated for long entries.'
-                    );
-                }).join('');
-                downloadWordDoc(`QualiApp_APA7_All_Analysis_Canvas_Tables_${new Date().toISOString().slice(0, 10)}.doc`, html);
+                            row.source,
+                            row.folders
+                        ];
+                    }),
+                    'Rows reflect the currently filtered source items and folders.'
+                );
+                downloadWordDoc(`${activeCanvas.name.replace(/\s+/g, '_')}_APA7_clustering_table.doc`, html);
             };
 
-            const toggleFolder = (folder) => {
-                setSelectedFolders((prev) => prev.includes(folder) ? prev.filter(f => f !== folder) : [...prev, folder]);
+            const exportThematicTableApaDoc = () => {
+                if (!activeCanvas) return;
+                const html = buildApaTableHtml(
+                    1,
+                    'Thematic Table',
+                    ['Theme', 'Category Code', 'Category', 'In-vivo Code', 'Quote Count', 'Source', 'Folders'],
+                    thematicRows.map((row) => {
+                        const foundCategory = (activeCanvas.categories || []).find((category) => category.name === row.category);
+                        return [
+                            row.theme,
+                            foundCategory?.code || '',
+                            row.category,
+                            row.code,
+                            String(row.quoteCount),
+                            row.source,
+                            row.folders
+                        ];
+                    }),
+                    'Rows reflect the currently filtered source items and folders.'
+                );
+                downloadWordDoc(`${activeCanvas.name.replace(/\s+/g, '_')}_APA7_thematic_table.doc`, html);
+            };
+
+            const uniqueCodeCount = new Set(codeDetails.map((code) => code.name)).size;
+            const uniqueCategoryCount = new Set((activeCanvas?.categories || []).map((category) => category.name)).size;
+            const uniqueThemeCount = new Set((activeCanvas?.themes || []).map((theme) => theme.name)).size;
+            const showStep2 = !isConnectingMode && processStepView !== 'step3';
+            const showConnecting = isConnectingMode;
+            const showStep3 = !isConnectingMode && processStepView !== 'step2';
+
+            const connectingPairs = useMemo(() => {
+                if (!activeCanvas) return [];
+                const categories = activeCanvas.categories || [];
+                const pairs = [];
+                for (let rowIndex = 0; rowIndex < categories.length; rowIndex += 1) {
+                    for (let columnIndex = rowIndex + 1; columnIndex < categories.length; columnIndex += 1) {
+                        const rowCategory = categories[rowIndex];
+                        const columnCategory = categories[columnIndex];
+                        pairs.push({
+                            rowCode: rowCategory.code,
+                            columnCode: columnCategory.code
+                        });
+                    }
+                }
+                return pairs;
+            }, [activeCanvas]);
+
+            useEffect(() => {
+                setConnectingCursor(0);
+                setLegendFilter(null);
+                setSelectedMapNodeCode(null);
+                setSelectedInVivoPopup(null);
+            }, [activeCanvasId, uniqueCategoryCount]);
+
+            const getConnectionValue = (rowCode, columnCode) => {
+                if (!activeCanvas || !rowCode || !columnCode) return null;
+                const value = activeCanvas.connections?.[rowCode]?.[columnCode];
+                if (value === 1 || value === '1' || value === true) return 1;
+                if (value === 0 || value === '0' || value === false) return 0;
+                return null;
+            };
+
+            const isConnectionIdentified = (rowCode, columnCode) => getConnectionValue(rowCode, columnCode) !== null;
+
+            const getConnectionRationale = (rowCode, columnCode) => {
+                if (!activeCanvas || !rowCode || !columnCode) return '';
+                const value = activeCanvas.connectionRationales?.[rowCode]?.[columnCode];
+                return value === 'A' || value === 'B' || value === 'C' ? value : '';
+            };
+
+            const updateConnectionValue = (rowCode, columnCode, nextValue) => {
+                if (!activeCanvas || !rowCode || !columnCode) return;
+                if (rowCode === columnCode) return;
+                const normalizedValue = Number(nextValue) === 1 ? 1 : 0;
+                const nextConnections = JSON.parse(JSON.stringify(activeCanvas.connections || {}));
+                if (!nextConnections[rowCode]) nextConnections[rowCode] = {};
+                if (!nextConnections[columnCode]) nextConnections[columnCode] = {};
+                nextConnections[rowCode][columnCode] = normalizedValue;
+                nextConnections[columnCode][rowCode] = normalizedValue;
+                persistCanvas({
+                    ...activeCanvas,
+                    connections: nextConnections
+                });
+            };
+
+            const updateConnectionRationale = (rowCode, columnCode, rationaleCode) => {
+                if (!activeCanvas || !rowCode || !columnCode) return;
+                if (rowCode === columnCode) return;
+                const normalizedRationale = rationaleCode === 'A' || rationaleCode === 'B' || rationaleCode === 'C' ? rationaleCode : '';
+                const nextRationales = JSON.parse(JSON.stringify(activeCanvas.connectionRationales || {}));
+                if (!nextRationales[rowCode]) nextRationales[rowCode] = {};
+                if (!nextRationales[columnCode]) nextRationales[columnCode] = {};
+                nextRationales[rowCode][columnCode] = normalizedRationale;
+                nextRationales[columnCode][rowCode] = normalizedRationale;
+                persistCanvas({
+                    ...activeCanvas,
+                    connectionRationales: nextRationales
+                });
+            };
+
+            const currentConnectingPair = connectingPairs.length > 0
+                ? connectingPairs[Math.max(0, Math.min(connectingCursor, connectingPairs.length - 1))]
+                : null;
+
+            useEffect(() => {
+                if (!currentConnectingPair || !guidedPromptQuestionRef.current) return;
+                const el = guidedPromptQuestionRef.current;
+                const animation = el.animate([
+                    { opacity: 0, transform: 'translateX(16px) scale(0.985)' },
+                    { opacity: 1, transform: 'translateX(0) scale(1)' }
+                ], {
+                    duration: 280,
+                    easing: 'cubic-bezier(0.22, 1, 0.36, 1)'
+                });
+                return () => animation.cancel();
+            }, [currentConnectingPair?.rowCode, currentConnectingPair?.columnCode]);
+
+            const getConnectingPairIndex = (rowCode, columnCode) => connectingPairs.findIndex((pair) => (
+                (pair.rowCode === rowCode && pair.columnCode === columnCode)
+                || (pair.rowCode === columnCode && pair.columnCode === rowCode)
+            ));
+
+            const focusConnectingPair = (rowCode, columnCode) => {
+                const pairIndex = getConnectingPairIndex(rowCode, columnCode);
+                if (pairIndex >= 0) setConnectingCursor(pairIndex);
+            };
+
+            const getConnectionResponseLabel = (rowCode, columnCode) => {
+                const value = getConnectionValue(rowCode, columnCode);
+                if (value === 1) return 'Yes';
+                if (value === 0) return 'No';
+                return 'Not identified yet';
+            };
+
+            const rationaleOptions = [
+                { code: 'A', label: 'A. A category makes another category more specific.' },
+                { code: 'B', label: 'B. A category is part of another category.' },
+                { code: 'C', label: 'C. A category acts as a condition which enables (or constrains) another category to be what it is.' }
+            ];
+
+            const connectingProgress = useMemo(() => {
+                if (!currentConnectingPair && connectingPairs.length === 0) {
+                    return { identified: 0, total: 0, percent: 0 };
+                }
+                const identified = connectingPairs.filter((pair) => isConnectionIdentified(pair.rowCode, pair.columnCode)).length;
+                const total = connectingPairs.length;
+                return {
+                    identified,
+                    total,
+                    percent: total > 0 ? Math.round((identified / total) * 100) : 0
+                };
+            }, [connectingPairs, activeCanvas]);
+
+            const handleGuidedConnectionAnswer = (value) => {
+                if (!currentConnectingPair) return;
+                updateConnectionValue(currentConnectingPair.rowCode, currentConnectingPair.columnCode, value);
+                setConnectingCursor((prev) => {
+                    if (connectingPairs.length === 0) return 0;
+                    return (prev + 1) % connectingPairs.length;
+                });
+            };
+
+            const buildConnectionStatement = (categoryCode) => {
+                if (!activeCanvas || !categoryCode) return '';
+                const connectedCodes = (activeCanvas.categories || [])
+                    .filter((category) => category.code !== categoryCode)
+                    .map((category) => category.code)
+                    .filter((code) => getConnectionValue(categoryCode, code) === 1);
+                if (connectedCodes.length === 0) return `${categoryCode}: none`;
+                return `${categoryCode}: ${connectedCodes.join(' - ')}`;
+            };
+
+            const buildCategoryLabelByCode = (categoryCode) => {
+                if (!activeCanvas || !categoryCode) return categoryCode || '';
+                const foundCategory = (activeCanvas.categories || []).find((category) => category.code === categoryCode);
+                if (!foundCategory) return categoryCode;
+                return `${foundCategory.code} (${foundCategory.name})`;
+            };
+
+            const buildCategoryPromptLabelByCode = (categoryCode) => {
+                if (!activeCanvas || !categoryCode) return categoryCode || '';
+                const foundCategory = (activeCanvas.categories || []).find((category) => category.code === categoryCode);
+                if (!foundCategory) return categoryCode;
+                return `${foundCategory.name} (${foundCategory.code})`;
+            };
+
+            const buildNarrativeDefault = (categoryCode) => {
+                if (!activeCanvas || !categoryCode) return '';
+                const connectedCodes = (activeCanvas.categories || [])
+                    .filter((item) => item.code !== categoryCode)
+                    .map((item) => item.code)
+                    .filter((code) => getConnectionValue(categoryCode, code) === 1);
+                const labels = [categoryCode, ...connectedCodes].map((code) => buildCategoryLabelByCode(code));
+                return `Contents of ${labels.join(', ')}`;
+            };
+
+            const toggleInVivoPopup = (codeName, origin = null) => {
+                if (!codeName) return;
+                setSelectedInVivoPopup((prev) => {
+                    if (prev && prev.codeName === codeName && prev.origin === origin) return null;
+                    return { codeName, origin };
+                });
+            };
+
+            const getTranscriptQuotesForCode = (codeName) => {
+                const detail = codeDetailByName[codeName];
+                return (detail?.quotes || []).filter((quote) => quote.source === 'Transcript');
+            };
+
+            const updateConnectionNote = (categoryCode, text) => {
+                if (!activeCanvas || !categoryCode) return;
+                const nextNotes = {
+                    ...(activeCanvas.connectionNotes || {}),
+                    [categoryCode]: text
+                };
+                persistCanvas({
+                    ...activeCanvas,
+                    connectionNotes: nextNotes
+                });
+            };
+
+            const categoryDegrees = useMemo(() => {
+                if (!activeCanvas) return {};
+                const out = {};
+                (activeCanvas.categories || []).forEach((category) => {
+                    const code = category.code;
+                    const count = (activeCanvas.categories || []).reduce((acc, item) => {
+                        if (item.code === code) return acc;
+                        return acc + (getConnectionValue(code, item.code) === 1 ? 1 : 0);
+                    }, 0);
+                    out[code] = count;
+                });
+                return out;
+            }, [activeCanvas]);
+
+            const degreeRangeLegend = useMemo(() => {
+                const degreeValues = Object.values(categoryDegrees);
+                if (degreeValues.length === 0) {
+                    return {
+                        min: 0,
+                        max: 0,
+                        lowMax: 0,
+                        midMax: 0
+                    };
+                }
+                const min = Math.min(...degreeValues);
+                const max = Math.max(...degreeValues);
+                const rangeSize = Math.max(1, Math.ceil((max - min + 1) / 3));
+                const lowMax = min + rangeSize - 1;
+                const midMax = lowMax + rangeSize;
+                return { min, max, lowMax, midMax };
+            }, [categoryDegrees]);
+
+            const getDegreeTier = (categoryCode) => {
+                const degree = categoryDegrees?.[categoryCode] || 0;
+                if (degree <= degreeRangeLegend.lowMax) return 'low';
+                if (degree <= degreeRangeLegend.midMax) return 'mid';
+                return 'high';
+            };
+
+            const relationalMapGeometry = useMemo(() => {
+                if (!activeCanvas) return null;
+                const categories = activeCanvas.categories || [];
+                const width = 980;
+                const height = 560;
+                const centerX = width / 2;
+                const centerY = height / 2;
+                const layoutRadius = Math.max(160, Math.min(230, categories.length * 24));
+                const nodes = categories.map((category, index) => {
+                    const angle = ((Math.PI * 2) / Math.max(categories.length, 1)) * index - Math.PI / 2;
+                    return {
+                        ...category,
+                        x: centerX + Math.cos(angle) * layoutRadius,
+                        y: centerY + Math.sin(angle) * layoutRadius,
+                        degree: categoryDegrees?.[category.code] || 0,
+                        tier: getDegreeTier(category.code)
+                    };
+                });
+
+                const links = [];
+                for (let i = 0; i < nodes.length; i++) {
+                    for (let j = i + 1; j < nodes.length; j++) {
+                        const sourceCode = nodes[i].code;
+                        const targetCode = nodes[j].code;
+                        if (getConnectionValue(sourceCode, targetCode) === 1) {
+                            links.push({ sourceCode, targetCode });
+                        }
+                    }
+                }
+
+                return { width, height, nodes, links };
+            }, [activeCanvas, categoryDegrees, degreeRangeLegend]);
+
+            const connectingMatrixRows = useMemo(() => {
+                if (!activeCanvas) return [];
+                return (activeCanvas.categories || []).map((rowCategory) => {
+                    const cells = (activeCanvas.categories || []).map((columnCategory) => {
+                        if (rowCategory.code === columnCategory.code) return '1';
+                        const value = getConnectionValue(rowCategory.code, columnCategory.code);
+                        return value == null ? '?' : String(value);
+                    });
+                    return [rowCategory.code, ...cells];
+                });
+            }, [activeCanvas]);
+
+            const connectingNarrativeRows = useMemo(() => {
+                if (!activeCanvas) return [];
+                return (activeCanvas.categories || []).map((category) => {
+                    const connectedCodes = (activeCanvas.categories || [])
+                        .filter((item) => item.code !== category.code)
+                        .map((item) => item.code)
+                        .filter((code) => getConnectionValue(category.code, code) === 1);
+                    const rationaleSummary = connectedCodes.map((code) => {
+                        const rationale = getConnectionRationale(category.code, code);
+                        return rationale ? `${code}:${rationale}` : `${code}:`;
+                    }).join(' | ');
+                    return [
+                        category.code,
+                        connectedCodes.join(' - '),
+                        rationaleSummary,
+                        (activeCanvas.connectionNotes || {})[category.code] || buildNarrativeDefault(category.code)
+                    ];
+                });
+            }, [activeCanvas]);
+
+            const exportConnectingMatrixApaDoc = () => {
+                if (!activeCanvas) return;
+                const categoryCodes = (activeCanvas.categories || []).map((category) => category.code);
+                const html = buildApaTableHtml(
+                    1,
+                    'Connecting Matrix (One-mode Network)',
+                    ['Category', ...categoryCodes],
+                    connectingMatrixRows,
+                    'Diagonal cells are fixed at 1; ? indicates not identified yet.'
+                );
+                downloadWordDoc(`${activeCanvas.name.replace(/\s+/g, '_')}_APA7_connecting_matrix.doc`, html);
+            };
+
+            const exportConnectingNarrativeApaDoc = () => {
+                if (!activeCanvas) return;
+                const html = buildApaTableHtml(
+                    1,
+                    'Connecting Narrative Table',
+                    ['Category', 'Connected Categories', 'Rationale Codes', 'Narrative'],
+                    connectingNarrativeRows,
+                    'Rationale codes: A = specificity, B = part-whole, C = conditional.'
+                );
+                downloadWordDoc(`${activeCanvas.name.replace(/\s+/g, '_')}_APA7_connecting_narrative.doc`, html);
+            };
+
+            const exportConnectingFigureApaDoc = async () => {
+                if (!activeCanvas || !relationalMapGeometry) return;
+                const width = Number(relationalMapGeometry.width || 980);
+                const height = Number(relationalMapGeometry.height || 640);
+                const svgMarkup = buildRelationalMapSvgMarkup(relationalMapGeometry);
+                if (!svgMarkup) return;
+
+                let imageSource = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgMarkup)}`;
+                try {
+                    imageSource = await renderSvgToPngDataUrl(svgMarkup, width, height);
+                } catch (error) {
+                    // Fallback to embedded SVG data URI if PNG rendering fails in-browser.
+                }
+
+                const figureInner = `
+                    <div style="text-align:center;">
+                        <img src="${imageSource}" alt="Relational map of category connections" style="display:inline-block;max-width:100%;height:auto;border:1px solid #d1d5db;" />
+                    </div>
+                `;
+
+                const html = buildApaFigureHtml(
+                    1,
+                    'Relational Map of Category Connections',
+                    figureInner,
+                    'Nodes show category codes with degree counts. Node color indicates tier (low, medium, high connectivity). Lines represent identified inter-category links.'
+                );
+                downloadWordDoc(`${activeCanvas.name.replace(/\s+/g, '_')}_APA7_connecting_figure.doc`, html);
             };
 
             return (
                 <div className="p-8 h-full overflow-y-auto">
                     <div className="max-w-7xl mx-auto space-y-6">
                         <div className="bg-white border rounded-2xl p-6 shadow-soft">
-                            <h2 className="text-3xl font-display">Analysis Canvases</h2>
-                            <p className="text-slate-500 mt-1">Build clustering categories from in-vivo codes, then map categories into themes for synthesis and export.</p>
-                            <p className="text-slate-500 mt-1">Unique codes: {uniqueCodeCount} • Unique categories: {uniqueCategoryCount} • Unique themes in selected canvas: {uniqueThemeCount}</p>
+                            <h2 className="text-3xl font-display">{isConnectingMode ? 'Connecting Analysis' : 'Clustering and Thematic Analysis'}</h2>
+                            <p className="text-slate-500 mt-1">
+                                {isConnectingMode
+                                    ? 'Review category relationships and build the connection matrix, narrative table, and relational map.'
+                                    : 'Step 2: assign in-vivo code cards into categories (clustering). Step 3: group categories into themes. All data stays offline on this device.'}
+                            </p>
+                            <p className="text-slate-500 mt-1">Filtered in-vivo codes: {uniqueCodeCount} • Categories in workspace: {uniqueCategoryCount} • Themes in workspace: {uniqueThemeCount}</p>
                         </div>
 
                         <SourceItemFilterPanel
                             title="Included Source Items"
-                            description="Choose which transcripts, artifacts, and onsite observations are included in this canvas. Checked items stay in counts, code banks, and exports."
+                            description="Choose which transcripts, artifacts, and onsite observations are included. Checked items stay in clustering cards and thematic exports."
                             groups={sourceFilterGroups}
                             selectedIds={selectedSourceIds}
                             presets={sourceFilterPresets}
@@ -6911,12 +7900,12 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
 
                         <div className="bg-white border rounded-2xl p-5 shadow-soft grid md:grid-cols-3 gap-4">
                             <div className="md:col-span-2 flex gap-2">
-                                <input value={newCanvasName} onChange={e => setNewCanvasName(e.target.value)} placeholder="New canvas name" className="flex-1 border rounded-lg p-2.5 focus:outline-none focus:ring-2 focus:ring-tide" />
-                                <button onClick={createCanvas} className="bg-tide hover:bg-teal-600 text-white px-4 rounded-lg font-semibold">Create Canvas</button>
+                                <input value={newCanvasName} onChange={(e) => setNewCanvasName(e.target.value)} placeholder="New clustering workspace" className="flex-1 border rounded-lg p-2.5 focus:outline-none focus:ring-2 focus:ring-tide" />
+                                <button onClick={createCanvas} className="bg-tide hover:bg-teal-600 text-white px-4 rounded-lg font-semibold">Create Workspace</button>
                             </div>
-                            <select value={activeCanvasId || ''} onChange={e => setActiveCanvasId(e.target.value)} className="border rounded-lg p-2.5">
-                                <option value="">Select canvas</option>
-                                {canvases.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                            <select value={activeCanvasId || ''} onChange={(e) => setActiveCanvasId(e.target.value)} className="border rounded-lg p-2.5">
+                                <option value="">Select workspace</option>
+                                {canvases.map((canvas) => <option key={canvas.id} value={canvas.id}>{canvas.name}</option>)}
                             </select>
                         </div>
 
@@ -6926,7 +7915,7 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                                 <button onClick={() => setSelectedFolders(availableFolders)} className="text-xs font-semibold text-tide">Select All</button>
                             </div>
                             <div className="flex flex-wrap gap-2">
-                                {availableFolders.map(folder => (
+                                {availableFolders.map((folder) => (
                                     <label key={folder} className={`px-3 py-1.5 rounded-full border text-xs cursor-pointer ${selectedFolderSet.has(folder) ? 'bg-teal-100 border-teal-300 text-teal-800' : 'bg-white text-slate-600'}`}>
                                         <input type="checkbox" className="hidden" checked={selectedFolderSet.has(folder)} onChange={() => toggleFolder(folder)} />
                                         {folder}
@@ -6936,235 +7925,663 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                         </div>
 
                         {!activeCanvas ? (
-                            <div className="text-center py-16 bg-white border rounded-2xl text-slate-500">Create or select a canvas to begin analysis.</div>
+                            <div className="text-center py-16 bg-white border rounded-2xl text-slate-500">Create or select a workspace to begin clustering.</div>
                         ) : (
-                            <div>
-                                <div className="flex justify-between items-center mb-4 bg-white border rounded-2xl p-4 shadow-soft">
-                                    <h3 className="text-lg font-bold text-ink">{activeCanvas.name}</h3>
+                            <div className="space-y-6">
+                                <div className="flex justify-between items-center bg-gradient-to-r from-ink via-slate-800 to-slate-700 border border-slate-700 rounded-2xl p-5 shadow-soft">
+                                    <div>
+                                        <p className="text-[10px] uppercase tracking-[0.14em] text-slate-300 font-semibold">Active Workspace</p>
+                                        <h3 className="text-2xl md:text-3xl font-display text-white leading-tight">{activeCanvas.name}</h3>
+                                    </div>
                                     <div className="flex gap-2">
-                                        <button onClick={() => renameCanvas(activeCanvasId)} className="px-3 py-1 text-sm bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 font-semibold">Rename</button>
-                                        <button onClick={() => deleteCanvas(activeCanvasId)} className="px-3 py-1 text-sm bg-red-100 text-red-700 rounded-lg hover:bg-red-200 font-semibold">Delete Canvas</button>
+                                        <button onClick={() => renameCanvas(activeCanvas.id)} className="px-3 py-1 text-sm bg-white/90 text-blue-700 rounded-lg hover:bg-white font-semibold">Rename</button>
+                                        <button onClick={() => deleteCanvas(activeCanvas.id)} className="px-3 py-1 text-sm bg-red-100 text-red-700 rounded-lg hover:bg-red-200 font-semibold">Delete</button>
                                     </div>
                                 </div>
 
-                                <div className="grid lg:grid-cols-3 gap-5">
-                                    <div className="bg-white border rounded-2xl p-4 shadow-soft lg:col-span-1">
-                                        <h3 className="font-bold mb-3">Code Bank (filtered)</h3>
-                                        <p className="text-xs text-slate-500 mb-3">Drag in-vivo codes into category clusters. Quote counts reflect selected folders.</p>
-                                        <div className="space-y-2 max-h-[520px] overflow-y-auto pr-1">
-                                            {codeDetails.map(code => (
-                                                <div
-                                                    key={code.name}
-                                                    draggable
-                                                    onDragStart={(e) => e.dataTransfer.setData('text/plain', code.name)}
-                                                    className={`border rounded-lg p-2 cursor-grab bg-white hover:border-tide transition ${assignedCodes.has(code.name) ? 'opacity-60' : ''}`}
-                                                >
-                                                    <div className="font-semibold text-sm">{code.name}</div>
-                                                    <div className="text-xs text-slate-500">{code.count} quotes • <span className="text-[10px] uppercase font-bold text-slate-400">{categoryByCode[code.name] || 'Unassigned'}</span></div>
-                                                    {code.source === 'multiple' && <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-full">Multiple sources</span>}
-                                                    {code.source === 'artifact' && <span className="text-[10px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded-full">Artifact</span>}
-                                                    {code.source === 'observation' && <span className="text-[10px] bg-violet-100 text-violet-800 px-1.5 py-0.5 rounded-full">Observation</span>}
-                                                </div>
-                                            ))}
-                                            {codeDetails.length === 0 && <p className="text-sm text-slate-400">No codes available for the selected folders and source items.</p>}
-                                        </div>
+                                {!isConnectingMode && (
+                                <div className="bg-white border rounded-2xl p-4 shadow-soft flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                                    <div>
+                                        <h3 className="font-bold text-ink">Process Step View</h3>
+                                        <p className="text-xs text-slate-500">Focus on Step 2, Step 3, or keep both visible.</p>
                                     </div>
-
-                                    <div className="bg-white border rounded-2xl p-4 shadow-soft lg:col-span-2">
-                                        <div className="flex gap-2 mb-4">
-                                            <input value={newCategoryName} onChange={e => setNewCategoryName(e.target.value)} placeholder="New category cluster" className="flex-1 border rounded-lg p-2.5 focus:outline-none focus:ring-2 focus:ring-tide" />
-                                            <button onClick={addCategory} className="bg-tide hover:bg-teal-600 text-white px-4 rounded-lg font-semibold">Add Category</button>
-                                        </div>
-
-                                        {activeCanvas.categories.length === 0 && <p className="text-slate-400 text-sm">No categories yet in this canvas.</p>}
-
-                                        <div className="space-y-3 max-h-[520px] overflow-y-auto pr-1">
-                                            {activeCanvas.categories.map((category) => (
-                                                <div
-                                                    key={category.id}
-                                                    onDragOver={(e) => e.preventDefault()}
-                                                    onDrop={(e) => {
-                                                        e.preventDefault();
-                                                        const codeName = e.dataTransfer.getData('text/plain');
-                                                        assignCodeToCategory(category.id, codeName);
-                                                    }}
-                                                    className="border-2 border-dashed rounded-xl p-4 bg-slate-50"
-                                                >
-                                                    <div className="flex justify-between items-center mb-3">
-                                                        <div
-                                                            draggable
-                                                            onDragStart={(e) => e.dataTransfer.setData('text/plain', category.name)}
-                                                            className="cursor-grab"
-                                                            title="Drag this category into a theme"
-                                                        >
-                                                            <h4 className="font-bold text-ink">{category.name}</h4>
-                                                            <p className="text-xs text-slate-500">Cluster #{category.code}</p>
-                                                        </div>
-                                                        <div className="flex gap-1">
-                                                            <button onClick={() => renameCategory(category.id)} className="text-slate-400 hover:text-blue-600 text-sm">✎</button>
-                                                            <button onClick={() => removeCategory(category.id)} className="text-slate-400 hover:text-red-600 text-sm">✕</button>
-                                                        </div>
-                                                    </div>
-                                                    <div className="flex flex-wrap gap-2">
-                                                        {(category.codes || []).map((codeName) => {
-                                                            const found = codeDetails.find((c) => c.name === codeName);
-                                                            return (
-                                                                <span key={`${category.id}_${codeName}`} className="inline-flex items-center gap-2 text-xs bg-teal-100 text-teal-900 px-3 py-1 rounded-full border border-teal-200">
-                                                                    {codeName} ({found?.count || 0})
-                                                                    <button onClick={() => unassignCodeFromCategory(category.id, codeName)} className="text-teal-700 hover:text-red-600">x</button>
-                                                                </span>
-                                                            );
-                                                        })}
-                                                        {(category.codes || []).length === 0 && <span className="text-xs text-slate-400">Drop in-vivo codes here</span>}
-                                                    </div>
-                                                </div>
-                                            ))}
-                                        </div>
-
-                                        {unassignedCodes.length > 0 && (
-                                            <div className="mt-5 pt-4 border-t">
-                                                <p className="text-xs uppercase text-slate-500 font-bold mb-2">Unassigned Codes</p>
-                                                <p className="text-sm text-slate-600">{unassignedCodes.map(c => `${c.name} (${c.count})`).join(', ')}</p>
-                                            </div>
-                                        )}
+                                    <div className="inline-flex bg-slate-100 p-1 rounded-lg">
+                                        <button
+                                            type="button"
+                                            onClick={() => { setShowExportMenu(false); setProcessStepView('step2'); }}
+                                            className={`px-3 py-1.5 text-sm font-semibold rounded-md transition ${processStepView === 'step2' ? 'bg-white text-ink shadow' : 'text-slate-600 hover:bg-slate-200'}`}
+                                        >
+                                            Step 2 only
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => { setShowExportMenu(false); setProcessStepView('step3'); }}
+                                            className={`px-3 py-1.5 text-sm font-semibold rounded-md transition ${processStepView === 'step3' ? 'bg-white text-ink shadow' : 'text-slate-600 hover:bg-slate-200'}`}
+                                        >
+                                            Step 3 only
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => { setShowExportMenu(false); setProcessStepView('both'); }}
+                                            className={`px-3 py-1.5 text-sm font-semibold rounded-md transition ${processStepView === 'both' ? 'bg-white text-ink shadow' : 'text-slate-600 hover:bg-slate-200'}`}
+                                        >
+                                            Both steps
+                                        </button>
                                     </div>
                                 </div>
+                                )}
 
-                                <div className="bg-white border rounded-2xl p-4 shadow-soft mt-5">
-                                    <div className="flex gap-2 mb-4">
-                                        <input value={newThemeName} onChange={e => setNewThemeName(e.target.value)} placeholder="New theme bucket" className="flex-1 border rounded-lg p-2.5 focus:outline-none focus:ring-2 focus:ring-ember" />
-                                        <button onClick={addTheme} className="bg-ember hover:bg-orange-700 text-white px-4 rounded-lg font-semibold">Add Theme</button>
-                                    </div>
-
-                                    {activeCanvas.themes.length === 0 && <p className="text-slate-400 text-sm">No themes yet in this canvas.</p>}
-
-                                    <div className="space-y-3">
-                                        {activeCanvas.themes.map((theme) => (
-                                            <div
-                                                key={theme.id}
-                                                onDragOver={(e) => e.preventDefault()}
-                                                onDrop={(e) => {
-                                                    e.preventDefault();
-                                                    const categoryName = e.dataTransfer.getData('text/plain');
-                                                    assignCategoryToTheme(theme.id, categoryName);
-                                                }}
-                                                className="border-2 border-dashed rounded-xl p-4 bg-slate-50 group"
-                                            >
-                                                <div className="flex justify-between items-center mb-3">
-                                                    {editingThemeId === theme.id ? (
-                                                        <div className="flex gap-2 flex-1">
-                                                            <input autoFocus value={editThemeName} onChange={e => setEditThemeName(e.target.value)} className="flex-1 border rounded p-1.5 text-sm focus:ring-2 focus:ring-tide outline-none" />
-                                                            <button onClick={saveEditTheme} className="bg-tide text-white px-2 rounded text-sm font-semibold">Save</button>
-                                                            <button onClick={() => setEditingThemeId(null)} className="bg-slate-300 text-slate-700 px-2 rounded text-sm font-semibold">Cancel</button>
-                                                        </div>
-                                                    ) : (
-                                                        <>
-                                                            <h4 className="font-bold text-ink">{theme.name}</h4>
-                                                            <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition">
-                                                                <button onClick={() => startEditTheme(theme)} className="text-slate-400 hover:text-blue-600 text-sm">✎</button>
-                                                                <button onClick={() => deleteTheme(theme.id)} className="text-slate-400 hover:text-red-600 text-sm">✕</button>
-                                                            </div>
-                                                        </>
-                                                    )}
-                                                </div>
-                                                <div className="flex flex-wrap gap-2">
-                                                    {(theme.categories || []).map((categoryName) => (
-                                                        <span key={`${theme.id}_${categoryName}`} className="inline-flex items-center gap-2 text-xs bg-orange-100 text-orange-900 px-3 py-1 rounded-full border border-orange-200">
-                                                            <span
-                                                                draggable
-                                                                onDragStart={(e) => e.dataTransfer.setData('text/plain', categoryName)}
-                                                                className="cursor-grab"
-                                                            >
-                                                                {categoryName}
-                                                            </span>
-                                                            <button onClick={() => removeCategoryFromTheme(theme.id, categoryName)} className="text-orange-700 hover:text-red-600">x</button>
-                                                        </span>
-                                                    ))}
-                                                    {(theme.categories || []).length === 0 && <span className="text-xs text-slate-400">Drag categories here</span>}
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-
-                                    {unassignedCategories.length > 0 && (
-                                        <div className="mt-5 pt-4 border-t">
-                                            <p className="text-xs uppercase text-slate-500 font-bold mb-2">Unassigned Categories</p>
-                                            <div className="flex flex-wrap gap-2">
-                                                {unassignedCategories.map((category) => (
-                                                    <span
-                                                        key={`unassigned_${category.id}`}
-                                                        draggable
-                                                        onDragStart={(e) => e.dataTransfer.setData('text/plain', category.name)}
-                                                        className="inline-flex items-center gap-2 text-xs bg-slate-100 text-slate-700 px-3 py-1 rounded-full border border-slate-300 cursor-grab"
-                                                    >
-                                                        {category.name}
-                                                    </span>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
-
-                                <div className="bg-white border rounded-2xl p-5 shadow-soft mt-6">
-                                    <div className="flex items-center justify-between mb-3">
-                                        <h3 className="font-bold">Canvas Table (Themes, Codes, Quotes)</h3>
+                                {showStep2 && (
+                                <div className="bg-white border rounded-2xl p-5 shadow-soft">
+                                    <div className="flex items-center justify-between mb-4">
+                                        <h3 className="font-bold text-ink">Step 2: Clustering</h3>
                                         <div className="relative">
                                             <button
                                                 type="button"
-                                                onClick={() => setShowExportMenu(prev => !prev)}
+                                                onClick={() => setShowExportMenu((prev) => !prev)}
                                                 className="px-3 py-1.5 rounded-lg bg-ink text-white text-sm font-semibold hover:bg-slate-800"
                                             >
-                                                Export
+                                                Export Tables
                                             </button>
                                             {showExportMenu && (
-                                                <div className="absolute right-0 mt-2 w-64 bg-white border border-slate-200 rounded-xl shadow-soft z-30 p-2">
+                                                <div className="absolute right-0 mt-2 w-72 bg-white border border-slate-200 rounded-xl shadow-soft z-30 p-2">
                                                     <p className="px-2 py-1 text-[11px] uppercase font-bold tracking-wide text-slate-500">CSV</p>
-                                                    <button type="button" onClick={() => { exportClusteringCsv(); setShowExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm text-slate-700">Clustering table (.csv)</button>
-                                                    <button type="button" onClick={() => { exportCanvasCsv(); setShowExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm text-slate-700">Canvas table (.csv)</button>
-                                                    <button type="button" onClick={() => { exportAllCanvasTablesCsv(); setShowExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm text-slate-700">All canvas tables (.csv)</button>
+                                                    <button type="button" onClick={() => { exportClusteringTable(); setShowExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm text-slate-700">In-vivo codes with clustering categories (.csv)</button>
+                                                    <button type="button" onClick={() => { exportThematicTable(); setShowExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm text-slate-700">Themes, categories, and in-vivo codes (.csv)</button>
                                                     <div className="my-1 border-t" />
                                                     <p className="px-2 py-1 text-[11px] uppercase font-bold tracking-wide text-slate-500">APA7 Word (.doc)</p>
-                                                    <button type="button" onClick={() => { exportCanvasApaDoc(); setShowExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm text-slate-700">Canvas table APA7 (.doc)</button>
-                                                    <button type="button" onClick={() => { exportAllCanvasApaDoc(); setShowExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm font-semibold text-ink">All canvas tables APA7 (.doc)</button>
+                                                    <button type="button" onClick={() => { exportClusteringTableApaDoc(); setShowExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm text-slate-700">Clustering table APA7 (.doc)</button>
+                                                    <button type="button" onClick={() => { exportThematicTableApaDoc(); setShowExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm text-slate-700">Thematic table APA7 (.doc)</button>
                                                 </div>
                                             )}
                                         </div>
                                     </div>
-                                    {tableRows.length === 0 ? (
-                                        <p className="text-sm text-slate-500">No rows yet. Assign codes to themes first.</p>
+
+                                    <div className="grid lg:grid-cols-3 gap-5">
+                                        <div className="lg:col-span-1 space-y-3">
+                                            <div className="border rounded-xl p-3 bg-slate-50">
+                                                <div className="flex items-center justify-between">
+                                                    <p className="text-xs uppercase font-bold tracking-wide text-slate-500">Unassigned In-vivo Codes</p>
+                                                    <span className="text-xs font-semibold text-red-700 bg-red-100 px-2 py-0.5 rounded-full">{unassignedCodes.length}</span>
+                                                </div>
+                                                <p className="text-xs text-slate-500 mt-1">Drag cards into a category or use the quick category selector.</p>
+                                            </div>
+                                            <div className="space-y-2 max-h-[520px] overflow-y-auto pr-1">
+                                                {unassignedCodes.map((code) => (
+                                                    <div
+                                                        key={code.name}
+                                                        draggable
+                                                        onDragStart={(e) => e.dataTransfer.setData('text/plain', code.name)}
+                                                        className="border rounded-lg p-3 bg-white cursor-grab hover:border-tide transition"
+                                                    >
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => toggleInVivoPopup(code.name, `unassigned_${code.name}`)}
+                                                            className="font-semibold text-sm text-ink hover:text-tide text-left"
+                                                        >
+                                                            {code.name}
+                                                        </button>
+                                                        <div className="text-xs text-slate-500 mt-1">{code.count} quotes • {code.source}</div>
+                                                        <select
+                                                            value=""
+                                                            onChange={(e) => {
+                                                                if (!e.target.value) return;
+                                                                assignCodeToCategory(e.target.value, code.name);
+                                                            }}
+                                                            className="mt-2 w-full border rounded p-1.5 text-xs"
+                                                        >
+                                                            <option value="">Quick assign to category...</option>
+                                                            {activeCanvas.categories.map((category) => (
+                                                                <option key={category.id} value={category.id}>{category.name}</option>
+                                                            ))}
+                                                        </select>
+                                                    </div>
+                                                ))}
+                                                {unassignedCodes.length === 0 && <p className="text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg p-3">All filtered in-vivo codes are assigned.</p>}
+                                            </div>
+                                        </div>
+
+                                        <div className="lg:col-span-2">
+                                            <div className="flex gap-2 mb-3">
+                                                <input value={newCategoryName} onChange={(e) => setNewCategoryName(e.target.value)} placeholder="Create category" className="flex-1 border rounded-lg p-2.5 focus:outline-none focus:ring-2 focus:ring-tide" />
+                                                <button onClick={addCategory} className="bg-tide hover:bg-teal-600 text-white px-4 rounded-lg font-semibold">Add Category</button>
+                                            </div>
+
+                                            <div className="space-y-3 max-h-[560px] overflow-y-auto pr-1">
+                                                {activeCanvas.categories.map((category) => (
+                                                    <div
+                                                        key={category.id}
+                                                        onDragOver={(e) => e.preventDefault()}
+                                                        onDrop={(e) => {
+                                                            e.preventDefault();
+                                                            assignCodeToCategory(category.id, e.dataTransfer.getData('text/plain'));
+                                                        }}
+                                                        className="border-2 border-dashed rounded-xl p-4 bg-slate-50"
+                                                    >
+                                                        <div className="flex items-center justify-between mb-3">
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="text-[11px] font-semibold bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full">{category.code || 'C?'}</span>
+                                                                <h4 className="font-bold text-ink">{category.name}</h4>
+                                                                <span className="text-[11px] font-semibold bg-teal-100 text-teal-800 px-2 py-0.5 rounded-full">{category.codes.length} assigned</span>
+                                                            </div>
+                                                            <div className="flex gap-2">
+                                                                <button onClick={() => toggleCategoryCodes(category.id)} className="text-xs font-semibold text-slate-700 hover:text-slate-900">{expandedCategoryIds[category.id] === false ? 'View in-vivo codes' : 'Hide in-vivo codes'}</button>
+                                                                <button onClick={() => renameCategory(category.id)} className="text-xs font-semibold text-blue-700 hover:text-blue-800">Rename</button>
+                                                                <button onClick={() => removeCategory(category.id)} className="text-xs font-semibold text-red-700 hover:text-red-800">Delete</button>
+                                                            </div>
+                                                        </div>
+                                                        {expandedCategoryIds[category.id] !== false && (
+                                                            <div className="flex flex-wrap gap-2">
+                                                                {category.codes.filter((codeName) => !!codeDetailByName[codeName]).map((codeName) => (
+                                                                    <span key={`${category.id}_${codeName}`} className="inline-flex items-center gap-2 text-xs bg-white border border-slate-300 px-3 py-1 rounded-full">
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => toggleInVivoPopup(codeName, `category_${category.id}_${codeName}`)}
+                                                                            className="font-semibold hover:text-tide"
+                                                                        >
+                                                                            {codeName}
+                                                                        </button>
+                                                                        <span className="text-slate-500">({codeDetailByName[codeName]?.count || 0})</span>
+                                                                        <button onClick={() => unassignCode(codeName)} className="text-red-600 hover:text-red-700">x</button>
+                                                                    </span>
+                                                                ))}
+                                                                {category.codes.filter((codeName) => !!codeDetailByName[codeName]).length === 0 && <span className="text-xs text-slate-400">Drop in-vivo code cards here</span>}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                ))}
+                                                {activeCanvas.categories.length === 0 && <p className="text-sm text-slate-500">No categories yet. Create a category to start organizing in-vivo codes.</p>}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                )}
+
+                                {showConnecting && (
+                                <div className="bg-white border rounded-2xl p-5 shadow-soft space-y-5">
+                                    <div className="flex items-start justify-between gap-3">
+                                        <div>
+                                            <h3 className="font-bold text-ink mb-1">Connecting</h3>
+                                            <p className="text-sm text-slate-500">Identify whether categories are connected, then generate a one-mode network matrix and relational map.</p>
+                                        </div>
+                                        <div className="relative">
+                                            <button
+                                                type="button"
+                                                onClick={() => setShowConnectingExportMenu((prev) => !prev)}
+                                                className="px-3 py-1.5 rounded-lg bg-ink text-white text-sm font-semibold hover:bg-slate-800"
+                                            >
+                                                Export APA
+                                            </button>
+                                            {showConnectingExportMenu && (
+                                                <div className="absolute right-0 mt-2 w-80 bg-white border border-slate-200 rounded-xl shadow-soft z-30 p-2">
+                                                    <p className="px-2 py-1 text-[11px] uppercase font-bold tracking-wide text-slate-500">APA7 Word (.doc)</p>
+                                                    <button type="button" onClick={() => { exportConnectingMatrixApaDoc(); setShowConnectingExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm text-slate-700">Connecting matrix table APA7 (.doc)</button>
+                                                    <button type="button" onClick={() => { exportConnectingNarrativeApaDoc(); setShowConnectingExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm text-slate-700">Connecting narrative table APA7 (.doc)</button>
+                                                    <button type="button" onClick={() => { exportConnectingFigureApaDoc(); setShowConnectingExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm text-slate-700">Relational map figure APA7 (.doc)</button>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    <div className="bg-slate-50 border rounded-xl p-4 space-y-3">
+                                        <p className="text-sm font-semibold text-slate-700">Guide for determining category connections</p>
+                                        <p className="text-xs text-slate-600">A. A category makes another category more specific.</p>
+                                        <p className="text-xs text-slate-600">B. A category is part of another category.</p>
+                                        <p className="text-xs text-slate-600">C. A category acts as a condition which enables (or constrains) another category to be what it is.</p>
+                                    </div>
+
+                                    <div className="border-2 border-amber-300 rounded-xl p-4 bg-amber-50/30 shadow-[0_0_0_3px_rgba(251,191,36,0.22)] space-y-3">
+                                        <div className="flex items-center justify-between gap-3">
+                                            <p className="text-sm font-semibold text-ink">Guided Connection Prompt</p>
+                                            <p className="text-xs text-slate-500">
+                                                {connectingPairs.length > 0 ? `Pair ${connectingCursor + 1} of ${connectingPairs.length}` : 'No categories yet'}
+                                            </p>
+                                        </div>
+                                        <div className="space-y-2">
+                                            <div className="flex items-center justify-between text-xs">
+                                                <p className="text-slate-600">Identified connections</p>
+                                                <p className="font-semibold text-slate-700">{connectingProgress.identified}/{connectingProgress.total} ({connectingProgress.percent}%)</p>
+                                            </div>
+                                            <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
+                                                <div className="h-full bg-emerald-500 transition-all" style={{ width: `${connectingProgress.percent}%` }} />
+                                            </div>
+                                        </div>
+                                        {currentConnectingPair ? (
+                                            <>
+                                                <div ref={guidedPromptQuestionRef} className="space-y-2">
+                                                    <p className="text-sm text-slate-700">
+                                                        Is <span className="font-semibold">{buildCategoryPromptLabelByCode(currentConnectingPair.rowCode)}</span> connected to <span className="font-semibold">{buildCategoryPromptLabelByCode(currentConnectingPair.columnCode)}</span>?
+                                                    </p>
+                                                    <p className="text-xs text-slate-600">
+                                                        Current response: <span className="font-semibold text-slate-800">{getConnectionResponseLabel(currentConnectingPair.rowCode, currentConnectingPair.columnCode)}</span>
+                                                    </p>
+                                                    <p className={`text-xs font-semibold ${isConnectionIdentified(currentConnectingPair.rowCode, currentConnectingPair.columnCode) ? 'text-emerald-700' : 'text-amber-700'}`}>
+                                                        {isConnectionIdentified(currentConnectingPair.rowCode, currentConnectingPair.columnCode) ? 'Status: Identified' : 'Status: Not identified yet'}
+                                                    </p>
+                                                    <div className="rounded-lg border border-slate-200 bg-white p-3 space-y-2">
+                                                        <p className="text-xs font-semibold text-slate-700">Select rationale for this connection</p>
+                                                        {!isConnectionIdentified(currentConnectingPair.rowCode, currentConnectingPair.columnCode) ? (
+                                                            <p className="text-xs text-amber-700">Set Yes or No first, then choose one rationale (A, B, or C).</p>
+                                                        ) : (
+                                                            <div className="space-y-1.5">
+                                                                {rationaleOptions.map((option) => (
+                                                                    <label key={`rationale_${option.code}`} className="flex items-start gap-2 text-xs text-slate-700 cursor-pointer">
+                                                                        <input
+                                                                            type="radio"
+                                                                            name={`rationale_${currentConnectingPair.rowCode}_${currentConnectingPair.columnCode}`}
+                                                                            checked={getConnectionRationale(currentConnectingPair.rowCode, currentConnectingPair.columnCode) === option.code}
+                                                                            onChange={() => updateConnectionRationale(currentConnectingPair.rowCode, currentConnectingPair.columnCode, option.code)}
+                                                                        />
+                                                                        <span>{option.label}</span>
+                                                                    </label>
+                                                                ))}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                    <div className="flex gap-2">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleGuidedConnectionAnswer(1)}
+                                                            className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700"
+                                                        >
+                                                            Yes
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleGuidedConnectionAnswer(0)}
+                                                            className="px-4 py-2 rounded-lg bg-slate-200 text-slate-700 text-sm font-semibold hover:bg-slate-300"
+                                                        >
+                                                            No
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setConnectingCursor((prev) => Math.max(0, prev - 1))}
+                                                            className="px-4 py-2 rounded-lg border border-slate-300 text-slate-700 text-sm font-semibold hover:bg-slate-50"
+                                                        >
+                                                            Previous
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </>
+                                        ) : (
+                                            <p className="text-sm text-slate-500">Create categories in Clustering to begin guided connection prompts.</p>
+                                        )}
+                                    </div>
+
+                                    <div className="border rounded-xl p-4 bg-white">
+                                        <h4 className="text-sm font-semibold text-ink mb-3">One-mode Network Table (Matrix)</h4>
+                                        {!activeCanvas || (activeCanvas.categories || []).length === 0 ? (
+                                            <p className="text-sm text-slate-500">No categories available yet.</p>
+                                        ) : (
+                                            <div className="overflow-x-auto">
+                                                <table className="w-full text-sm border-collapse">
+                                                    <thead>
+                                                        <tr className="bg-slate-50 border-b">
+                                                            <th className="p-2 text-left">Category</th>
+                                                            {(activeCanvas.categories || []).map((category) => (
+                                                                <th key={`col_${category.code}`} className="p-2 text-center font-semibold">{category.code}</th>
+                                                            ))}
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {(activeCanvas.categories || []).map((rowCategory) => (
+                                                            <tr key={`row_${rowCategory.code}`} className="border-b">
+                                                                <td className="p-2 font-semibold">{rowCategory.code}</td>
+                                                                {(activeCanvas.categories || []).map((columnCategory) => {
+                                                                    const isDiagonal = rowCategory.code === columnCategory.code;
+                                                                    const value = isDiagonal ? 1 : getConnectionValue(rowCategory.code, columnCategory.code);
+                                                                    return (
+                                                                        <td key={`cell_${rowCategory.code}_${columnCategory.code}`} className="p-1 text-center">
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={async () => {
+                                                                                    if (isDiagonal) return;
+                                                                                    if (value === 0 || value === 1) {
+                                                                                        const shouldChange = await requestConfirmation({
+                                                                                            title: 'Change Connection',
+                                                                                            message: 'Do you want to change the connection?',
+                                                                                            confirmLabel: 'Change Connection'
+                                                                                        });
+                                                                                        if (!shouldChange) return;
+                                                                                    }
+                                                                                    focusConnectingPair(rowCategory.code, columnCategory.code);
+                                                                                }}
+                                                                                className={`h-8 w-8 rounded-full text-xs font-bold border transition ${isDiagonal ? 'bg-emerald-100 border-emerald-300 text-emerald-800 cursor-not-allowed' : value === 1 ? 'bg-emerald-100 border-emerald-300 text-emerald-800' : value === 0 ? 'bg-slate-100 border-slate-300 text-slate-700' : 'bg-amber-50 border-amber-300 text-amber-700'}`}
+                                                                                title={isDiagonal ? 'Self-connection is always 1' : `Edit ${rowCategory.code}-${columnCategory.code} in guided prompt (current: ${getConnectionResponseLabel(rowCategory.code, columnCategory.code)})`}
+                                                                                disabled={isDiagonal}
+                                                                            >
+                                                                                {value == null ? '?' : value}
+                                                                            </button>
+                                                                        </td>
+                                                                    );
+                                                                })}
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    <div className="border rounded-xl p-4 bg-white">
+                                        <h4 className="text-sm font-semibold text-ink mb-3">One-mode Network Table (Narrative)</h4>
+                                        {!activeCanvas || (activeCanvas.categories || []).length === 0 ? (
+                                            <p className="text-sm text-slate-500">No categories available yet.</p>
+                                        ) : (
+                                            <div className="space-y-3">
+                                                {(activeCanvas.categories || []).map((category) => {
+                                                    const defaultNarrative = buildNarrativeDefault(category.code);
+                                                    const currentNarrative = (activeCanvas.connectionNotes || {})[category.code] || defaultNarrative;
+                                                    const visibleCodes = (category.codes || []).filter((codeName) => !!codeDetailByName[codeName]);
+                                                    return (
+                                                        <div key={`narrative_${category.code}`} className="border border-slate-200 rounded-lg p-3">
+                                                            <p className="text-sm font-semibold text-slate-800 mb-2">{buildConnectionStatement(category.code)}</p>
+                                                            <div className="grid lg:grid-cols-2 gap-3">
+                                                                <div>
+                                                                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1.5">Draft narrative</p>
+                                                                    <textarea
+                                                                        value={currentNarrative}
+                                                                        onChange={(e) => updateConnectionNote(category.code, e.target.value)}
+                                                                        className="w-full min-h-[96px] border rounded-lg p-2 text-sm focus:outline-none focus:ring-2 focus:ring-tide"
+                                                                    />
+                                                                </div>
+                                                                <div className="relative">
+                                                                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1.5">In-vivo codes</p>
+                                                                    <div className="flex flex-wrap gap-1.5">
+                                                                        {visibleCodes.map((codeName) => {
+                                                                            const isSelected = selectedInVivoPopup?.codeName === codeName;
+                                                                            return (
+                                                                                <button
+                                                                                    key={`narrative_code_${category.code}_${codeName}`}
+                                                                                    type="button"
+                                                                                    onClick={() => toggleInVivoPopup(codeName, `narrative_${category.code}_${codeName}`)}
+                                                                                    className={`text-xs px-2.5 py-1 rounded-full border transition ${isSelected ? 'bg-ink text-white border-ink' : 'bg-white text-slate-700 border-slate-300 hover:border-slate-400'}`}
+                                                                                    title="Show transcript quote"
+                                                                                >
+                                                                                    {codeName}
+                                                                                </button>
+                                                                            );
+                                                                        })}
+                                                                        {visibleCodes.length === 0 && <span className="text-xs text-slate-400">No in-vivo codes assigned.</span>}
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    <div className="border rounded-xl p-4 bg-white space-y-4">
+                                        <div className="flex flex-wrap items-center gap-2 justify-between">
+                                            <h4 className="text-sm font-semibold text-ink">Relational Map</h4>
+                                            <div className="flex gap-2">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setShowRelationalMap(true)}
+                                                    className="px-3 py-2 rounded-lg bg-ink text-white text-sm font-semibold hover:bg-slate-800"
+                                                >
+                                                    Visualize connections
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setLegendFilter(null);
+                                                        setSelectedMapNodeCode(null);
+                                                    }}
+                                                    className="px-3 py-2 rounded-lg border border-slate-300 text-slate-700 text-sm font-semibold hover:bg-slate-50"
+                                                >
+                                                    Reset
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        <div className="flex flex-wrap gap-2 text-xs">
+                                            {[{
+                                                key: 'low',
+                                                label: `Low (${degreeRangeLegend.min}-${degreeRangeLegend.lowMax})`,
+                                                color: '#ef4444'
+                                            }, {
+                                                key: 'mid',
+                                                label: `Medium (${degreeRangeLegend.lowMax + 1}-${Math.min(degreeRangeLegend.midMax, degreeRangeLegend.max)})`,
+                                                color: '#3b82f6'
+                                            }, {
+                                                key: 'high',
+                                                label: `High (${Math.min(degreeRangeLegend.midMax + 1, degreeRangeLegend.max)}-${degreeRangeLegend.max})`,
+                                                color: '#16a34a'
+                                            }].map((item) => (
+                                                <button
+                                                    key={`legend_${item.key}`}
+                                                    type="button"
+                                                    onClick={() => setLegendFilter((prev) => prev === item.key ? null : item.key)}
+                                                    className={`inline-flex items-center gap-2 px-2.5 py-1.5 rounded-full border ${legendFilter === item.key ? 'border-slate-900' : 'border-slate-300'}`}
+                                                >
+                                                    <span className="h-3 w-3 rounded-full" style={{ backgroundColor: item.color }} />
+                                                    {item.label}
+                                                </button>
+                                            ))}
+                                        </div>
+
+                                        {showRelationalMap && relationalMapGeometry && relationalMapGeometry.nodes.length > 0 ? (
+                                            <div className="overflow-x-auto border rounded-lg p-2 bg-slate-50">
+                                                <svg width={relationalMapGeometry.width} height={relationalMapGeometry.height}>
+                                                    {relationalMapGeometry.links.map((link) => {
+                                                        const sourceNode = relationalMapGeometry.nodes.find((node) => node.code === link.sourceCode);
+                                                        const targetNode = relationalMapGeometry.nodes.find((node) => node.code === link.targetCode);
+                                                        if (!sourceNode || !targetNode) return null;
+                                                        const sourceActive = !legendFilter || sourceNode.tier === legendFilter;
+                                                        const targetActive = !legendFilter || targetNode.tier === legendFilter;
+                                                        const lineColor = sourceActive && targetActive ? '#64748b' : '#d1d5db';
+                                                        return (
+                                                            <line
+                                                                key={`link_${link.sourceCode}_${link.targetCode}`}
+                                                                x1={sourceNode.x}
+                                                                y1={sourceNode.y}
+                                                                x2={targetNode.x}
+                                                                y2={targetNode.y}
+                                                                stroke={lineColor}
+                                                                strokeWidth="2"
+                                                            />
+                                                        );
+                                                    })}
+
+                                                    {relationalMapGeometry.nodes.map((node) => {
+                                                        const tierColor = node.tier === 'low'
+                                                            ? '#ef4444'
+                                                            : node.tier === 'mid'
+                                                                ? '#3b82f6'
+                                                                : '#16a34a';
+                                                        const activeColor = !legendFilter || node.tier === legendFilter;
+                                                        return (
+                                                            <g key={`node_${node.code}`}>
+                                                                <circle
+                                                                    cx={node.x}
+                                                                    cy={node.y}
+                                                                    r="34"
+                                                                    fill={activeColor ? tierColor : '#d1d5db'}
+                                                                    stroke={selectedMapNodeCode === node.code ? '#0f172a' : '#ffffff'}
+                                                                    strokeWidth={selectedMapNodeCode === node.code ? '3' : '2'}
+                                                                    style={{ cursor: 'pointer' }}
+                                                                    onClick={() => setSelectedMapNodeCode(node.code)}
+                                                                />
+                                                                <text
+                                                                    x={node.x}
+                                                                    y={node.y}
+                                                                    textAnchor="middle"
+                                                                    dominantBaseline="middle"
+                                                                    fill="#ffffff"
+                                                                    fontWeight="700"
+                                                                    fontSize="12"
+                                                                    style={{ pointerEvents: 'none' }}
+                                                                >
+                                                                    {`${node.code} (${node.degree})`}
+                                                                </text>
+                                                            </g>
+                                                        );
+                                                    })}
+                                                </svg>
+                                            </div>
+                                        ) : (
+                                            <p className="text-sm text-slate-500">Click "Visualize connections" to render the relational map.</p>
+                                        )}
+
+                                        {selectedMapNodeCode && activeCanvas && (
+                                            <div className="border border-slate-200 rounded-lg p-3 bg-white">
+                                                <div className="flex items-center justify-between mb-2">
+                                                    <p className="text-sm font-semibold text-ink">{selectedMapNodeCode} details</p>
+                                                    <button type="button" onClick={() => setSelectedMapNodeCode(null)} className="text-xs font-semibold text-slate-500 hover:text-slate-700">Close</button>
+                                                </div>
+                                                <p className="text-xs text-slate-600 mb-2">{buildConnectionStatement(selectedMapNodeCode)}</p>
+                                                <p className="text-xs text-slate-600 mb-1">Connected categories:</p>
+                                                <div className="flex flex-wrap gap-1.5 mb-3">
+                                                    {(activeCanvas.categories || [])
+                                                        .filter((category) => category.code !== selectedMapNodeCode)
+                                                        .filter((category) => getConnectionValue(selectedMapNodeCode, category.code) === 1)
+                                                        .map((category) => (
+                                                            <span key={`connected_${selectedMapNodeCode}_${category.code}`} className="text-xs bg-teal-100 text-teal-800 border border-teal-200 px-2 py-0.5 rounded-full">{category.code} - {category.name}</span>
+                                                        ))}
+                                                    {(activeCanvas.categories || []).filter((category) => category.code !== selectedMapNodeCode).filter((category) => getConnectionValue(selectedMapNodeCode, category.code) === 1).length === 0 && (
+                                                        <span className="text-xs text-slate-400">No connected categories.</span>
+                                                    )}
+                                                </div>
+                                                <p className="text-xs text-slate-600 mb-1">Narrative text:</p>
+                                                <p className="text-sm text-slate-700 whitespace-pre-wrap">{(activeCanvas.connectionNotes || {})[selectedMapNodeCode] || buildNarrativeDefault(selectedMapNodeCode)}</p>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                                )}
+
+                                {showStep3 && (
+                                <>
+                                <div className="bg-white border rounded-2xl p-5 shadow-soft">
+                                    <h3 className="font-bold text-ink mb-4">Step 3: Thematic Analysis</h3>
+                                    <div className="grid lg:grid-cols-3 gap-5">
+                                        <div className="lg:col-span-1">
+                                            <div className="border rounded-xl p-3 bg-slate-50 mb-3">
+                                                <div className="flex items-center justify-between">
+                                                    <p className="text-xs uppercase font-bold tracking-wide text-slate-500">Unassigned Categories</p>
+                                                    <span className="text-xs font-semibold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">{unassignedCategories.length}</span>
+                                                </div>
+                                            </div>
+                                            <div className="space-y-2 max-h-[400px] overflow-y-auto pr-1">
+                                                {unassignedCategories.map((category) => (
+                                                    <div
+                                                        key={`unassigned_${category.id}`}
+                                                        draggable
+                                                        onDragStart={(e) => e.dataTransfer.setData('text/plain', category.name)}
+                                                        className="border rounded-lg p-3 bg-white cursor-grab hover:border-amber-400"
+                                                    >
+                                                        <div className="font-semibold text-sm text-ink">{category.name}</div>
+                                                        <div className="text-xs text-slate-500 mt-1">{category.codes.filter((codeName) => !!codeDetailByName[codeName]).length} in-vivo codes</div>
+                                                    </div>
+                                                ))}
+                                                {unassignedCategories.length === 0 && <p className="text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg p-3">All categories are grouped into themes.</p>}
+                                            </div>
+                                        </div>
+
+                                        <div className="lg:col-span-2">
+                                            <div className="flex gap-2 mb-3">
+                                                <input value={newThemeName} onChange={(e) => setNewThemeName(e.target.value)} placeholder="Create theme" className="flex-1 border rounded-lg p-2.5 focus:outline-none focus:ring-2 focus:ring-ember" />
+                                                <button onClick={addTheme} className="bg-ember hover:bg-orange-700 text-white px-4 rounded-lg font-semibold">Add Theme</button>
+                                            </div>
+
+                                            <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1">
+                                                {activeCanvas.themes.map((theme) => (
+                                                    <div
+                                                        key={theme.id}
+                                                        onDragOver={(e) => e.preventDefault()}
+                                                        onDrop={(e) => {
+                                                            e.preventDefault();
+                                                            assignCategoryToTheme(theme.id, e.dataTransfer.getData('text/plain'));
+                                                        }}
+                                                        className="border-2 border-dashed rounded-xl p-4 bg-slate-50"
+                                                    >
+                                                        <div className="flex items-center justify-between mb-3">
+                                                            <h4 className="font-bold text-ink">{theme.name}</h4>
+                                                            <div className="flex gap-2">
+                                                                <button onClick={() => renameTheme(theme.id)} className="text-xs font-semibold text-blue-700 hover:text-blue-800">Rename</button>
+                                                                <button onClick={() => removeTheme(theme.id)} className="text-xs font-semibold text-red-700 hover:text-red-800">Delete</button>
+                                                            </div>
+                                                        </div>
+
+                                                        <div className="space-y-2">
+                                                            {theme.categories.map((categoryName) => {
+                                                                const category = activeCanvas.categories.find((item) => item.name === categoryName);
+                                                                const visibleCodes = (category?.codes || []).filter((codeName) => !!codeDetailByName[codeName]);
+                                                                return (
+                                                                    <div key={`${theme.id}_${categoryName}`} className="bg-white border rounded-lg p-3">
+                                                                        <div className="flex items-center justify-between mb-2">
+                                                                            <div className="flex items-center gap-2">
+                                                                                <span className="text-[11px] font-semibold bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full">{category?.code || 'C?'}</span>
+                                                                                <div className="font-semibold text-sm text-ink">{categoryName}</div>
+                                                                            </div>
+                                                                            <div className="flex items-center gap-2">
+                                                                                <button onClick={() => toggleCategoryCodes(category?.id || `theme_${theme.id}_${categoryName}`)} className="text-xs font-semibold text-slate-700 hover:text-slate-900">{expandedCategoryIds[category?.id || `theme_${theme.id}_${categoryName}`] === false ? 'View in-vivo codes' : 'Hide in-vivo codes'}</button>
+                                                                                <button onClick={() => unassignCategoryFromTheme(theme.id, categoryName)} className="text-xs font-semibold text-red-700 hover:text-red-800">Remove</button>
+                                                                            </div>
+                                                                        </div>
+                                                                        {expandedCategoryIds[category?.id || `theme_${theme.id}_${categoryName}`] !== false && (
+                                                                            <div className="flex flex-wrap gap-1.5">
+                                                                                {visibleCodes.map((codeName) => (
+                                                                                    <button
+                                                                                        key={`${theme.id}_${categoryName}_${codeName}`}
+                                                                                        type="button"
+                                                                                        onClick={() => toggleInVivoPopup(codeName, `theme_${theme.id}_${categoryName}_${codeName}`)}
+                                                                                        className="text-[11px] bg-teal-100 text-teal-900 px-2 py-0.5 rounded-full border border-teal-200 hover:border-teal-400"
+                                                                                    >
+                                                                                        {codeName}
+                                                                                    </button>
+                                                                                ))}
+                                                                                {visibleCodes.length === 0 && <span className="text-xs text-slate-400">No filtered in-vivo codes in this category.</span>}
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                            {theme.categories.length === 0 && <p className="text-xs text-slate-400">Drop categories here to build this theme.</p>}
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                                {activeCanvas.themes.length === 0 && <p className="text-sm text-slate-500">No themes yet. Add a theme, then drag categories into it.</p>}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="bg-white border rounded-2xl p-5 shadow-soft">
+                                    <h3 className="font-bold mb-3">Thematic Table Preview</h3>
+                                    {thematicRows.length === 0 ? (
+                                        <p className="text-sm text-slate-500">No thematic rows yet. Assign categories to themes to generate the table.</p>
                                     ) : (
                                         <div className="overflow-x-auto">
                                             <table className="w-full text-sm border-collapse">
                                                 <thead>
                                                     <tr className="text-left border-b bg-slate-50">
                                                         <th className="p-3">Theme</th>
-                                                        <th className="p-3">Code</th>
                                                         <th className="p-3">Category</th>
+                                                        <th className="p-3">In-vivo Code</th>
                                                         <th className="p-3">Quotes</th>
-                                                        <th className="p-3">Details</th>
                                                     </tr>
                                                 </thead>
                                                 <tbody>
-                                                    {tableRows.map((row, idx) => (
-                                                        <tr key={`${row.theme}_${row.code}_${idx}`} className="border-b align-top">
+                                                    {thematicRows.map((row, idx) => (
+                                                        <tr key={`${row.theme}_${row.category}_${row.code}_${idx}`} className="border-b align-top">
                                                             <td className="p-3 font-semibold">{row.theme}</td>
-                                                            <td className="p-3">{row.code}</td>
                                                             <td className="p-3">{row.category}</td>
-                                                            <td className="p-3">{row.quoteCount}</td>
                                                             <td className="p-3">
-                                                                <details>
-                                                                    <summary className="cursor-pointer text-tide">Show quotes</summary>
-                                                                    <div className="mt-2 space-y-2 max-h-48 overflow-y-auto">
-                                                                        {row.quotes.length === 0 && <p className="text-xs text-slate-400">No quote text available.</p>}
-                                                                        {row.quotes.map((q, qIdx) => (
-                                                                            <div key={`${row.code}_${qIdx}`} className="text-xs bg-slate-50 border rounded p-2">
-                                                                                <p className="font-semibold text-slate-600">[{q.source}] {q.ref} • {q.folder}</p>
-                                                                                <p className="text-slate-700 italic">"{q.text}"</p>
-                                                                            </div>
-                                                                        ))}
-                                                                    </div>
-                                                                </details>
+                                                                {row.code ? (
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => toggleInVivoPopup(row.code, `thematic_table_${row.theme}_${row.category}_${row.code}_${idx}`)}
+                                                                        className="text-slate-700 hover:text-tide font-semibold"
+                                                                    >
+                                                                        {row.code}
+                                                                    </button>
+                                                                ) : '-'}
                                                             </td>
+                                                            <td className="p-3">{row.quoteCount}</td>
                                                         </tr>
                                                     ))}
                                                 </tbody>
@@ -7172,9 +8589,36 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                                         </div>
                                     )}
                                 </div>
+                                </>
+                                )}
                             </div>
                         )}
                     </div>
+
+                    {selectedInVivoPopup?.codeName && (
+                        <div className="fixed inset-0 z-40 bg-slate-900/35 flex items-center justify-center p-4" onClick={() => setSelectedInVivoPopup(null)}>
+                            <div className="w-full max-w-2xl bg-white border border-slate-200 rounded-2xl shadow-soft p-4 space-y-3" onClick={(e) => e.stopPropagation()}>
+                                <div className="flex items-center justify-between gap-3">
+                                    <h4 className="text-base font-bold text-ink">Transcript Quotes: {selectedInVivoPopup.codeName}</h4>
+                                    <button type="button" onClick={() => setSelectedInVivoPopup(null)} className="text-xs font-semibold text-slate-500 hover:text-slate-700">Close</button>
+                                </div>
+                                <div className="max-h-[55vh] overflow-y-auto pr-1 space-y-2">
+                                    {getTranscriptQuotesForCode(selectedInVivoPopup.codeName).map((quote, quoteIndex) => (
+                                        <div key={`popup_quote_${selectedInVivoPopup.codeName}_${quoteIndex}`} className="border border-slate-200 rounded-lg p-3 bg-slate-50">
+                                            <p className="text-[11px] font-semibold text-slate-600 mb-1">{quote.ref || 'Transcript'}</p>
+                                            <p className="text-xs text-slate-700 whitespace-pre-wrap">{quote.text || 'No quote text available.'}</p>
+                                        </div>
+                                    ))}
+                                    {getTranscriptQuotesForCode(selectedInVivoPopup.codeName).length === 0 && (
+                                        <p className="text-sm text-slate-500">No transcript quote available for this in-vivo code.</p>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {confirmationDialog}
+                    {inputDialog}
                 </div>
             );
         }
@@ -8544,7 +9988,7 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
             );
         }
 
-        function Codebook({ tags, transcripts, participants, artifacts, observations, observationTags, sourceFilterPresets, codeDefinitions, categoryDefinitions, onUpdateCodeDefinitions, onUpdateCategoryDefinitions, onSaveSourceFilterPreset, onDeleteSourceFilterPreset, onRenameCodeLabel, onRenameCategoryLabel }) {
+        function Codebook({ tags, transcripts, participants, artifacts, observations, observationTags, sourceFilterPresets, codeDefinitions, categoryDefinitions, onUpdateCodeDefinitions, onUpdateCategoryDefinitions, onSaveSourceFilterPreset, onDeleteSourceFilterPreset, onRenameCodeLabel, onRenameCategoryLabel, resumeState, onResumeStateChange }) {
             const [searchTerm, setSearchTerm] = useState('');
             const [sortBy, setSortBy] = useState('category');
             const [sortDirection, setSortDirection] = useState('asc');
@@ -8556,6 +10000,7 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
             const [renamingCategoryName, setRenamingCategoryName] = useState(null);
             const [renameCategoryValue, setRenameCategoryValue] = useState('');
             const hasInitializedSourceFilter = useRef(false);
+            const hasAppliedResumeRef = useRef(false);
             const toggleRow = (name) => setEditingRows(prev => {
                 const next = new Set(prev);
                 if (next.has(name)) next.delete(name); else next.add(name);
@@ -8649,6 +10094,34 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
             ]), [transcripts, artifacts, observations]);
 
             useEffect(() => {
+                if (hasAppliedResumeRef.current) return;
+                hasAppliedResumeRef.current = true;
+
+                if (!resumeState || typeof resumeState !== 'object') return;
+
+                if (typeof resumeState.searchTerm === 'string') {
+                    setSearchTerm(resumeState.searchTerm);
+                }
+
+                if (resumeState.sortBy === 'category' || resumeState.sortBy === 'code') {
+                    setSortBy(resumeState.sortBy);
+                }
+
+                if (resumeState.sortDirection === 'asc' || resumeState.sortDirection === 'desc') {
+                    setSortDirection(resumeState.sortDirection);
+                }
+
+                if (Array.isArray(resumeState.selectedSourceIds)) {
+                    const allSourceIds = new Set(sourceFilterGroups.flatMap((group) => group.items.map((item) => item.filterId)));
+                    const validSourceIds = resumeState.selectedSourceIds
+                        .map((id) => String(id || '').trim())
+                        .filter((id) => id && allSourceIds.has(id));
+                    hasInitializedSourceFilter.current = true;
+                    setSelectedSourceIds(validSourceIds);
+                }
+            }, [resumeState, sourceFilterGroups]);
+
+            useEffect(() => {
                 const allIds = sourceFilterGroups.flatMap((group) => group.items.map((item) => item.filterId));
                 setSelectedSourceIds((prev) => {
                     if (!hasInitializedSourceFilter.current) {
@@ -8663,6 +10136,17 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
             }, [sourceFilterGroups]);
 
             const selectedSourceSet = useMemo(() => new Set(selectedSourceIds), [selectedSourceIds]);
+
+            useEffect(() => {
+                if (typeof onResumeStateChange !== 'function') return;
+                onResumeStateChange({
+                    searchTerm,
+                    sortBy,
+                    sortDirection,
+                    selectedSourceIds,
+                    updatedAt: new Date().toISOString()
+                });
+            }, [searchTerm, sortBy, sortDirection, selectedSourceIds, onResumeStateChange]);
 
             const toggleSourceItem = (filterId) => {
                 setSelectedSourceIds((prev) => prev.includes(filterId)
