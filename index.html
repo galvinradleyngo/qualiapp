@@ -237,8 +237,7 @@
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-    <script type="text/babel">
-        /** @jsxRuntime classic */
+    <script type="text/babel" data-presets="env" data-plugins="transform-react-jsx">
         const { useState, useEffect, useRef, useMemo, useCallback } = React;
 
         const dbName = 'QualiMacDB_v7';
