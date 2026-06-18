@@ -1,0 +1,1310 @@
+function AnalysisBoard({ tags, canvases, onUpdate, artifacts, transcripts, participants, observations, observationTags, sourceFilterPresets, onSaveSourceFilterPreset, onDeleteSourceFilterPreset }) {
+            const { requestConfirmation, confirmationDialog } = useConfirmationDialog();
+            const { requestInput, inputDialog } = useInputDialog();
+            const [newCanvasName, setNewCanvasName] = useState('');
+            const [activeCanvasId, setActiveCanvasId] = useState(canvases[0]?.id || null);
+            const [newCategoryName, setNewCategoryName] = useState('');
+            const [newThemeName, setNewThemeName] = useState('');
+            const [selectedFolders, setSelectedFolders] = useState([]);
+            const [selectedSourceIds, setSelectedSourceIds] = useState([]);
+            const [showExportMenu, setShowExportMenu] = useState(false);
+            const [processStepView, setProcessStepView] = useState('both');
+            const [expandedCategoryIds, setExpandedCategoryIds] = useState({});
+            const hasInitializedSourceFilter = useRef(false);
+
+            const parseCategoryCodeNumber = (value) => {
+                const match = /^C(\d+)$/i.exec(String(value || '').trim());
+                return match ? Number(match[1]) : null;
+            };
+
+            const getNextCategoryCode = (categories = []) => {
+                const max = categories.reduce((acc, category) => {
+                    const parsed = parseCategoryCodeNumber(category.code);
+                    return parsed && parsed > acc ? parsed : acc;
+                }, 0);
+                return `C${max + 1}`;
+            };
+
+            const csvEscape = (value) => {
+                const text = String(value ?? '');
+                if (/[",\n]/.test(text)) return `"${text.replace(/"/g, '""')}"`;
+                return text;
+            };
+
+            const downloadCsv = (filename, lines) => {
+                const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(blob);
+                link.download = filename;
+                link.click();
+                URL.revokeObjectURL(link.href);
+            };
+
+            useEffect(() => {
+                if (!activeCanvasId && canvases[0]) setActiveCanvasId(canvases[0].id);
+            }, [canvases, activeCanvasId]);
+
+            const transcriptById = useMemo(() => {
+                const out = {};
+                transcripts.forEach((t) => { out[t.id] = t; });
+                return out;
+            }, [transcripts]);
+
+            const participantCodeById = useMemo(() => {
+                const out = {};
+                (participants || []).forEach((p) => { out[p.id] = p.pseudonym || p.id; });
+                return out;
+            }, [participants]);
+
+            const sourceFilterGroups = useMemo(() => ([
+                {
+                    type: 'transcript',
+                    label: sourceFilterTypeLabels.transcript,
+                    items: (transcripts || []).map((transcript) => ({
+                        filterId: buildSourceFilterId('transcript', transcript.id),
+                        label: transcript.title || `Transcript ${String(transcript.id).slice(-4)}`,
+                        meta: transcript.folder || 'Uncategorized'
+                    }))
+                },
+                {
+                    type: 'artifact',
+                    label: sourceFilterTypeLabels.artifact,
+                    items: (artifacts || []).map((artifact) => ({
+                        filterId: buildSourceFilterId('artifact', artifact.id),
+                        label: artifact.name || `Artifact ${String(artifact.id).slice(-4)}`,
+                        meta: artifact.folder || 'Uncategorized'
+                    }))
+                },
+                {
+                    type: 'observation',
+                    label: sourceFilterTypeLabels.observation,
+                    items: (observations || []).map((observation) => ({
+                        filterId: buildSourceFilterId('observation', observation.id),
+                        label: observation.title || `Observation ${String(observation.id).slice(-4)}`,
+                        meta: [observation.location || 'Onsite Observation', observation.date].filter(Boolean).join(' • ')
+                    }))
+                }
+            ]), [transcripts, artifacts, observations]);
+
+            useEffect(() => {
+                const allIds = sourceFilterGroups.flatMap((group) => group.items.map((item) => item.filterId));
+                setSelectedSourceIds((prev) => {
+                    if (!hasInitializedSourceFilter.current) {
+                        hasInitializedSourceFilter.current = true;
+                        return allIds;
+                    }
+                    const prevSet = new Set(prev);
+                    const retained = prev.filter((id) => allIds.includes(id));
+                    const added = allIds.filter((id) => !prevSet.has(id));
+                    return [...retained, ...added];
+                });
+            }, [sourceFilterGroups]);
+
+            const selectedSourceSet = useMemo(() => new Set(selectedSourceIds), [selectedSourceIds]);
+
+            const toggleSourceItem = (filterId) => {
+                setSelectedSourceIds((prev) => prev.includes(filterId)
+                    ? prev.filter((id) => id !== filterId)
+                    : [...prev, filterId]
+                );
+            };
+
+            const handleSelectAllSources = () => {
+                setSelectedSourceIds(sourceFilterGroups.flatMap((group) => group.items.map((item) => item.filterId)));
+            };
+
+            const handleClearAllSources = () => {
+                setSelectedSourceIds([]);
+            };
+
+            const handleApplyPreset = (resolvedIds) => {
+                setSelectedSourceIds(resolvedIds);
+            };
+
+            const handleToggleSourceGroup = (type) => {
+                const group = sourceFilterGroups.find((entry) => entry.type === type);
+                if (!group) return;
+                const groupIds = group.items.map((item) => item.filterId);
+                setSelectedSourceIds((prev) => {
+                    const hasAll = groupIds.every((id) => prev.includes(id));
+                    return hasAll
+                        ? prev.filter((id) => !groupIds.includes(id))
+                        : [...new Set([...prev, ...groupIds])];
+                });
+            };
+
+            const availableFolders = useMemo(() => {
+                const set = new Set();
+                transcripts.forEach((t) => set.add(t.folder || 'Uncategorized'));
+                (artifacts || []).forEach((a) => set.add(a.folder || 'Uncategorized'));
+                (observations || []).forEach((o) => set.add(o.location || 'Onsite Observation'));
+                return Array.from(set).sort((a, b) => a.localeCompare(b));
+            }, [transcripts, artifacts, observations]);
+
+            useEffect(() => {
+                if (selectedFolders.length === 0 && availableFolders.length > 0) {
+                    setSelectedFolders(availableFolders);
+                }
+            }, [availableFolders, selectedFolders.length]);
+
+            const selectedFolderSet = useMemo(() => new Set(selectedFolders), [selectedFolders]);
+            const includeAllSources = selectedSourceSet.size === 0;
+            const includeAllFolders = selectedFolderSet.size === 0;
+
+            const codeDetails = useMemo(() => {
+                const map = {};
+                tags.forEach((t) => {
+                    const parent = transcriptById[t.transcriptId];
+                    const folder = parent?.folder || 'Uncategorized';
+                    if (!includeAllSources && !selectedSourceSet.has(buildSourceFilterId('transcript', t.transcriptId))) return;
+                    if (!includeAllFolders && !selectedFolderSet.has(folder)) return;
+                    if (!map[t.tagName]) {
+                        map[t.tagName] = {
+                            name: t.tagName,
+                            category: t.category || 'Uncategorized',
+                            count: 0,
+                            sourceSet: new Set(),
+                            quotes: [],
+                            folders: new Set()
+                        };
+                    }
+                    map[t.tagName].count += 1;
+                    map[t.tagName].sourceSet.add('transcript');
+                    map[t.tagName].folders.add(folder);
+                    const participantCode = parent?.participantId ? (participantCodeById[parent.participantId] || parent.participantId) : null;
+                    map[t.tagName].quotes.push({
+                        source: 'Transcript',
+                        folder,
+                        ref: participantCode || `Transcript ${String(t.transcriptId).slice(-4)}`,
+                        text: t.textSnippet || ''
+                    });
+                });
+
+                (artifacts || []).forEach((art) => {
+                    const folder = art.folder || 'Uncategorized';
+                    if (!includeAllSources && !selectedSourceSet.has(buildSourceFilterId('artifact', art.id))) return;
+                    if (!includeAllFolders && !selectedFolderSet.has(folder)) return;
+                    (art.codes || []).forEach((codeName) => {
+                        if (!map[codeName]) {
+                            map[codeName] = {
+                                name: codeName,
+                                category: 'Artifact',
+                                count: 0,
+                                sourceSet: new Set(),
+                                quotes: [],
+                                folders: new Set()
+                            };
+                        }
+                        map[codeName].sourceSet.add('artifact');
+                        map[codeName].folders.add(folder);
+                        if (art.notes && art.notes.trim()) {
+                            map[codeName].quotes.push({
+                                source: 'Artifact',
+                                folder,
+                                ref: art.name,
+                                text: art.notes
+                            });
+                        }
+                    });
+                });
+
+                (observationTags || []).forEach((t) => {
+                    const parent = (observations || []).find((o) => o.id === t.observationId);
+                    const folder = parent?.location || 'Onsite Observation';
+                    if (!includeAllSources && !selectedSourceSet.has(buildSourceFilterId('observation', t.observationId))) return;
+                    if (!includeAllFolders && !selectedFolderSet.has(folder)) return;
+                    if (!map[t.tagName]) {
+                        map[t.tagName] = {
+                            name: t.tagName,
+                            category: t.category || 'Uncategorized',
+                            count: 0,
+                            sourceSet: new Set(),
+                            quotes: [],
+                            folders: new Set()
+                        };
+                    }
+                    map[t.tagName].count += 1;
+                    map[t.tagName].sourceSet.add('observation');
+                    map[t.tagName].folders.add(folder);
+                    map[t.tagName].quotes.push({
+                        source: 'Observation',
+                        folder,
+                        ref: parent ? parent.title : `Observation ${String(t.observationId).slice(-4)}`,
+                        text: t.textSnippet || ''
+                    });
+                });
+
+                return Object.values(map)
+                    .map((c) => ({
+                        ...c,
+                        source: (() => {
+                            const s = c.sourceSet;
+                            const count = [s.has('transcript'), s.has('artifact'), s.has('observation')].filter(Boolean).length;
+                            if (count > 1) return 'multiple';
+                            if (s.has('artifact')) return 'artifact';
+                            if (s.has('observation')) return 'observation';
+                            return 'transcript';
+                        })()
+                    }))
+                    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+            }, [tags, artifacts, observationTags, observations, transcriptById, participantCodeById, selectedSourceSet, selectedFolderSet, includeAllSources, includeAllFolders]);
+
+            const codeDetailByName = useMemo(() => {
+                const out = {};
+                codeDetails.forEach((item) => {
+                    out[item.name] = item;
+                });
+                return out;
+            }, [codeDetails]);
+
+            const normalizeCanvas = (canvas) => {
+                const normalizedCategories = Array.isArray(canvas?.categories)
+                    ? canvas.categories.map((category, index) => ({
+                        id: category.id || `cat_${index}`,
+                        name: (category.name || '').trim() || `Category ${index + 1}`,
+                        code: String(category.code || `C${index + 1}`).trim() || `C${index + 1}`,
+                        codes: [...new Set((category.codes || []).map((name) => String(name || '').trim()).filter(Boolean))]
+                    }))
+                    : [];
+
+                const categories = normalizedCategories.length > 0
+                    ? normalizedCategories
+                    : (() => {
+                        const grouped = {};
+                        codeDetails.forEach((code, index) => {
+                            const categoryName = (code.category || 'Uncategorized').trim() || 'Uncategorized';
+                            if (!grouped[categoryName]) grouped[categoryName] = { id: `cat_inferred_${index}`, name: categoryName, code: `C${Object.keys(grouped).length + 1}`, codes: [] };
+                            grouped[categoryName].codes.push(code.name);
+                        });
+                        return Object.values(grouped).map((entry) => ({ ...entry, codes: [...new Set(entry.codes)] }));
+                    })();
+
+                const themes = (canvas?.themes || []).map((theme, index) => {
+                    const explicitCategories = Array.isArray(theme.categories)
+                        ? theme.categories.map((name) => String(name || '').trim()).filter(Boolean)
+                        : [];
+                    const fallbackCategories = explicitCategories.length > 0
+                        ? explicitCategories
+                        : [...new Set((theme.codes || []).map((codeName) => {
+                            const found = codeDetailByName[codeName];
+                            return (found?.category || 'Uncategorized').trim() || 'Uncategorized';
+                        }))];
+                    return {
+                        id: theme.id || `theme_${index}`,
+                        name: (theme.name || '').trim() || `Theme ${index + 1}`,
+                        categories: fallbackCategories
+                    };
+                });
+
+                return {
+                    id: canvas?.id,
+                    name: canvas?.name,
+                    categories,
+                    themes
+                };
+            };
+
+            const activeCanvasRaw = canvases.find((c) => c.id === activeCanvasId) || null;
+            const activeCanvas = useMemo(() => (activeCanvasRaw ? normalizeCanvas(activeCanvasRaw) : null), [activeCanvasRaw, codeDetailByName, codeDetails]);
+
+            const persistCanvas = (nextCanvas) => {
+                const serializedThemes = (nextCanvas.themes || []).map((theme) => {
+                    const selectedCodes = (nextCanvas.categories || [])
+                        .filter((category) => theme.categories.includes(category.name))
+                        .flatMap((category) => category.codes || []);
+                    return {
+                        ...theme,
+                        categories: [...theme.categories],
+                        codes: [...new Set(selectedCodes)]
+                    };
+                });
+
+                const payload = {
+                    ...nextCanvas,
+                    categories: (nextCanvas.categories || []).map((category) => ({
+                        ...category,
+                        code: String(category.code || '').trim(),
+                        codes: [...new Set(category.codes || [])]
+                    })),
+                    themes: serializedThemes
+                };
+
+                onUpdate(canvases.map((canvas) => canvas.id === payload.id ? payload : canvas));
+            };
+
+            const createCanvas = () => {
+                if (!newCanvasName.trim()) return;
+                const canvas = {
+                    id: Date.now().toString(),
+                    name: newCanvasName.trim(),
+                    categories: [],
+                    themes: []
+                };
+                onUpdate([canvas, ...canvases]);
+                setActiveCanvasId(canvas.id);
+                setNewCanvasName('');
+            };
+
+            const deleteCanvas = async (canvasId) => {
+                const shouldDelete = await requestConfirmation({
+                    title: 'Delete Workspace',
+                    message: 'Delete this clustering workspace and all thematic mappings?',
+                    confirmLabel: 'Delete Workspace'
+                });
+                if (!shouldDelete) return;
+                const updated = canvases.filter((canvas) => canvas.id !== canvasId);
+                onUpdate(updated);
+                if (activeCanvasId === canvasId) setActiveCanvasId(updated[0]?.id || null);
+            };
+
+            const renameCanvas = async (canvasId) => {
+                const currentCanvas = canvases.find((canvas) => canvas.id === canvasId);
+                const nextName = await requestInput({
+                    title: 'Rename Workspace',
+                    message: 'Enter a new name for this clustering workspace.',
+                    label: 'Workspace name',
+                    initialValue: currentCanvas?.name || '',
+                    confirmLabel: 'Rename',
+                    validate: (value) => {
+                        if (!(value || '').trim()) return 'Workspace name is required.';
+                        return '';
+                    }
+                });
+                if (nextName == null) return;
+                onUpdate(canvases.map((canvas) => canvas.id === canvasId ? { ...canvas, name: nextName.trim() } : canvas));
+            };
+
+            const addCategory = () => {
+                if (!activeCanvas || !newCategoryName.trim()) return;
+                if (activeCanvas.categories.some((category) => category.name.toLowerCase() === newCategoryName.trim().toLowerCase())) return;
+                const nextCanvas = {
+                    ...activeCanvas,
+                    categories: [...activeCanvas.categories, { id: Date.now().toString(), name: newCategoryName.trim(), code: getNextCategoryCode(activeCanvas.categories), codes: [] }]
+                };
+                persistCanvas(nextCanvas);
+                setNewCategoryName('');
+            };
+
+            const toggleCategoryCodes = (categoryId) => {
+                setExpandedCategoryIds((prev) => ({
+                    ...prev,
+                    [categoryId]: !prev[categoryId]
+                }));
+            };
+
+            const removeCategory = async (categoryId) => {
+                if (!activeCanvas) return;
+                const categoryToDelete = activeCanvas.categories.find((category) => category.id === categoryId);
+                if (!categoryToDelete) return;
+                const shouldDelete = await requestConfirmation({
+                    title: 'Delete Category',
+                    message: `Delete category "${categoryToDelete.name}" and unassign its in-vivo codes?`,
+                    confirmLabel: 'Delete Category'
+                });
+                if (!shouldDelete) return;
+
+                const nextCanvas = {
+                    ...activeCanvas,
+                    categories: activeCanvas.categories.filter((category) => category.id !== categoryId),
+                    themes: activeCanvas.themes.map((theme) => ({
+                        ...theme,
+                        categories: theme.categories.filter((name) => name !== categoryToDelete.name)
+                    }))
+                };
+                persistCanvas(nextCanvas);
+            };
+
+            const renameCategory = async (categoryId) => {
+                if (!activeCanvas) return;
+                const target = activeCanvas.categories.find((category) => category.id === categoryId);
+                if (!target) return;
+                const nextName = await requestInput({
+                    title: 'Rename Category',
+                    message: 'Enter a new category name.',
+                    label: 'Category name',
+                    initialValue: target.name,
+                    confirmLabel: 'Rename',
+                    validate: (value) => {
+                        if (!(value || '').trim()) return 'Category name is required.';
+                        return '';
+                    }
+                });
+                if (nextName == null) return;
+                const trimmed = nextName.trim();
+                if (!trimmed) return;
+
+                const nextCanvas = {
+                    ...activeCanvas,
+                    categories: activeCanvas.categories.map((category) => category.id === categoryId ? { ...category, name: trimmed } : category),
+                    themes: activeCanvas.themes.map((theme) => ({
+                        ...theme,
+                        categories: theme.categories.map((name) => name === target.name ? trimmed : name)
+                    }))
+                };
+                persistCanvas(nextCanvas);
+            };
+
+            const assignCodeToCategory = (categoryId, codeName) => {
+                if (!activeCanvas || !codeName) return;
+                const cleanedCode = String(codeName || '').trim();
+                if (!cleanedCode) return;
+
+                const nextCategories = activeCanvas.categories.map((category) => ({
+                    ...category,
+                    codes: category.codes.filter((code) => code !== cleanedCode)
+                }));
+                const targetIndex = nextCategories.findIndex((category) => category.id === categoryId);
+                if (targetIndex === -1) return;
+                nextCategories[targetIndex].codes = [...nextCategories[targetIndex].codes, cleanedCode];
+                persistCanvas({ ...activeCanvas, categories: nextCategories });
+            };
+
+            const unassignCode = (codeName) => {
+                if (!activeCanvas || !codeName) return;
+                const cleanedCode = String(codeName || '').trim();
+                const nextCategories = activeCanvas.categories.map((category) => ({
+                    ...category,
+                    codes: category.codes.filter((code) => code !== cleanedCode)
+                }));
+                persistCanvas({ ...activeCanvas, categories: nextCategories });
+            };
+
+            const addTheme = () => {
+                if (!activeCanvas || !newThemeName.trim()) return;
+                const nextCanvas = {
+                    ...activeCanvas,
+                    themes: [...activeCanvas.themes, { id: Date.now().toString(), name: newThemeName.trim(), categories: [] }]
+                };
+                persistCanvas(nextCanvas);
+                setNewThemeName('');
+            };
+
+            const removeTheme = async (themeId) => {
+                if (!activeCanvas) return;
+                const shouldDelete = await requestConfirmation({
+                    title: 'Delete Theme',
+                    message: 'Delete this theme grouping?',
+                    confirmLabel: 'Delete Theme'
+                });
+                if (!shouldDelete) return;
+                const nextCanvas = { ...activeCanvas, themes: activeCanvas.themes.filter((theme) => theme.id !== themeId) };
+                persistCanvas(nextCanvas);
+            };
+
+            const renameTheme = async (themeId) => {
+                if (!activeCanvas) return;
+                const target = activeCanvas.themes.find((theme) => theme.id === themeId);
+                if (!target) return;
+                const nextName = await requestInput({
+                    title: 'Rename Theme',
+                    message: 'Enter a new theme label.',
+                    label: 'Theme name',
+                    initialValue: target.name,
+                    confirmLabel: 'Rename',
+                    validate: (value) => {
+                        if (!(value || '').trim()) return 'Theme name is required.';
+                        return '';
+                    }
+                });
+                if (nextName == null) return;
+                const trimmed = nextName.trim();
+                if (!trimmed) return;
+
+                const nextCanvas = {
+                    ...activeCanvas,
+                    themes: activeCanvas.themes.map((theme) => theme.id === themeId ? { ...theme, name: trimmed } : theme)
+                };
+                persistCanvas(nextCanvas);
+            };
+
+            const assignCategoryToTheme = (themeId, categoryName) => {
+                if (!activeCanvas || !themeId || !categoryName) return;
+                const cleanedCategory = String(categoryName || '').trim();
+                if (!cleanedCategory) return;
+
+                const nextThemes = activeCanvas.themes.map((theme) => ({
+                    ...theme,
+                    categories: theme.categories.filter((name) => name !== cleanedCategory)
+                }));
+                const targetIndex = nextThemes.findIndex((theme) => theme.id === themeId);
+                if (targetIndex === -1) return;
+                nextThemes[targetIndex].categories = [...nextThemes[targetIndex].categories, cleanedCategory];
+                persistCanvas({ ...activeCanvas, themes: nextThemes });
+            };
+
+            const unassignCategoryFromTheme = (themeId, categoryName) => {
+                if (!activeCanvas) return;
+                const nextCanvas = {
+                    ...activeCanvas,
+                    themes: activeCanvas.themes.map((theme) => (
+                        theme.id === themeId
+                            ? { ...theme, categories: theme.categories.filter((name) => name !== categoryName) }
+                            : theme
+                    ))
+                };
+                persistCanvas(nextCanvas);
+            };
+
+            const toggleFolder = (folder) => {
+                setSelectedFolders((prev) => prev.includes(folder) ? prev.filter((name) => name !== folder) : [...prev, folder]);
+            };
+
+            const categoryByCode = useMemo(() => {
+                const out = {};
+                (activeCanvas?.categories || []).forEach((category) => {
+                    (category.codes || []).forEach((codeName) => {
+                        out[codeName] = category.name;
+                    });
+                });
+                return out;
+            }, [activeCanvas]);
+
+            const assignedCodes = useMemo(() => new Set(Object.keys(categoryByCode)), [categoryByCode]);
+            const unassignedCodes = useMemo(() => codeDetails.filter((code) => !assignedCodes.has(code.name)), [codeDetails, assignedCodes]);
+
+            const unassignedCategories = useMemo(() => {
+                if (!activeCanvas) return [];
+                const assignedCategoryNames = new Set(activeCanvas.themes.flatMap((theme) => theme.categories));
+                return activeCanvas.categories.filter((category) => !assignedCategoryNames.has(category.name));
+            }, [activeCanvas]);
+
+            const clusteringRows = useMemo(() => codeDetails.map((code) => ({
+                code: code.name,
+                category: categoryByCode[code.name] || 'Unassigned',
+                quoteCount: code.count,
+                source: code.source,
+                folders: Array.from(code.folders || []).join(' | ')
+            })), [codeDetails, categoryByCode]);
+
+            const thematicRows = useMemo(() => {
+                if (!activeCanvas) return [];
+                const rows = [];
+                activeCanvas.themes.forEach((theme) => {
+                    theme.categories.forEach((categoryName) => {
+                        const foundCategory = activeCanvas.categories.find((category) => category.name === categoryName);
+                        const categoryCodes = (foundCategory?.codes || []).filter((codeName) => !!codeDetailByName[codeName]);
+                        if (categoryCodes.length === 0) {
+                            rows.push({
+                                theme: theme.name,
+                                category: categoryName,
+                                code: '',
+                                quoteCount: 0,
+                                source: '',
+                                folders: ''
+                            });
+                        } else {
+                            categoryCodes.forEach((codeName) => {
+                                const detail = codeDetailByName[codeName];
+                                rows.push({
+                                    theme: theme.name,
+                                    category: categoryName,
+                                    code: codeName,
+                                    quoteCount: detail?.count || 0,
+                                    source: detail?.source || '',
+                                    folders: Array.from(detail?.folders || []).join(' | ')
+                                });
+                            });
+                        }
+                    });
+                });
+                return rows;
+            }, [activeCanvas, codeDetailByName]);
+
+            const exportClusteringTable = () => {
+                if (!activeCanvas) return;
+                const lines = ['In-vivo Code,Category Code,Category,Quote Count,Source,Folders'];
+                clusteringRows.forEach((row) => {
+                    const foundCategory = (activeCanvas.categories || []).find((category) => category.name === row.category);
+                    lines.push([
+                        csvEscape(row.code),
+                        csvEscape(foundCategory?.code || ''),
+                        csvEscape(row.category),
+                        csvEscape(row.quoteCount),
+                        csvEscape(row.source),
+                        csvEscape(row.folders)
+                    ].join(','));
+                });
+                downloadCsv(`${activeCanvas.name.replace(/\s+/g, '_')}_clustering_table.csv`, lines);
+            };
+
+            const exportThematicTable = () => {
+                if (!activeCanvas) return;
+                const lines = ['Theme,Category Code,Category,In-vivo Code,Quote Count,Source,Folders'];
+                thematicRows.forEach((row) => {
+                    const foundCategory = (activeCanvas.categories || []).find((category) => category.name === row.category);
+                    lines.push([
+                        csvEscape(row.theme),
+                        csvEscape(foundCategory?.code || ''),
+                        csvEscape(row.category),
+                        csvEscape(row.code),
+                        csvEscape(row.quoteCount),
+                        csvEscape(row.source),
+                        csvEscape(row.folders)
+                    ].join(','));
+                });
+                downloadCsv(`${activeCanvas.name.replace(/\s+/g, '_')}_thematic_table.csv`, lines);
+            };
+
+            const uniqueCodeCount = new Set(codeDetails.map((code) => code.name)).size;
+            const uniqueCategoryCount = new Set((activeCanvas?.categories || []).map((category) => category.name)).size;
+            const uniqueThemeCount = new Set((activeCanvas?.themes || []).map((theme) => theme.name)).size;
+            const showStep2 = processStepView !== 'step3';
+            const showStep3 = processStepView !== 'step2';
+
+            return (
+                <div className="p-8 h-full overflow-y-auto">
+                    <div className="max-w-7xl mx-auto space-y-6">
+                        <div className="bg-white border rounded-2xl p-6 shadow-soft">
+                            <h2 className="text-3xl font-display">Clustering and Thematic Analysis</h2>
+                            <p className="text-slate-500 mt-1">Step 2: assign in-vivo code cards into categories (clustering). Step 3: group categories into themes. All data stays offline on this device.</p>
+                            <p className="text-slate-500 mt-1">Filtered in-vivo codes: {uniqueCodeCount} • Categories in workspace: {uniqueCategoryCount} • Themes in workspace: {uniqueThemeCount}</p>
+                        </div>
+
+                        <SourceItemFilterPanel
+                            title="Included Source Items"
+                            description="Choose which transcripts, artifacts, and onsite observations are included. Checked items stay in clustering cards and thematic exports."
+                            groups={sourceFilterGroups}
+                            selectedIds={selectedSourceIds}
+                            presets={sourceFilterPresets}
+                            onToggleItem={toggleSourceItem}
+                            onSelectAll={handleSelectAllSources}
+                            onClearAll={handleClearAllSources}
+                            onToggleGroup={handleToggleSourceGroup}
+                            onApplyPreset={handleApplyPreset}
+                            onSavePreset={onSaveSourceFilterPreset}
+                            onDeletePreset={onDeleteSourceFilterPreset}
+                        />
+
+                        <div className="bg-white border rounded-2xl p-5 shadow-soft grid md:grid-cols-3 gap-4">
+                            <div className="md:col-span-2 flex gap-2">
+                                <input value={newCanvasName} onChange={(e) => setNewCanvasName(e.target.value)} placeholder="New clustering workspace" className="flex-1 border rounded-lg p-2.5 focus:outline-none focus:ring-2 focus:ring-tide" />
+                                <button onClick={createCanvas} className="bg-tide hover:bg-teal-600 text-white px-4 rounded-lg font-semibold">Create Workspace</button>
+                            </div>
+                            <select value={activeCanvasId || ''} onChange={(e) => setActiveCanvasId(e.target.value)} className="border rounded-lg p-2.5">
+                                <option value="">Select workspace</option>
+                                {canvases.map((canvas) => <option key={canvas.id} value={canvas.id}>{canvas.name}</option>)}
+                            </select>
+                        </div>
+
+                        <div className="bg-white border rounded-2xl p-5 shadow-soft">
+                            <div className="flex items-center justify-between mb-3">
+                                <h3 className="font-bold">Folder Filter</h3>
+                                <button onClick={() => setSelectedFolders(availableFolders)} className="text-xs font-semibold text-tide">Select All</button>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                                {availableFolders.map((folder) => (
+                                    <label key={folder} className={`px-3 py-1.5 rounded-full border text-xs cursor-pointer ${selectedFolderSet.has(folder) ? 'bg-teal-100 border-teal-300 text-teal-800' : 'bg-white text-slate-600'}`}>
+                                        <input type="checkbox" className="hidden" checked={selectedFolderSet.has(folder)} onChange={() => toggleFolder(folder)} />
+                                        {folder}
+                                    </label>
+                                ))}
+                            </div>
+                        </div>
+
+                        {!activeCanvas ? (
+                            <div className="text-center py-16 bg-white border rounded-2xl text-slate-500">Create or select a workspace to begin clustering.</div>
+                        ) : (
+                            <div className="space-y-6">
+                                <div className="flex justify-between items-center bg-white border rounded-2xl p-4 shadow-soft">
+                                    <h3 className="text-lg font-bold text-ink">{activeCanvas.name}</h3>
+                                    <div className="flex gap-2">
+                                        <button onClick={() => renameCanvas(activeCanvas.id)} className="px-3 py-1 text-sm bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 font-semibold">Rename</button>
+                                        <button onClick={() => deleteCanvas(activeCanvas.id)} className="px-3 py-1 text-sm bg-red-100 text-red-700 rounded-lg hover:bg-red-200 font-semibold">Delete</button>
+                                    </div>
+                                </div>
+
+                                <div className="bg-white border rounded-2xl p-4 shadow-soft flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                                    <div>
+                                        <h3 className="font-bold text-ink">Process Step View</h3>
+                                        <p className="text-xs text-slate-500">Focus on Step 2, Step 3, or keep both visible.</p>
+                                    </div>
+                                    <div className="inline-flex bg-slate-100 p-1 rounded-lg">
+                                        <button
+                                            type="button"
+                                            onClick={() => { setShowExportMenu(false); setProcessStepView('step2'); }}
+                                            className={`px-3 py-1.5 text-sm font-semibold rounded-md transition ${processStepView === 'step2' ? 'bg-white text-ink shadow' : 'text-slate-600 hover:bg-slate-200'}`}
+                                        >
+                                            Step 2 only
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => { setShowExportMenu(false); setProcessStepView('step3'); }}
+                                            className={`px-3 py-1.5 text-sm font-semibold rounded-md transition ${processStepView === 'step3' ? 'bg-white text-ink shadow' : 'text-slate-600 hover:bg-slate-200'}`}
+                                        >
+                                            Step 3 only
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => { setShowExportMenu(false); setProcessStepView('both'); }}
+                                            className={`px-3 py-1.5 text-sm font-semibold rounded-md transition ${processStepView === 'both' ? 'bg-white text-ink shadow' : 'text-slate-600 hover:bg-slate-200'}`}
+                                        >
+                                            Both steps
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {showStep2 && (
+                                <div className="bg-white border rounded-2xl p-5 shadow-soft">
+                                    <div className="flex items-center justify-between mb-4">
+                                        <h3 className="font-bold text-ink">Step 2: Clustering</h3>
+                                        <div className="relative">
+                                            <button
+                                                type="button"
+                                                onClick={() => setShowExportMenu((prev) => !prev)}
+                                                className="px-3 py-1.5 rounded-lg bg-ink text-white text-sm font-semibold hover:bg-slate-800"
+                                            >
+                                                Export Tables
+                                            </button>
+                                            {showExportMenu && (
+                                                <div className="absolute right-0 mt-2 w-72 bg-white border border-slate-200 rounded-xl shadow-soft z-30 p-2">
+                                                    <button type="button" onClick={() => { exportClusteringTable(); setShowExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm text-slate-700">In-vivo codes with clustering categories (.csv)</button>
+                                                    <button type="button" onClick={() => { exportThematicTable(); setShowExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm text-slate-700">Themes, categories, and in-vivo codes (.csv)</button>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    <div className="grid lg:grid-cols-3 gap-5">
+                                        <div className="lg:col-span-1 space-y-3">
+                                            <div className="border rounded-xl p-3 bg-slate-50">
+                                                <div className="flex items-center justify-between">
+                                                    <p className="text-xs uppercase font-bold tracking-wide text-slate-500">Unassigned In-vivo Codes</p>
+                                                    <span className="text-xs font-semibold text-red-700 bg-red-100 px-2 py-0.5 rounded-full">{unassignedCodes.length}</span>
+                                                </div>
+                                                <p className="text-xs text-slate-500 mt-1">Drag cards into a category or use the quick category selector.</p>
+                                            </div>
+                                            <div className="space-y-2 max-h-[520px] overflow-y-auto pr-1">
+                                                {unassignedCodes.map((code) => (
+                                                    <div
+                                                        key={code.name}
+                                                        draggable
+                                                        onDragStart={(e) => e.dataTransfer.setData('text/plain', code.name)}
+                                                        className="border rounded-lg p-3 bg-white cursor-grab hover:border-tide transition"
+                                                    >
+                                                        <div className="font-semibold text-sm text-ink">{code.name}</div>
+                                                        <div className="text-xs text-slate-500 mt-1">{code.count} quotes • {code.source}</div>
+                                                        <select
+                                                            value=""
+                                                            onChange={(e) => {
+                                                                if (!e.target.value) return;
+                                                                assignCodeToCategory(e.target.value, code.name);
+                                                            }}
+                                                            className="mt-2 w-full border rounded p-1.5 text-xs"
+                                                        >
+                                                            <option value="">Quick assign to category...</option>
+                                                            {activeCanvas.categories.map((category) => (
+                                                                <option key={category.id} value={category.id}>{category.name}</option>
+                                                            ))}
+                                                        </select>
+                                                    </div>
+                                                ))}
+                                                {unassignedCodes.length === 0 && <p className="text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg p-3">All filtered in-vivo codes are assigned.</p>}
+                                            </div>
+                                        </div>
+
+                                        <div className="lg:col-span-2">
+                                            <div className="flex gap-2 mb-3">
+                                                <input value={newCategoryName} onChange={(e) => setNewCategoryName(e.target.value)} placeholder="Create category" className="flex-1 border rounded-lg p-2.5 focus:outline-none focus:ring-2 focus:ring-tide" />
+                                                <button onClick={addCategory} className="bg-tide hover:bg-teal-600 text-white px-4 rounded-lg font-semibold">Add Category</button>
+                                            </div>
+
+                                            <div className="space-y-3 max-h-[560px] overflow-y-auto pr-1">
+                                                {activeCanvas.categories.map((category) => (
+                                                    <div
+                                                        key={category.id}
+                                                        onDragOver={(e) => e.preventDefault()}
+                                                        onDrop={(e) => {
+                                                            e.preventDefault();
+                                                            assignCodeToCategory(category.id, e.dataTransfer.getData('text/plain'));
+                                                        }}
+                                                        className="border-2 border-dashed rounded-xl p-4 bg-slate-50"
+                                                    >
+                                                        <div className="flex items-center justify-between mb-3">
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="text-[11px] font-semibold bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full">{category.code || 'C?'}</span>
+                                                                <h4 className="font-bold text-ink">{category.name}</h4>
+                                                                <span className="text-[11px] font-semibold bg-teal-100 text-teal-800 px-2 py-0.5 rounded-full">{category.codes.length} assigned</span>
+                                                            </div>
+                                                            <div className="flex gap-2">
+                                                                <button onClick={() => toggleCategoryCodes(category.id)} className="text-xs font-semibold text-slate-700 hover:text-slate-900">{expandedCategoryIds[category.id] ? 'Hide in-vivo codes' : 'View in-vivo codes'}</button>
+                                                                <button onClick={() => renameCategory(category.id)} className="text-xs font-semibold text-blue-700 hover:text-blue-800">Rename</button>
+                                                                <button onClick={() => removeCategory(category.id)} className="text-xs font-semibold text-red-700 hover:text-red-800">Delete</button>
+                                                            </div>
+                                                        </div>
+                                                        {expandedCategoryIds[category.id] && (
+                                                            <div className="flex flex-wrap gap-2">
+                                                                {category.codes.filter((codeName) => !!codeDetailByName[codeName]).map((codeName) => (
+                                                                    <span key={`${category.id}_${codeName}`} className="inline-flex items-center gap-2 text-xs bg-white border border-slate-300 px-3 py-1 rounded-full">
+                                                                        <span className="font-semibold">{codeName}</span>
+                                                                        <span className="text-slate-500">({codeDetailByName[codeName]?.count || 0})</span>
+                                                                        <button onClick={() => unassignCode(codeName)} className="text-red-600 hover:text-red-700">x</button>
+                                                                    </span>
+                                                                ))}
+                                                                {category.codes.filter((codeName) => !!codeDetailByName[codeName]).length === 0 && <span className="text-xs text-slate-400">Drop in-vivo code cards here</span>}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                ))}
+                                                {activeCanvas.categories.length === 0 && <p className="text-sm text-slate-500">No categories yet. Create a category to start organizing in-vivo codes.</p>}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                )}
+
+                                {showStep3 && (
+                                <>
+                                <div className="bg-white border rounded-2xl p-5 shadow-soft">
+                                    <h3 className="font-bold text-ink mb-4">Step 3: Thematic Analysis</h3>
+                                    <div className="grid lg:grid-cols-3 gap-5">
+                                        <div className="lg:col-span-1">
+                                            <div className="border rounded-xl p-3 bg-slate-50 mb-3">
+                                                <div className="flex items-center justify-between">
+                                                    <p className="text-xs uppercase font-bold tracking-wide text-slate-500">Unassigned Categories</p>
+                                                    <span className="text-xs font-semibold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">{unassignedCategories.length}</span>
+                                                </div>
+                                            </div>
+                                            <div className="space-y-2 max-h-[400px] overflow-y-auto pr-1">
+                                                {unassignedCategories.map((category) => (
+                                                    <div
+                                                        key={`unassigned_${category.id}`}
+                                                        draggable
+                                                        onDragStart={(e) => e.dataTransfer.setData('text/plain', category.name)}
+                                                        className="border rounded-lg p-3 bg-white cursor-grab hover:border-amber-400"
+                                                    >
+                                                        <div className="font-semibold text-sm text-ink">{category.name}</div>
+                                                        <div className="text-xs text-slate-500 mt-1">{category.codes.filter((codeName) => !!codeDetailByName[codeName]).length} in-vivo codes</div>
+                                                    </div>
+                                                ))}
+                                                {unassignedCategories.length === 0 && <p className="text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg p-3">All categories are grouped into themes.</p>}
+                                            </div>
+                                        </div>
+
+                                        <div className="lg:col-span-2">
+                                            <div className="flex gap-2 mb-3">
+                                                <input value={newThemeName} onChange={(e) => setNewThemeName(e.target.value)} placeholder="Create theme" className="flex-1 border rounded-lg p-2.5 focus:outline-none focus:ring-2 focus:ring-ember" />
+                                                <button onClick={addTheme} className="bg-ember hover:bg-orange-700 text-white px-4 rounded-lg font-semibold">Add Theme</button>
+                                            </div>
+
+                                            <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1">
+                                                {activeCanvas.themes.map((theme) => (
+                                                    <div
+                                                        key={theme.id}
+                                                        onDragOver={(e) => e.preventDefault()}
+                                                        onDrop={(e) => {
+                                                            e.preventDefault();
+                                                            assignCategoryToTheme(theme.id, e.dataTransfer.getData('text/plain'));
+                                                        }}
+                                                        className="border-2 border-dashed rounded-xl p-4 bg-slate-50"
+                                                    >
+                                                        <div className="flex items-center justify-between mb-3">
+                                                            <h4 className="font-bold text-ink">{theme.name}</h4>
+                                                            <div className="flex gap-2">
+                                                                <button onClick={() => renameTheme(theme.id)} className="text-xs font-semibold text-blue-700 hover:text-blue-800">Rename</button>
+                                                                <button onClick={() => removeTheme(theme.id)} className="text-xs font-semibold text-red-700 hover:text-red-800">Delete</button>
+                                                            </div>
+                                                        </div>
+
+                                                        <div className="space-y-2">
+                                                            {theme.categories.map((categoryName) => {
+                                                                const category = activeCanvas.categories.find((item) => item.name === categoryName);
+                                                                const visibleCodes = (category?.codes || []).filter((codeName) => !!codeDetailByName[codeName]);
+                                                                return (
+                                                                    <div key={`${theme.id}_${categoryName}`} className="bg-white border rounded-lg p-3">
+                                                                        <div className="flex items-center justify-between mb-2">
+                                                                            <div className="flex items-center gap-2">
+                                                                                <span className="text-[11px] font-semibold bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full">{category?.code || 'C?'}</span>
+                                                                                <div className="font-semibold text-sm text-ink">{categoryName}</div>
+                                                                            </div>
+                                                                            <div className="flex items-center gap-2">
+                                                                                <button onClick={() => toggleCategoryCodes(category?.id || `theme_${theme.id}_${categoryName}`)} className="text-xs font-semibold text-slate-700 hover:text-slate-900">{expandedCategoryIds[category?.id || `theme_${theme.id}_${categoryName}`] ? 'Hide in-vivo codes' : 'View in-vivo codes'}</button>
+                                                                                <button onClick={() => unassignCategoryFromTheme(theme.id, categoryName)} className="text-xs font-semibold text-red-700 hover:text-red-800">Remove</button>
+                                                                            </div>
+                                                                        </div>
+                                                                        {expandedCategoryIds[category?.id || `theme_${theme.id}_${categoryName}`] && (
+                                                                            <div className="flex flex-wrap gap-1.5">
+                                                                                {visibleCodes.map((codeName) => (
+                                                                                    <span key={`${theme.id}_${categoryName}_${codeName}`} className="text-[11px] bg-teal-100 text-teal-900 px-2 py-0.5 rounded-full border border-teal-200">{codeName}</span>
+                                                                                ))}
+                                                                                {visibleCodes.length === 0 && <span className="text-xs text-slate-400">No filtered in-vivo codes in this category.</span>}
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                            {theme.categories.length === 0 && <p className="text-xs text-slate-400">Drop categories here to build this theme.</p>}
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                                {activeCanvas.themes.length === 0 && <p className="text-sm text-slate-500">No themes yet. Add a theme, then drag categories into it.</p>}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="bg-white border rounded-2xl p-5 shadow-soft">
+                                    <h3 className="font-bold mb-3">Thematic Table Preview</h3>
+                                    {thematicRows.length === 0 ? (
+                                        <p className="text-sm text-slate-500">No thematic rows yet. Assign categories to themes to generate the table.</p>
+                                    ) : (
+                                        <div className="overflow-x-auto">
+                                            <table className="w-full text-sm border-collapse">
+                                                <thead>
+                                                    <tr className="text-left border-b bg-slate-50">
+                                                        <th className="p-3">Theme</th>
+                                                        <th className="p-3">Category</th>
+                                                        <th className="p-3">In-vivo Code</th>
+                                                        <th className="p-3">Quotes</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {thematicRows.map((row, idx) => (
+                                                        <tr key={`${row.theme}_${row.category}_${row.code}_${idx}`} className="border-b align-top">
+                                                            <td className="p-3 font-semibold">{row.theme}</td>
+                                                            <td className="p-3">{row.category}</td>
+                                                            <td className="p-3">{row.code || '-'}</td>
+                                                            <td className="p-3">{row.quoteCount}</td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    )}
+                                </div>
+                                </>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                    {confirmationDialog}
+                    {inputDialog}
+                </div>
+            );
+        }
+
+        function TriangulationDashboard({ transcripts, tags, artifacts, analysisCanvases, sessions, assignmentMeta, onExportAssignment, onImportAssignment, onExportReturn, onImportReturn }) {
+            const { showNotice, noticeDialog } = useNoticeDialog();
+            const [coderId, setCoderId] = useState('');
+            const [threshold, setThreshold] = useState(0.5);
+            const [importing, setImporting] = useState(false);
+            const [showExportMenu, setShowExportMenu] = useState(false);
+
+            const csvEscape = (value) => {
+                const text = String(value ?? '');
+                if (/[",\n]/.test(text)) return `"${text.replace(/"/g, '""')}"`;
+                return text;
+            };
+
+            const downloadCsv = (filename, lines) => {
+                const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(blob);
+                link.download = filename;
+                link.click();
+                URL.revokeObjectURL(link.href);
+            };
+
+            const downloadWordDoc = (filename, htmlContent) => {
+                const wrapped = `<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body>${htmlContent}</body></html>`;
+                const blob = new Blob([wrapped], { type: 'application/msword;charset=utf-8' });
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(blob);
+                link.download = filename;
+                link.click();
+                URL.revokeObjectURL(link.href);
+            };
+
+            const escapeForHtml = (value) => String(value ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+
+            const buildApaTableHtml = (tableNumber, title, columns, rows, noteText) => {
+                const header = columns.map(col => `<th style="text-align:left;padding:6px;border-bottom:1.5px solid #000;font-weight:700;">${escapeForHtml(col)}</th>`).join('');
+                const body = rows.map(row => `<tr>${row.map(cell => `<td style="padding:6px;border-bottom:1px solid #d1d5db;vertical-align:top;">${escapeForHtml(cell)}</td>`).join('')}</tr>`).join('');
+
+                return `
+                    <div style="font-family:'Times New Roman',serif;font-size:12pt;line-height:1.35;margin-bottom:24px;">
+                        <div style="font-weight:700;">Table ${tableNumber}</div>
+                        <div style="font-style:italic;margin:4px 0 10px 0;">${escapeForHtml(title)}</div>
+                        <table style="width:100%;border-collapse:collapse;border-top:1.5px solid #000;">
+                            <thead><tr>${header}</tr></thead>
+                            <tbody>${body || `<tr><td colspan="${columns.length}" style="padding:6px;">No rows available.</td></tr>`}</tbody>
+                        </table>
+                        <div style="margin-top:6px;"><span style="font-style:italic;">Note.</span> ${escapeForHtml(noteText)}</div>
+                    </div>
+                `;
+            };
+
+            const primaryThemeSet = useMemo(() => {
+                const out = new Set();
+                (analysisCanvases || []).forEach(c => (c.themes || []).forEach(t => out.add((t.name || '').trim().toLowerCase())));
+                return out;
+            }, [analysisCanvases]);
+
+            const primaryArtifactCodeSet = useMemo(() => {
+                const out = new Set();
+                (artifacts || []).forEach(a => (a.codes || []).forEach(code => out.add(`${a.id}::${code}`)));
+                return out;
+            }, [artifacts]);
+
+            const overlapRatio = (a, b) => {
+                const start = Math.max(a.start, b.start);
+                const end = Math.min(a.end, b.end);
+                const intersection = Math.max(0, end - start);
+                const union = Math.max(a.end, b.end) - Math.min(a.start, b.start);
+                return union > 0 ? (intersection / union) : 0;
+            };
+
+            const sessionStats = useMemo(() => {
+                return (sessions || []).map(session => {
+                    const coTags = session.tags || [];
+                    const usedCo = new Set();
+                    let matched = 0;
+
+                    (tags || []).forEach((pTag) => {
+                        let bestIdx = -1;
+                        let bestOverlap = 0;
+                        coTags.forEach((cTag, idx) => {
+                            if (usedCo.has(idx)) return;
+                            if (pTag.transcriptId !== cTag.transcriptId) return;
+                            if ((pTag.tagName || '') !== (cTag.tagName || '')) return;
+                            if (!Number.isFinite(pTag.start) || !Number.isFinite(pTag.end) || !Number.isFinite(cTag.start) || !Number.isFinite(cTag.end)) return;
+                            const ov = overlapRatio(pTag, cTag);
+                            if (ov >= threshold && ov > bestOverlap) {
+                                bestOverlap = ov;
+                                bestIdx = idx;
+                            }
+                        });
+                        if (bestIdx >= 0) {
+                            usedCo.add(bestIdx);
+                            matched += 1;
+                        }
+                    });
+
+                    const primaryOnly = (tags || []).length - matched;
+                    const coOnly = coTags.length - usedCo.size;
+                    const agreementBase = Math.max((tags || []).length, coTags.length, 1);
+                    const agreementPct = Math.round((matched / agreementBase) * 1000) / 10;
+
+                    const coThemeSet = new Set();
+                    (session.analysisCanvases || []).forEach(c => (c.themes || []).forEach(t => coThemeSet.add((t.name || '').trim().toLowerCase())));
+                    let sharedThemes = 0;
+                    primaryThemeSet.forEach(name => { if (coThemeSet.has(name)) sharedThemes += 1; });
+
+                    const coArtifactSet = new Set();
+                    (session.artifactCodes || []).forEach(a => (a.codes || []).forEach(code => coArtifactSet.add(`${a.artifactId}::${code}`)));
+                    let sharedArtifactCodes = 0;
+                    primaryArtifactCodeSet.forEach(key => { if (coArtifactSet.has(key)) sharedArtifactCodes += 1; });
+
+                    return {
+                        id: session.id,
+                        coderId: session.coderId,
+                        importedAt: session.importedAt,
+                        matched,
+                        primaryOnly,
+                        coOnly,
+                        agreementPct,
+                        sharedThemes,
+                        primaryThemes: primaryThemeSet.size,
+                        coThemes: coThemeSet.size,
+                        sharedArtifactCodes,
+                        primaryArtifactCodes: primaryArtifactCodeSet.size,
+                        coArtifactCodes: coArtifactSet.size,
+                        coTagCount: coTags.length
+                    };
+                });
+            }, [sessions, tags, threshold, primaryThemeSet, primaryArtifactCodeSet]);
+
+            const importAssignmentFile = async (e) => {
+                const file = e.target.files && e.target.files[0];
+                if (!file) return;
+                setImporting(true);
+                try {
+                    await onImportAssignment(file);
+                    showNotice({
+                        title: 'Assignment Imported',
+                        message: 'Triangulation assignment imported. You can now code independently.',
+                        tone: 'warning'
+                    });
+                } catch (err) {
+                    showNotice({
+                        title: 'Import Failed',
+                        message: 'Failed to import assignment package.'
+                    });
+                } finally {
+                    setImporting(false);
+                    e.target.value = '';
+                }
+            };
+
+            const importReturnFile = async (e) => {
+                const file = e.target.files && e.target.files[0];
+                if (!file) return;
+                setImporting(true);
+                try {
+                    await onImportReturn(file);
+                    showNotice({
+                        title: 'Return Imported',
+                        message: 'Co-rater return imported.',
+                        tone: 'warning'
+                    });
+                } catch (err) {
+                    showNotice({
+                        title: 'Import Failed',
+                        message: 'Failed to import co-rater return package.'
+                    });
+                } finally {
+                    setImporting(false);
+                    e.target.value = '';
+                }
+            };
+
+            const exportReturn = () => {
+                if (!coderId.trim()) {
+                    showNotice({
+                        title: 'Coder ID Required',
+                        message: 'Enter a coder ID first.'
+                    });
+                    return;
+                }
+                onExportReturn(coderId.trim());
+            };
+
+            const exportAgreementCsv = () => {
+                const lines = ['Coder ID,Imported At,Overlap Agreement % (heuristic),Matched Tags,Primary Only,Co-rater Only,Co-rater Tags,Shared Themes,Primary Theme Count,Co-rater Theme Count,Shared Artifact Codes'];
+                sessionStats.forEach((s) => {
+                    lines.push([
+                        csvEscape(s.coderId),
+                        csvEscape(new Date(s.importedAt).toLocaleString()),
+                        csvEscape(s.agreementPct),
+                        csvEscape(s.matched),
+                        csvEscape(s.primaryOnly),
+                        csvEscape(s.coOnly),
+                        csvEscape(s.coTagCount),
+                        csvEscape(s.sharedThemes),
+                        csvEscape(s.primaryThemes),
+                        csvEscape(s.coThemes),
+                        csvEscape(s.sharedArtifactCodes)
+                    ].join(','));
+                });
+                downloadCsv(`QualiApp_Agreement_Analysis_${new Date().toISOString().slice(0, 10)}.csv`, lines);
+            };
+
+            const exportAgreementApaDoc = () => {
+                const html = buildApaTableHtml(
+                    1,
+                    'Overlap Agreement (Heuristic) Summary',
+                    ['Coder ID', 'Imported At', 'Overlap Agreement % (heuristic)', 'Matched', 'Primary only', 'Co-rater only', 'Shared themes', 'Shared artifact codes'],
+                    sessionStats.map((s) => [
+                        s.coderId,
+                        new Date(s.importedAt).toLocaleString(),
+                        `${s.agreementPct}%`,
+                        String(s.matched),
+                        String(s.primaryOnly),
+                        String(s.coOnly),
+                        String(s.sharedThemes),
+                        String(s.sharedArtifactCodes)
+                    ]),
+                    `Computed using overlap threshold = ${threshold}; this is a heuristic overlap metric and not a chance-corrected reliability statistic.`
+                );
+                downloadWordDoc(`QualiApp_APA7_Agreement_Analysis_${new Date().toISOString().slice(0, 10)}.doc`, html);
+            };
+
+            return (
+                <div className="p-8 h-full overflow-y-auto">
+                    <div className="max-w-7xl mx-auto space-y-6">
+                        <div className="bg-white border rounded-2xl p-6 shadow-soft">
+                            <h2 className="text-3xl font-display">Triangulation</h2>
+                            <p className="text-slate-500 mt-2">Export a blind co-rater package, import co-rater returns, and review overlap-based agreement and theme convergence.</p>
+                        </div>
+
+                        <div className="grid lg:grid-cols-2 gap-6">
+                            <section className="bg-white border rounded-2xl p-5 shadow-soft space-y-4">
+                                <h3 className="text-lg font-bold">Main Researcher</h3>
+                                <button onClick={onExportAssignment} className="w-full bg-tide hover:bg-teal-600 text-white px-4 py-3 rounded-lg font-semibold">Export Co-rater Assignment (No Codes)</button>
+                                <label className="block w-full text-center bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 px-4 py-3 rounded-lg font-semibold cursor-pointer">
+                                    Import Co-rater Return
+                                    <input type="file" accept=".qtrr,.json" className="hidden" onChange={importReturnFile} disabled={importing} />
+                                </label>
+                                <p className="text-xs text-slate-500">Supports multiple co-raters. Duplicate submissions are blocked per coder + package id.</p>
+                            </section>
+
+                            <section className="bg-white border rounded-2xl p-5 shadow-soft space-y-4">
+                                <h3 className="text-lg font-bold">Co-rater Workflow</h3>
+                                <label className="block w-full text-center bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 px-4 py-3 rounded-lg font-semibold cursor-pointer">
+                                    Import Assignment Package
+                                    <input type="file" accept=".qtri,.json" className="hidden" onChange={importAssignmentFile} disabled={importing} />
+                                </label>
+                                <input value={coderId} onChange={(e) => setCoderId(e.target.value)} placeholder="Your coder ID (e.g., Coder_B)" className="w-full border rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-ink" />
+                                <button onClick={exportReturn} className="w-full bg-ink hover:bg-slate-800 text-white px-4 py-3 rounded-lg font-semibold">Export My Return Package</button>
+                                <p className="text-xs text-slate-500">Current assignment: {assignmentMeta?.packageId || 'None imported in this workspace'}</p>
+                            </section>
+                        </div>
+
+                        <section className="bg-white border rounded-2xl p-5 shadow-soft space-y-4">
+                            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                                <h3 className="text-lg font-bold">Agreement Analysis</h3>
+                                <div className="flex items-center gap-3">
+                                    <label className="text-sm text-slate-600 flex items-center gap-2">
+                                        Overlap threshold
+                                        <input type="number" min="0.1" max="1" step="0.05" value={threshold} onChange={(e) => setThreshold(Math.min(1, Math.max(0.1, Number(e.target.value) || 0.5)))} className="w-20 border rounded p-1.5" />
+                                    </label>
+                                    {sessionStats.length > 0 && (
+                                        <div className="relative">
+                                            <button
+                                                type="button"
+                                                onClick={() => setShowExportMenu(prev => !prev)}
+                                                className="px-3 py-1.5 rounded-lg bg-ink text-white text-sm font-semibold hover:bg-slate-800"
+                                            >
+                                                Export
+                                            </button>
+                                            {showExportMenu && (
+                                                <div className="absolute right-0 mt-2 w-64 bg-white border border-slate-200 rounded-xl shadow-soft z-30 p-2">
+                                                    <p className="px-2 py-1 text-[11px] uppercase font-bold tracking-wide text-slate-500">CSV</p>
+                                                    <button type="button" onClick={() => { exportAgreementCsv(); setShowExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm text-slate-700">Agreement table (.csv)</button>
+                                                    <div className="my-1 border-t" />
+                                                    <p className="px-2 py-1 text-[11px] uppercase font-bold tracking-wide text-slate-500">APA7 Word (.doc)</p>
+                                                    <button type="button" onClick={() => { exportAgreementApaDoc(); setShowExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm text-slate-700">Agreement table APA7 (.doc)</button>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                            <p className="text-xs text-slate-500">Heuristic metric for calibration only; not a formal chance-corrected inter-rater reliability statistic.</p>
+
+                            {sessionStats.length === 0 ? (
+                                <p className="text-slate-500 text-sm">No co-rater returns imported yet.</p>
+                            ) : (
+                                <div className="grid md:grid-cols-2 gap-4">
+                                    {sessionStats.map(s => (
+                                        <article key={s.id} className="border rounded-xl p-4 bg-slate-50">
+                                            <div className="flex items-center justify-between mb-2">
+                                                <h4 className="font-bold text-ink">{s.coderId}</h4>
+                                                <span className="text-xs text-slate-500">{new Date(s.importedAt).toLocaleString()}</span>
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-2 text-sm">
+                                                <p><span className="font-semibold">Overlap agreement (heuristic):</span> {s.agreementPct}%</p>
+                                                <p><span className="font-semibold">Co-rater tags:</span> {s.coTagCount}</p>
+                                                <p><span className="font-semibold">Matched tags:</span> {s.matched}</p>
+                                                <p><span className="font-semibold">Primary only:</span> {s.primaryOnly}</p>
+                                                <p><span className="font-semibold">Co-rater only:</span> {s.coOnly}</p>
+                                                <p><span className="font-semibold">Shared themes:</span> {s.sharedThemes}</p>
+                                                <p><span className="font-semibold">Theme sets:</span> {s.primaryThemes} / {s.coThemes}</p>
+                                                <p><span className="font-semibold">Shared artifact codes:</span> {s.sharedArtifactCodes}</p>
+                                            </div>
+                                        </article>
+                                    ))}
+                                </div>
+                            )}
+                        </section>
+                        {noticeDialog}
+                    </div>
+                </div>
+            );
+        }
+
+        

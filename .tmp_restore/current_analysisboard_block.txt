@@ -1,0 +1,979 @@
+function AnalysisBoard({ tags, canvases, onUpdate, artifacts, transcripts, participants, observations, observationTags, sourceFilterPresets, onSaveSourceFilterPreset, onDeleteSourceFilterPreset }) {
+            const [newCanvasName, setNewCanvasName] = useState('');
+            const [activeCanvasId, setActiveCanvasId] = useState(canvases[0]?.id || null);
+            const [newThemeName, setNewThemeName] = useState('');
+            const [editingThemeId, setEditingThemeId] = useState(null);
+            const [editThemeName, setEditThemeName] = useState('');
+            const [selectedFolders, setSelectedFolders] = useState([]);
+            const [selectedSourceIds, setSelectedSourceIds] = useState([]);
+            const [showExportMenu, setShowExportMenu] = useState(false);
+            const hasInitializedSourceFilter = useRef(false);
+
+            const csvEscape = (value) => {
+                const text = String(value ?? '');
+                if (/[",\n]/.test(text)) return `"${text.replace(/"/g, '""')}"`;
+                return text;
+            };
+
+            const downloadCsv = (filename, lines) => {
+                const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(blob);
+                link.download = filename;
+                link.click();
+                URL.revokeObjectURL(link.href);
+            };
+
+            const downloadWordDoc = (filename, htmlContent) => {
+                const wrapped = `<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body>${htmlContent}</body></html>`;
+                const blob = new Blob([wrapped], { type: 'application/msword;charset=utf-8' });
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(blob);
+                link.download = filename;
+                link.click();
+                URL.revokeObjectURL(link.href);
+            };
+
+            const escapeForHtml = (value) => String(value ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+
+            const buildApaTableHtml = (tableNumber, title, columns, rows, noteText) => {
+                const header = columns.map(col => `<th style="text-align:left;padding:6px;border-bottom:1.5px solid #000;font-weight:700;">${escapeForHtml(col)}</th>`).join('');
+                const body = rows.map(row => `<tr>${row.map(cell => `<td style="padding:6px;border-bottom:1px solid #d1d5db;vertical-align:top;">${escapeForHtml(cell)}</td>`).join('')}</tr>`).join('');
+
+                return `
+                    <div style="font-family:'Times New Roman',serif;font-size:12pt;line-height:1.35;margin-bottom:24px;">
+                        <div style="font-weight:700;">Table ${tableNumber}</div>
+                        <div style="font-style:italic;margin:4px 0 10px 0;">${escapeForHtml(title)}</div>
+                        <table style="width:100%;border-collapse:collapse;border-top:1.5px solid #000;">
+                            <thead><tr>${header}</tr></thead>
+                            <tbody>${body || `<tr><td colspan="${columns.length}" style="padding:6px;">No rows available.</td></tr>`}</tbody>
+                        </table>
+                        <div style="margin-top:6px;"><span style="font-style:italic;">Note.</span> ${escapeForHtml(noteText)}</div>
+                    </div>
+                `;
+            };
+
+            useEffect(() => {
+                if (!activeCanvasId && canvases[0]) setActiveCanvasId(canvases[0].id);
+            }, [canvases, activeCanvasId]);
+
+            const transcriptById = useMemo(() => {
+                const out = {};
+                transcripts.forEach(t => { out[t.id] = t; });
+                return out;
+            }, [transcripts]);
+
+            const participantCodeById = useMemo(() => {
+                const out = {};
+                (participants || []).forEach(p => { out[p.id] = p.pseudonym || p.id; });
+                return out;
+            }, [participants]);
+
+            const sourceFilterGroups = useMemo(() => ([
+                {
+                    type: 'transcript',
+                    label: sourceFilterTypeLabels.transcript,
+                    items: (transcripts || []).map((transcript) => ({
+                        filterId: buildSourceFilterId('transcript', transcript.id),
+                        label: transcript.title || `Transcript ${String(transcript.id).slice(-4)}`,
+                        meta: transcript.folder || 'Uncategorized'
+                    }))
+                },
+                {
+                    type: 'artifact',
+                    label: sourceFilterTypeLabels.artifact,
+                    items: (artifacts || []).map((artifact) => ({
+                        filterId: buildSourceFilterId('artifact', artifact.id),
+                        label: artifact.name || `Artifact ${String(artifact.id).slice(-4)}`,
+                        meta: artifact.folder || 'Uncategorized'
+                    }))
+                },
+                {
+                    type: 'observation',
+                    label: sourceFilterTypeLabels.observation,
+                    items: (observations || []).map((observation) => ({
+                        filterId: buildSourceFilterId('observation', observation.id),
+                        label: observation.title || `Observation ${String(observation.id).slice(-4)}`,
+                        meta: [observation.location || 'Onsite Observation', observation.date].filter(Boolean).join(' • ')
+                    }))
+                }
+            ]), [transcripts, artifacts, observations]);
+
+            useEffect(() => {
+                const allIds = sourceFilterGroups.flatMap((group) => group.items.map((item) => item.filterId));
+                setSelectedSourceIds((prev) => {
+                    if (!hasInitializedSourceFilter.current) {
+                        hasInitializedSourceFilter.current = true;
+                        return allIds;
+                    }
+                    const prevSet = new Set(prev);
+                    const retained = prev.filter((id) => allIds.includes(id));
+                    const added = allIds.filter((id) => !prevSet.has(id));
+                    return [...retained, ...added];
+                });
+            }, [sourceFilterGroups]);
+
+            const selectedSourceSet = useMemo(() => new Set(selectedSourceIds), [selectedSourceIds]);
+
+            const toggleSourceItem = (filterId) => {
+                setSelectedSourceIds((prev) => prev.includes(filterId)
+                    ? prev.filter((id) => id !== filterId)
+                    : [...prev, filterId]
+                );
+            };
+
+            const handleSelectAllSources = () => {
+                setSelectedSourceIds(sourceFilterGroups.flatMap((group) => group.items.map((item) => item.filterId)));
+            };
+
+            const handleClearAllSources = () => {
+                setSelectedSourceIds([]);
+            };
+
+            const handleApplyPreset = (resolvedIds) => {
+                setSelectedSourceIds(resolvedIds);
+            };
+
+            const handleToggleSourceGroup = (type) => {
+                const group = sourceFilterGroups.find((entry) => entry.type === type);
+                if (!group) return;
+                const groupIds = group.items.map((item) => item.filterId);
+                setSelectedSourceIds((prev) => {
+                    const hasAll = groupIds.every((id) => prev.includes(id));
+                    return hasAll
+                        ? prev.filter((id) => !groupIds.includes(id))
+                        : [...new Set([...prev, ...groupIds])];
+                });
+            };
+
+            const availableFolders = useMemo(() => {
+                const set = new Set();
+                transcripts.forEach(t => set.add(t.folder || 'Uncategorized'));
+                (artifacts || []).forEach(a => set.add(a.folder || 'Uncategorized'));
+                (observations || []).forEach(o => set.add(o.location || 'Onsite Observation'));
+                return Array.from(set).sort((a, b) => a.localeCompare(b));
+            }, [transcripts, artifacts, observations]);
+
+            useEffect(() => {
+                if (selectedFolders.length === 0 && availableFolders.length > 0) {
+                    setSelectedFolders(availableFolders);
+                }
+            }, [availableFolders, selectedFolders.length]);
+
+            const selectedFolderSet = useMemo(() => new Set(selectedFolders), [selectedFolders]);
+
+            const codeDetails = useMemo(() => {
+                const map = {};
+                tags.forEach(t => {
+                    const parent = transcriptById[t.transcriptId];
+                    const folder = parent?.folder || 'Uncategorized';
+                    if (!selectedSourceSet.has(buildSourceFilterId('transcript', t.transcriptId))) return;
+                    if (!selectedFolderSet.has(folder)) return;
+                    if (!map[t.tagName]) {
+                        map[t.tagName] = {
+                            name: t.tagName,
+                            category: t.category || 'Uncategorized',
+                            count: 0,
+                            sourceSet: new Set(),
+                            quotes: [],
+                            folders: new Set()
+                        };
+                    }
+                    map[t.tagName].count += 1;
+                    map[t.tagName].sourceSet.add('transcript');
+                    map[t.tagName].folders.add(folder);
+                    const participantCode = parent?.participantId ? (participantCodeById[parent.participantId] || parent.participantId) : null;
+                    map[t.tagName].quotes.push({
+                        source: 'Transcript',
+                        folder,
+                        ref: participantCode || `Transcript ${String(t.transcriptId).slice(-4)}`,
+                        text: t.textSnippet || ''
+                    });
+                });
+
+                (artifacts || []).forEach(art => {
+                    const folder = art.folder || 'Uncategorized';
+                    if (!selectedSourceSet.has(buildSourceFilterId('artifact', art.id))) return;
+                    if (!selectedFolderSet.has(folder)) return;
+                    (art.codes || []).forEach(codeName => {
+                        if (!map[codeName]) {
+                            map[codeName] = {
+                                name: codeName,
+                                category: 'Artifact',
+                                count: 0,
+                                sourceSet: new Set(),
+                                quotes: [],
+                                folders: new Set()
+                            };
+                        }
+                        map[codeName].sourceSet.add('artifact');
+                        map[codeName].folders.add(folder);
+                        if (art.notes && art.notes.trim()) {
+                            map[codeName].quotes.push({
+                                source: 'Artifact',
+                                folder,
+                                ref: art.name,
+                                text: art.notes
+                            });
+                        }
+                    });
+                });
+
+                (observationTags || []).forEach(t => {
+                    const parent = (observations || []).find(o => o.id === t.observationId);
+                    const folder = parent?.location || 'Onsite Observation';
+                    if (!selectedSourceSet.has(buildSourceFilterId('observation', t.observationId))) return;
+                    if (!selectedFolderSet.has(folder)) return;
+                    if (!map[t.tagName]) {
+                        map[t.tagName] = {
+                            name: t.tagName,
+                            category: t.category || 'Uncategorized',
+                            count: 0,
+                            sourceSet: new Set(),
+                            quotes: [],
+                            folders: new Set()
+                        };
+                    }
+                    map[t.tagName].count += 1;
+                    map[t.tagName].sourceSet.add('observation');
+                    map[t.tagName].folders.add(folder);
+                    map[t.tagName].quotes.push({
+                        source: 'Observation',
+                        folder,
+                        ref: parent ? parent.title : `Observation ${String(t.observationId).slice(-4)}`,
+                        text: t.textSnippet || ''
+                    });
+                });
+
+                return Object.values(map)
+                    .map((c) => ({
+                        ...c,
+                        source: (() => {
+                            const s = c.sourceSet;
+                            const count = [s.has('transcript'), s.has('artifact'), s.has('observation')].filter(Boolean).length;
+                            if (count > 1) return 'multiple';
+                            if (s.has('artifact')) return 'artifact';
+                            if (s.has('observation')) return 'observation';
+                            return 'transcript';
+                        })()
+                    }))
+                    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+            }, [tags, artifacts, observationTags, observations, transcriptById, selectedFolderSet, participantCodeById, selectedSourceSet]);
+
+            const activeCanvas = canvases.find(c => c.id === activeCanvasId) || null;
+            const uniqueCodeCount = useMemo(() => new Set(codeDetails.map(c => (c.name || '').trim()).filter(Boolean)).size, [codeDetails]);
+            const uniqueCategoryCount = useMemo(() => new Set(codeDetails.map(c => (c.category || 'Uncategorized').trim() || 'Uncategorized')).size, [codeDetails]);
+            const uniqueThemeCount = useMemo(() => {
+                if (!activeCanvas) return 0;
+                return new Set((activeCanvas.themes || []).map(t => (t.name || '').trim()).filter(Boolean)).size;
+            }, [activeCanvas]);
+
+            const createCanvas = () => {
+                if (!newCanvasName.trim()) return;
+                const c = { id: Date.now().toString(), name: newCanvasName.trim(), themes: [] };
+                onUpdate([c, ...canvases]);
+                setActiveCanvasId(c.id);
+                setNewCanvasName('');
+            };
+
+            const deleteCanvas = (canvasId) => {
+                if (confirm('Delete this canvas and all its themes?')) {
+                    const updated = canvases.filter(c => c.id !== canvasId);
+                    onUpdate(updated);
+                    if (activeCanvasId === canvasId) setActiveCanvasId(updated[0]?.id || null);
+                }
+            };
+
+            const renameCanvas = (canvasId) => {
+                const newName = prompt('Enter new canvas name:');
+                if (newName && newName.trim()) {
+                    onUpdate(canvases.map(c => c.id === canvasId ? { ...c, name: newName.trim() } : c));
+                }
+            };
+
+            const addTheme = () => {
+                if (!activeCanvas || !newThemeName.trim()) return;
+                const updated = { ...activeCanvas, themes: [...activeCanvas.themes, { id: Date.now().toString(), name: newThemeName.trim(), codes: [] }] };
+                onUpdate(canvases.map(c => c.id === updated.id ? updated : c));
+                setNewThemeName('');
+            };
+
+            const deleteTheme = (themeId) => {
+                if (!activeCanvas) return;
+                if (confirm('Delete this theme?')) {
+                    const updated = { ...activeCanvas, themes: activeCanvas.themes.filter(t => t.id !== themeId) };
+                    onUpdate(canvases.map(c => c.id === updated.id ? updated : c));
+                }
+            };
+
+            const startEditTheme = (theme) => {
+                setEditingThemeId(theme.id);
+                setEditThemeName(theme.name);
+            };
+
+            const saveEditTheme = () => {
+                if (!activeCanvas || !editingThemeId) return;
+                const updated = { ...activeCanvas, themes: activeCanvas.themes.map(t => t.id === editingThemeId ? { ...t, name: editThemeName.trim() } : t) };
+                onUpdate(canvases.map(c => c.id === updated.id ? updated : c));
+                setEditingThemeId(null);
+                setEditThemeName('');
+            };
+
+            const moveCodeToTheme = (themeId, codeName) => {
+                if (!activeCanvas) return;
+                const nextThemes = activeCanvas.themes.map(t => ({ ...t, codes: t.codes.filter(c => c !== codeName) }));
+                const idx = nextThemes.findIndex(t => t.id === themeId);
+                if (idx >= 0 && !nextThemes[idx].codes.includes(codeName)) nextThemes[idx].codes.push(codeName);
+                const updated = { ...activeCanvas, themes: nextThemes };
+                onUpdate(canvases.map(c => c.id === updated.id ? updated : c));
+            };
+
+            const removeCodeFromTheme = (themeId, codeName) => {
+                if (!activeCanvas) return;
+                const updated = {
+                    ...activeCanvas,
+                    themes: activeCanvas.themes.map(t => t.id === themeId ? { ...t, codes: t.codes.filter(c => c !== codeName) } : t)
+                };
+                onUpdate(canvases.map(c => c.id === updated.id ? updated : c));
+            };
+
+            const assignedCodes = new Set((activeCanvas?.themes || []).flatMap(t => t.codes));
+            const unassigned = codeDetails.filter(c => !assignedCodes.has(c.name));
+
+            const codeDetailByName = useMemo(() => {
+                const detailByCode = {};
+                codeDetails.forEach((c) => {
+                    detailByCode[c.name] = c;
+                });
+                return detailByCode;
+            }, [codeDetails]);
+
+            const buildCanvasTableRows = (canvas) => {
+                if (!canvas) return [];
+                const rows = [];
+                (canvas.themes || []).forEach((theme) => {
+                    (theme.codes || []).forEach((codeName) => {
+                        const d = codeDetailByName[codeName] || { count: 0, quotes: [], category: 'Uncategorized' };
+                        rows.push({
+                            theme: theme.name,
+                            code: codeName,
+                            category: d.category,
+                            quoteCount: d.count,
+                            quotes: d.quotes
+                        });
+                    });
+                });
+                return rows;
+            };
+
+            const tableRows = useMemo(() => buildCanvasTableRows(activeCanvas), [activeCanvas, codeDetailByName]);
+
+            const exportCanvasCsv = () => {
+                if (!activeCanvas) return;
+                const lines = ['Theme,Code,Category,Quote Count,Quotes'];
+                tableRows.forEach((r) => {
+                    const quotes = r.quotes.map(q => `[${q.source}] ${q.ref}: ${q.text}`).join(' || ');
+                    lines.push([
+                        csvEscape(r.theme),
+                        csvEscape(r.code),
+                        csvEscape(r.category),
+                        csvEscape(r.quoteCount),
+                        csvEscape(quotes)
+                    ].join(','));
+                });
+                downloadCsv(`${activeCanvas.name.replace(/\s+/g, '_')}_analysis_table.csv`, lines);
+            };
+
+            const exportAllCanvasTablesCsv = () => {
+                const lines = ['Canvas,Theme,Code,Category,Quote Count,Quotes'];
+                canvases.forEach((canvas) => {
+                    const rows = buildCanvasTableRows(canvas);
+                    rows.forEach((r) => {
+                        const quotes = r.quotes.map(q => `[${q.source}] ${q.ref}: ${q.text}`).join(' || ');
+                        lines.push([
+                            csvEscape(canvas.name),
+                            csvEscape(r.theme),
+                            csvEscape(r.code),
+                            csvEscape(r.category),
+                            csvEscape(r.quoteCount),
+                            csvEscape(quotes)
+                        ].join(','));
+                    });
+                });
+                downloadCsv(`QualiApp_Analysis_Canvas_Tables_${new Date().toISOString().slice(0, 10)}.csv`, lines);
+            };
+
+            const exportCanvasApaDoc = () => {
+                if (!activeCanvas) return;
+                const html = buildApaTableHtml(
+                    1,
+                    `${activeCanvas.name} Analysis Table`,
+                    ['Theme', 'Code', 'Category', 'Quote Count', 'Quotes'],
+                    tableRows.map((row) => [
+                        row.theme,
+                        row.code,
+                        row.category,
+                        String(row.quoteCount),
+                        row.quotes.map(q => `[${q.source}] ${q.ref} (${q.folder}): ${q.text}`).join(' | ')
+                    ]),
+                    'Quotes are exported from current folder-filtered analysis rows and may be truncated for long entries.'
+                );
+                downloadWordDoc(`${activeCanvas.name.replace(/\s+/g, '_')}_APA7_analysis_table.doc`, html);
+            };
+
+            const exportAllCanvasApaDoc = () => {
+                const html = canvases.map((canvas, index) => {
+                    const rows = buildCanvasTableRows(canvas);
+                    return buildApaTableHtml(
+                        index + 1,
+                        `${canvas.name} Analysis Table`,
+                        ['Theme', 'Code', 'Category', 'Quote Count', 'Quotes'],
+                        rows.map((row) => [
+                            row.theme,
+                            row.code,
+                            row.category,
+                            String(row.quoteCount),
+                            row.quotes.map(q => `[${q.source}] ${q.ref} (${q.folder}): ${q.text}`).join(' | ')
+                        ]),
+                        'Quotes are exported from current folder-filtered analysis rows and may be truncated for long entries.'
+                    );
+                }).join('');
+                downloadWordDoc(`QualiApp_APA7_All_Analysis_Canvas_Tables_${new Date().toISOString().slice(0, 10)}.doc`, html);
+            };
+
+            const toggleFolder = (folder) => {
+                setSelectedFolders((prev) => prev.includes(folder) ? prev.filter(f => f !== folder) : [...prev, folder]);
+            };
+
+            return (
+                <div className="p-8 h-full overflow-y-auto">
+                    <div className="max-w-7xl mx-auto space-y-6">
+                        <div className="bg-white border rounded-2xl p-6 shadow-soft">
+                            <h2 className="text-3xl font-display">Analysis Canvases</h2>
+                            <p className="text-slate-500 mt-1">Create theme buckets, filter by folder, review theme tables, and export via CSV or APA7 Word formats.</p>
+                            <p className="text-slate-500 mt-1">Unique codes: {uniqueCodeCount} • Unique categories: {uniqueCategoryCount} • Unique themes in selected canvas: {uniqueThemeCount}</p>
+                        </div>
+
+                        <SourceItemFilterPanel
+                            title="Included Source Items"
+                            description="Choose which transcripts, artifacts, and onsite observations are included in this canvas. Checked items stay in counts, code banks, and exports."
+                            groups={sourceFilterGroups}
+                            selectedIds={selectedSourceIds}
+                            presets={sourceFilterPresets}
+                            onToggleItem={toggleSourceItem}
+                            onSelectAll={handleSelectAllSources}
+                            onClearAll={handleClearAllSources}
+                            onToggleGroup={handleToggleSourceGroup}
+                            onApplyPreset={handleApplyPreset}
+                            onSavePreset={onSaveSourceFilterPreset}
+                            onDeletePreset={onDeleteSourceFilterPreset}
+                        />
+
+                        <div className="bg-white border rounded-2xl p-5 shadow-soft grid md:grid-cols-3 gap-4">
+                            <div className="md:col-span-2 flex gap-2">
+                                <input value={newCanvasName} onChange={e => setNewCanvasName(e.target.value)} placeholder="New canvas name" className="flex-1 border rounded-lg p-2.5 focus:outline-none focus:ring-2 focus:ring-tide" />
+                                <button onClick={createCanvas} className="bg-tide hover:bg-teal-600 text-white px-4 rounded-lg font-semibold">Create Canvas</button>
+                            </div>
+                            <select value={activeCanvasId || ''} onChange={e => setActiveCanvasId(e.target.value)} className="border rounded-lg p-2.5">
+                                <option value="">Select canvas</option>
+                                {canvases.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                            </select>
+                        </div>
+
+                        <div className="bg-white border rounded-2xl p-5 shadow-soft">
+                            <div className="flex items-center justify-between mb-3">
+                                <h3 className="font-bold">Folder Filter</h3>
+                                <button onClick={() => setSelectedFolders(availableFolders)} className="text-xs font-semibold text-tide">Select All</button>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                                {availableFolders.map(folder => (
+                                    <label key={folder} className={`px-3 py-1.5 rounded-full border text-xs cursor-pointer ${selectedFolderSet.has(folder) ? 'bg-teal-100 border-teal-300 text-teal-800' : 'bg-white text-slate-600'}`}>
+                                        <input type="checkbox" className="hidden" checked={selectedFolderSet.has(folder)} onChange={() => toggleFolder(folder)} />
+                                        {folder}
+                                    </label>
+                                ))}
+                            </div>
+                        </div>
+
+                        {!activeCanvas ? (
+                            <div className="text-center py-16 bg-white border rounded-2xl text-slate-500">Create or select a canvas to begin analysis.</div>
+                        ) : (
+                            <div>
+                                <div className="flex justify-between items-center mb-4 bg-white border rounded-2xl p-4 shadow-soft">
+                                    <h3 className="text-lg font-bold text-ink">{activeCanvas.name}</h3>
+                                    <div className="flex gap-2">
+                                        <button onClick={() => renameCanvas(activeCanvasId)} className="px-3 py-1 text-sm bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 font-semibold">Rename</button>
+                                        <button onClick={() => deleteCanvas(activeCanvasId)} className="px-3 py-1 text-sm bg-red-100 text-red-700 rounded-lg hover:bg-red-200 font-semibold">Delete Canvas</button>
+                                    </div>
+                                </div>
+
+                                <div className="grid lg:grid-cols-3 gap-5">
+                                    <div className="bg-white border rounded-2xl p-4 shadow-soft lg:col-span-1">
+                                        <h3 className="font-bold mb-3">Code Bank (filtered)</h3>
+                                        <p className="text-xs text-slate-500 mb-3">Drag codes into theme buckets. Quote counts reflect selected folders.</p>
+                                        <div className="space-y-2 max-h-[520px] overflow-y-auto pr-1">
+                                            {codeDetails.map(code => (
+                                                <div
+                                                    key={code.name}
+                                                    draggable
+                                                    onDragStart={(e) => e.dataTransfer.setData('text/plain', code.name)}
+                                                    className={`border rounded-lg p-2 cursor-grab bg-white hover:border-tide transition ${assignedCodes.has(code.name) ? 'opacity-60' : ''}`}
+                                                >
+                                                    <div className="font-semibold text-sm">{code.name}</div>
+                                                    <div className="text-xs text-slate-500">{code.count} quotes • <span className="text-[10px] uppercase font-bold text-slate-400">{code.category}</span></div>
+                                                    {code.source === 'multiple' && <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-full">Multiple sources</span>}
+                                                    {code.source === 'artifact' && <span className="text-[10px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded-full">Artifact</span>}
+                                                    {code.source === 'observation' && <span className="text-[10px] bg-violet-100 text-violet-800 px-1.5 py-0.5 rounded-full">Observation</span>}
+                                                </div>
+                                            ))}
+                                            {codeDetails.length === 0 && <p className="text-sm text-slate-400">No codes available for the selected folders and source items.</p>}
+                                        </div>
+                                    </div>
+
+                                    <div className="bg-white border rounded-2xl p-4 shadow-soft lg:col-span-2">
+                                        <div className="flex gap-2 mb-4">
+                                            <input value={newThemeName} onChange={e => setNewThemeName(e.target.value)} placeholder="New theme bucket" className="flex-1 border rounded-lg p-2.5 focus:outline-none focus:ring-2 focus:ring-ember" />
+                                            <button onClick={addTheme} className="bg-ember hover:bg-orange-700 text-white px-4 rounded-lg font-semibold">Add Theme</button>
+                                        </div>
+
+                                        {activeCanvas.themes.length === 0 && <p className="text-slate-400 text-sm">No themes yet in this canvas.</p>}
+
+                                        <div className="space-y-3">
+                                            {activeCanvas.themes.map(theme => (
+                                                <div
+                                                    key={theme.id}
+                                                    onDragOver={(e) => e.preventDefault()}
+                                                    onDrop={(e) => {
+                                                        e.preventDefault();
+                                                        const codeName = e.dataTransfer.getData('text/plain');
+                                                        moveCodeToTheme(theme.id, codeName);
+                                                    }}
+                                                    className="border-2 border-dashed rounded-xl p-4 bg-slate-50 group"
+                                                >
+                                                    <div className="flex justify-between items-center mb-3">
+                                                        {editingThemeId === theme.id ? (
+                                                            <div className="flex gap-2 flex-1">
+                                                                <input autoFocus value={editThemeName} onChange={e => setEditThemeName(e.target.value)} className="flex-1 border rounded p-1.5 text-sm focus:ring-2 focus:ring-tide outline-none" />
+                                                                <button onClick={saveEditTheme} className="bg-tide text-white px-2 rounded text-sm font-semibold">Save</button>
+                                                                <button onClick={() => setEditingThemeId(null)} className="bg-slate-300 text-slate-700 px-2 rounded text-sm font-semibold">Cancel</button>
+                                                            </div>
+                                                        ) : (
+                                                            <>
+                                                                <h4 className="font-bold text-ink">{theme.name}</h4>
+                                                                <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition">
+                                                                    <button onClick={() => startEditTheme(theme)} className="text-slate-400 hover:text-blue-600 text-sm">✎</button>
+                                                                    <button onClick={() => deleteTheme(theme.id)} className="text-slate-400 hover:text-red-600 text-sm">✕</button>
+                                                                </div>
+                                                            </>
+                                                        )}
+                                                    </div>
+                                                    <div className="flex flex-wrap gap-2">
+                                                        {theme.codes.map(codeName => {
+                                                            const found = codeDetails.find(c => c.name === codeName);
+                                                            return (
+                                                                <span key={codeName} className="inline-flex items-center gap-2 text-xs bg-teal-100 text-teal-900 px-3 py-1 rounded-full border border-teal-200">
+                                                                    {codeName} ({found?.count || 0})
+                                                                    <button onClick={() => removeCodeFromTheme(theme.id, codeName)} className="text-teal-700 hover:text-red-600">x</button>
+                                                                </span>
+                                                            );
+                                                        })}
+                                                        {theme.codes.length === 0 && <span className="text-xs text-slate-400">Drop codes here</span>}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+
+                                        {unassigned.length > 0 && (
+                                            <div className="mt-5 pt-4 border-t">
+                                                <p className="text-xs uppercase text-slate-500 font-bold mb-2">Unassigned in this canvas</p>
+                                                <p className="text-sm text-slate-600">{unassigned.map(c => `${c.name} (${c.count})`).join(', ')}</p>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+
+                                <div className="bg-white border rounded-2xl p-5 shadow-soft mt-6">
+                                    <div className="flex items-center justify-between mb-3">
+                                        <h3 className="font-bold">Canvas Table (Themes, Codes, Quotes)</h3>
+                                        <div className="relative">
+                                            <button
+                                                type="button"
+                                                onClick={() => setShowExportMenu(prev => !prev)}
+                                                className="px-3 py-1.5 rounded-lg bg-ink text-white text-sm font-semibold hover:bg-slate-800"
+                                            >
+                                                Export
+                                            </button>
+                                            {showExportMenu && (
+                                                <div className="absolute right-0 mt-2 w-64 bg-white border border-slate-200 rounded-xl shadow-soft z-30 p-2">
+                                                    <p className="px-2 py-1 text-[11px] uppercase font-bold tracking-wide text-slate-500">CSV</p>
+                                                    <button type="button" onClick={() => { exportCanvasCsv(); setShowExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm text-slate-700">Canvas table (.csv)</button>
+                                                    <button type="button" onClick={() => { exportAllCanvasTablesCsv(); setShowExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm text-slate-700">All canvas tables (.csv)</button>
+                                                    <div className="my-1 border-t" />
+                                                    <p className="px-2 py-1 text-[11px] uppercase font-bold tracking-wide text-slate-500">APA7 Word (.doc)</p>
+                                                    <button type="button" onClick={() => { exportCanvasApaDoc(); setShowExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm text-slate-700">Canvas table APA7 (.doc)</button>
+                                                    <button type="button" onClick={() => { exportAllCanvasApaDoc(); setShowExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm font-semibold text-ink">All canvas tables APA7 (.doc)</button>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                    {tableRows.length === 0 ? (
+                                        <p className="text-sm text-slate-500">No rows yet. Assign codes to themes first.</p>
+                                    ) : (
+                                        <div className="overflow-x-auto">
+                                            <table className="w-full text-sm border-collapse">
+                                                <thead>
+                                                    <tr className="text-left border-b bg-slate-50">
+                                                        <th className="p-3">Theme</th>
+                                                        <th className="p-3">Code</th>
+                                                        <th className="p-3">Category</th>
+                                                        <th className="p-3">Quotes</th>
+                                                        <th className="p-3">Details</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {tableRows.map((row, idx) => (
+                                                        <tr key={`${row.theme}_${row.code}_${idx}`} className="border-b align-top">
+                                                            <td className="p-3 font-semibold">{row.theme}</td>
+                                                            <td className="p-3">{row.code}</td>
+                                                            <td className="p-3">{row.category}</td>
+                                                            <td className="p-3">{row.quoteCount}</td>
+                                                            <td className="p-3">
+                                                                <details>
+                                                                    <summary className="cursor-pointer text-tide">Show quotes</summary>
+                                                                    <div className="mt-2 space-y-2 max-h-48 overflow-y-auto">
+                                                                        {row.quotes.length === 0 && <p className="text-xs text-slate-400">No quote text available.</p>}
+                                                                        {row.quotes.map((q, qIdx) => (
+                                                                            <div key={`${row.code}_${qIdx}`} className="text-xs bg-slate-50 border rounded p-2">
+                                                                                <p className="font-semibold text-slate-600">[{q.source}] {q.ref} • {q.folder}</p>
+                                                                                <p className="text-slate-700 italic">"{q.text}"</p>
+                                                                            </div>
+                                                                        ))}
+                                                                    </div>
+                                                                </details>
+                                                            </td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        }
+
+        function TriangulationDashboard({ transcripts, tags, artifacts, analysisCanvases, sessions, assignmentMeta, onExportAssignment, onImportAssignment, onExportReturn, onImportReturn }) {
+            const [coderId, setCoderId] = useState('');
+            const [threshold, setThreshold] = useState(0.5);
+            const [importing, setImporting] = useState(false);
+            const [showExportMenu, setShowExportMenu] = useState(false);
+
+            const csvEscape = (value) => {
+                const text = String(value ?? '');
+                if (/[",\n]/.test(text)) return `"${text.replace(/"/g, '""')}"`;
+                return text;
+            };
+
+            const downloadCsv = (filename, lines) => {
+                const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(blob);
+                link.download = filename;
+                link.click();
+                URL.revokeObjectURL(link.href);
+            };
+
+            const downloadWordDoc = (filename, htmlContent) => {
+                const wrapped = `<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body>${htmlContent}</body></html>`;
+                const blob = new Blob([wrapped], { type: 'application/msword;charset=utf-8' });
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(blob);
+                link.download = filename;
+                link.click();
+                URL.revokeObjectURL(link.href);
+            };
+
+            const escapeForHtml = (value) => String(value ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+
+            const buildApaTableHtml = (tableNumber, title, columns, rows, noteText) => {
+                const header = columns.map(col => `<th style="text-align:left;padding:6px;border-bottom:1.5px solid #000;font-weight:700;">${escapeForHtml(col)}</th>`).join('');
+                const body = rows.map(row => `<tr>${row.map(cell => `<td style="padding:6px;border-bottom:1px solid #d1d5db;vertical-align:top;">${escapeForHtml(cell)}</td>`).join('')}</tr>`).join('');
+
+                return `
+                    <div style="font-family:'Times New Roman',serif;font-size:12pt;line-height:1.35;margin-bottom:24px;">
+                        <div style="font-weight:700;">Table ${tableNumber}</div>
+                        <div style="font-style:italic;margin:4px 0 10px 0;">${escapeForHtml(title)}</div>
+                        <table style="width:100%;border-collapse:collapse;border-top:1.5px solid #000;">
+                            <thead><tr>${header}</tr></thead>
+                            <tbody>${body || `<tr><td colspan="${columns.length}" style="padding:6px;">No rows available.</td></tr>`}</tbody>
+                        </table>
+                        <div style="margin-top:6px;"><span style="font-style:italic;">Note.</span> ${escapeForHtml(noteText)}</div>
+                    </div>
+                `;
+            };
+
+            const primaryThemeSet = useMemo(() => {
+                const out = new Set();
+                (analysisCanvases || []).forEach(c => (c.themes || []).forEach(t => out.add((t.name || '').trim().toLowerCase())));
+                return out;
+            }, [analysisCanvases]);
+
+            const primaryArtifactCodeSet = useMemo(() => {
+                const out = new Set();
+                (artifacts || []).forEach(a => (a.codes || []).forEach(code => out.add(`${a.id}::${code}`)));
+                return out;
+            }, [artifacts]);
+
+            const overlapRatio = (a, b) => {
+                const start = Math.max(a.start, b.start);
+                const end = Math.min(a.end, b.end);
+                const intersection = Math.max(0, end - start);
+                const union = Math.max(a.end, b.end) - Math.min(a.start, b.start);
+                return union > 0 ? (intersection / union) : 0;
+            };
+
+            const sessionStats = useMemo(() => {
+                return (sessions || []).map(session => {
+                    const coTags = session.tags || [];
+                    const usedCo = new Set();
+                    let matched = 0;
+
+                    (tags || []).forEach((pTag) => {
+                        let bestIdx = -1;
+                        let bestOverlap = 0;
+                        coTags.forEach((cTag, idx) => {
+                            if (usedCo.has(idx)) return;
+                            if (pTag.transcriptId !== cTag.transcriptId) return;
+                            if ((pTag.tagName || '') !== (cTag.tagName || '')) return;
+                            if (!Number.isFinite(pTag.start) || !Number.isFinite(pTag.end) || !Number.isFinite(cTag.start) || !Number.isFinite(cTag.end)) return;
+                            const ov = overlapRatio(pTag, cTag);
+                            if (ov >= threshold && ov > bestOverlap) {
+                                bestOverlap = ov;
+                                bestIdx = idx;
+                            }
+                        });
+                        if (bestIdx >= 0) {
+                            usedCo.add(bestIdx);
+                            matched += 1;
+                        }
+                    });
+
+                    const primaryOnly = (tags || []).length - matched;
+                    const coOnly = coTags.length - usedCo.size;
+                    const agreementBase = Math.max((tags || []).length, coTags.length, 1);
+                    const agreementPct = Math.round((matched / agreementBase) * 1000) / 10;
+
+                    const coThemeSet = new Set();
+                    (session.analysisCanvases || []).forEach(c => (c.themes || []).forEach(t => coThemeSet.add((t.name || '').trim().toLowerCase())));
+                    let sharedThemes = 0;
+                    primaryThemeSet.forEach(name => { if (coThemeSet.has(name)) sharedThemes += 1; });
+
+                    const coArtifactSet = new Set();
+                    (session.artifactCodes || []).forEach(a => (a.codes || []).forEach(code => coArtifactSet.add(`${a.artifactId}::${code}`)));
+                    let sharedArtifactCodes = 0;
+                    primaryArtifactCodeSet.forEach(key => { if (coArtifactSet.has(key)) sharedArtifactCodes += 1; });
+
+                    return {
+                        id: session.id,
+                        coderId: session.coderId,
+                        importedAt: session.importedAt,
+                        matched,
+                        primaryOnly,
+                        coOnly,
+                        agreementPct,
+                        sharedThemes,
+                        primaryThemes: primaryThemeSet.size,
+                        coThemes: coThemeSet.size,
+                        sharedArtifactCodes,
+                        primaryArtifactCodes: primaryArtifactCodeSet.size,
+                        coArtifactCodes: coArtifactSet.size,
+                        coTagCount: coTags.length
+                    };
+                });
+            }, [sessions, tags, threshold, primaryThemeSet, primaryArtifactCodeSet]);
+
+            const importAssignmentFile = async (e) => {
+                const file = e.target.files && e.target.files[0];
+                if (!file) return;
+                setImporting(true);
+                try {
+                    await onImportAssignment(file);
+                    alert('Triangulation assignment imported. You can now code independently.');
+                } catch (err) {
+                    alert('Failed to import assignment package.');
+                } finally {
+                    setImporting(false);
+                    e.target.value = '';
+                }
+            };
+
+            const importReturnFile = async (e) => {
+                const file = e.target.files && e.target.files[0];
+                if (!file) return;
+                setImporting(true);
+                try {
+                    await onImportReturn(file);
+                    alert('Co-rater return imported.');
+                } catch (err) {
+                    alert('Failed to import co-rater return package.');
+                } finally {
+                    setImporting(false);
+                    e.target.value = '';
+                }
+            };
+
+            const exportReturn = () => {
+                if (!coderId.trim()) {
+                    alert('Enter a coder ID first.');
+                    return;
+                }
+                onExportReturn(coderId.trim());
+            };
+
+            const exportAgreementCsv = () => {
+                const lines = ['Coder ID,Imported At,Overlap Agreement % (heuristic),Matched Tags,Primary Only,Co-rater Only,Co-rater Tags,Shared Themes,Primary Theme Count,Co-rater Theme Count,Shared Artifact Codes'];
+                sessionStats.forEach((s) => {
+                    lines.push([
+                        csvEscape(s.coderId),
+                        csvEscape(new Date(s.importedAt).toLocaleString()),
+                        csvEscape(s.agreementPct),
+                        csvEscape(s.matched),
+                        csvEscape(s.primaryOnly),
+                        csvEscape(s.coOnly),
+                        csvEscape(s.coTagCount),
+                        csvEscape(s.sharedThemes),
+                        csvEscape(s.primaryThemes),
+                        csvEscape(s.coThemes),
+                        csvEscape(s.sharedArtifactCodes)
+                    ].join(','));
+                });
+                downloadCsv(`QualiApp_Agreement_Analysis_${new Date().toISOString().slice(0, 10)}.csv`, lines);
+            };
+
+            const exportAgreementApaDoc = () => {
+                const html = buildApaTableHtml(
+                    1,
+                    'Overlap Agreement (Heuristic) Summary',
+                    ['Coder ID', 'Imported At', 'Overlap Agreement % (heuristic)', 'Matched', 'Primary only', 'Co-rater only', 'Shared themes', 'Shared artifact codes'],
+                    sessionStats.map((s) => [
+                        s.coderId,
+                        new Date(s.importedAt).toLocaleString(),
+                        `${s.agreementPct}%`,
+                        String(s.matched),
+                        String(s.primaryOnly),
+                        String(s.coOnly),
+                        String(s.sharedThemes),
+                        String(s.sharedArtifactCodes)
+                    ]),
+                    `Computed using overlap threshold = ${threshold}; this is a heuristic overlap metric and not a chance-corrected reliability statistic.`
+                );
+                downloadWordDoc(`QualiApp_APA7_Agreement_Analysis_${new Date().toISOString().slice(0, 10)}.doc`, html);
+            };
+
+            return (
+                <div className="p-8 h-full overflow-y-auto">
+                    <div className="max-w-7xl mx-auto space-y-6">
+                        <div className="bg-white border rounded-2xl p-6 shadow-soft">
+                            <h2 className="text-3xl font-display">Triangulation</h2>
+                            <p className="text-slate-500 mt-2">Export a blind co-rater package, import co-rater returns, and review overlap-based agreement and theme convergence.</p>
+                        </div>
+
+                        <div className="grid lg:grid-cols-2 gap-6">
+                            <section className="bg-white border rounded-2xl p-5 shadow-soft space-y-4">
+                                <h3 className="text-lg font-bold">Main Researcher</h3>
+                                <button onClick={onExportAssignment} className="w-full bg-tide hover:bg-teal-600 text-white px-4 py-3 rounded-lg font-semibold">Export Co-rater Assignment (No Codes)</button>
+                                <label className="block w-full text-center bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 px-4 py-3 rounded-lg font-semibold cursor-pointer">
+                                    Import Co-rater Return
+                                    <input type="file" accept=".qtrr,.json" className="hidden" onChange={importReturnFile} disabled={importing} />
+                                </label>
+                                <p className="text-xs text-slate-500">Supports multiple co-raters. Duplicate submissions are blocked per coder + package id.</p>
+                            </section>
+
+                            <section className="bg-white border rounded-2xl p-5 shadow-soft space-y-4">
+                                <h3 className="text-lg font-bold">Co-rater Workflow</h3>
+                                <label className="block w-full text-center bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 px-4 py-3 rounded-lg font-semibold cursor-pointer">
+                                    Import Assignment Package
+                                    <input type="file" accept=".qtri,.json" className="hidden" onChange={importAssignmentFile} disabled={importing} />
+                                </label>
+                                <input value={coderId} onChange={(e) => setCoderId(e.target.value)} placeholder="Your coder ID (e.g., Coder_B)" className="w-full border rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-ink" />
+                                <button onClick={exportReturn} className="w-full bg-ink hover:bg-slate-800 text-white px-4 py-3 rounded-lg font-semibold">Export My Return Package</button>
+                                <p className="text-xs text-slate-500">Current assignment: {assignmentMeta?.packageId || 'None imported in this workspace'}</p>
+                            </section>
+                        </div>
+
+                        <section className="bg-white border rounded-2xl p-5 shadow-soft space-y-4">
+                            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                                <h3 className="text-lg font-bold">Agreement Analysis</h3>
+                                <div className="flex items-center gap-3">
+                                    <label className="text-sm text-slate-600 flex items-center gap-2">
+                                        Overlap threshold
+                                        <input type="number" min="0.1" max="1" step="0.05" value={threshold} onChange={(e) => setThreshold(Math.min(1, Math.max(0.1, Number(e.target.value) || 0.5)))} className="w-20 border rounded p-1.5" />
+                                    </label>
+                                    {sessionStats.length > 0 && (
+                                        <div className="relative">
+                                            <button
+                                                type="button"
+                                                onClick={() => setShowExportMenu(prev => !prev)}
+                                                className="px-3 py-1.5 rounded-lg bg-ink text-white text-sm font-semibold hover:bg-slate-800"
+                                            >
+                                                Export
+                                            </button>
+                                            {showExportMenu && (
+                                                <div className="absolute right-0 mt-2 w-64 bg-white border border-slate-200 rounded-xl shadow-soft z-30 p-2">
+                                                    <p className="px-2 py-1 text-[11px] uppercase font-bold tracking-wide text-slate-500">CSV</p>
+                                                    <button type="button" onClick={() => { exportAgreementCsv(); setShowExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm text-slate-700">Agreement table (.csv)</button>
+                                                    <div className="my-1 border-t" />
+                                                    <p className="px-2 py-1 text-[11px] uppercase font-bold tracking-wide text-slate-500">APA7 Word (.doc)</p>
+                                                    <button type="button" onClick={() => { exportAgreementApaDoc(); setShowExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm text-slate-700">Agreement table APA7 (.doc)</button>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                            <p className="text-xs text-slate-500">Heuristic metric for calibration only; not a formal chance-corrected inter-rater reliability statistic.</p>
+
+                            {sessionStats.length === 0 ? (
+                                <p className="text-slate-500 text-sm">No co-rater returns imported yet.</p>
+                            ) : (
+                                <div className="grid md:grid-cols-2 gap-4">
+                                    {sessionStats.map(s => (
+                                        <article key={s.id} className="border rounded-xl p-4 bg-slate-50">
+                                            <div className="flex items-center justify-between mb-2">
+                                                <h4 className="font-bold text-ink">{s.coderId}</h4>
+                                                <span className="text-xs text-slate-500">{new Date(s.importedAt).toLocaleString()}</span>
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-2 text-sm">
+                                                <p><span className="font-semibold">Overlap agreement (heuristic):</span> {s.agreementPct}%</p>
+                                                <p><span className="font-semibold">Co-rater tags:</span> {s.coTagCount}</p>
+                                                <p><span className="font-semibold">Matched tags:</span> {s.matched}</p>
+                                                <p><span className="font-semibold">Primary only:</span> {s.primaryOnly}</p>
+                                                <p><span className="font-semibold">Co-rater only:</span> {s.coOnly}</p>
+                                                <p><span className="font-semibold">Shared themes:</span> {s.sharedThemes}</p>
+                                                <p><span className="font-semibold">Theme sets:</span> {s.primaryThemes} / {s.coThemes}</p>
+                                                <p><span className="font-semibold">Shared artifact codes:</span> {s.sharedArtifactCodes}</p>
+                                            </div>
+                                        </article>
+                                    ))}
+                                </div>
+                            )}
+                        </section>
+                    </div>
+                </div>
+            );
+        }
+
+        

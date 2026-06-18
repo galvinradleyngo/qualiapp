@@ -618,7 +618,7 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useEffect, useRef, useMemo } = React;
+        const { useState, useEffect, useRef, useMemo, useCallback } = React;
 
         const dbName = 'QualiMacDB_v7';
         const participantPinKey = 'quali_participant_pin_hash';
@@ -629,6 +629,7 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
         const audioMigrationVersionKey = 'audio_migration_v3';
         const fileOptimizationVersionKey = 'file_optimization_v1';
         const fileOptimizationCheckpointKey = 'file_optimization_checkpoint_v1';
+        const workspaceResumeStateKey = 'workspace_resume_state_v1';
 
         let _dbCache = null;
         const openDB = () => {
@@ -1438,6 +1439,7 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
             const [activeId, setActiveId] = useState(null);
             const [isReady, setIsReady] = useState(false);
             const [autoLockEnabled, setAutoLockEnabled] = useState(true);
+            const skipResumeRestoreRef = useRef(false);
             const buildAudioMigrationState = (overrides = {}) => ({
                 running: false,
                 processed: 0,
@@ -1789,9 +1791,11 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
 
             useEffect(() => {
                 const loadData = async () => {
-                    const keys = ['transcripts','folders','transcript_folders','tags','global_artifacts','artifact_folders','participants','analysis_canvases','source_filter_presets','triangulation_sessions','triangulation_assignment_meta','code_definitions','category_definitions','observations','observation_folders','observation_tags','activityTypes'];
+                    const keys = ['transcripts','folders','transcript_folders','tags','global_artifacts','artifact_folders','participants','analysis_canvases','source_filter_presets','triangulation_sessions','triangulation_assignment_meta','code_definitions','category_definitions','observations','observation_folders','observation_tags','activityTypes', workspaceResumeStateKey];
                     const d = await dbBatchGet('data', keys);
-                    setTranscripts(d['transcripts'] || []);
+                    const loadedTranscripts = d['transcripts'] || [];
+                    const loadedObservations = d['observations'] || [];
+                    setTranscripts(loadedTranscripts);
                     if (d['folders']) {
                         setFolders(d['folders']);
                     } else {
@@ -1807,13 +1811,56 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                     setTriangulationAssignmentMeta(d['triangulation_assignment_meta'] || null);
                     setCodeDefinitions(d['code_definitions'] || {});
                     setCategoryDefinitions(d['category_definitions'] || {});
-                    setObservations(d['observations'] || []);
+                    setObservations(loadedObservations);
                     setObservationTags(d['observation_tags'] || []);
+                    const savedWorkspaceState = d[workspaceResumeStateKey] || null;
+                    if (savedWorkspaceState && !skipResumeRestoreRef.current) {
+                        const allowedViews = new Set(['dashboard', 'artifacts', 'observations', 'participants', 'analysis', 'codebook', 'triangulation', 'backup', 'editor']);
+                        const resumeView = String(savedWorkspaceState.view || 'dashboard');
+                        const resumeTranscriptId = String(savedWorkspaceState.activeTranscriptId || '');
+                        const resumeObservationId = String(savedWorkspaceState.activeObservationId || '');
+                        const transcriptExists = !!loadedTranscripts.find((t) => String(t.id) === resumeTranscriptId);
+                        const observationExists = !!loadedObservations.find((o) => String(o.id) === resumeObservationId);
+
+                        if (resumeTranscriptId && transcriptExists) setActiveId(resumeTranscriptId);
+                        if (resumeObservationId && observationExists) setActiveObservationId(resumeObservationId);
+                        if (typeof savedWorkspaceState.isSidebarCollapsed === 'boolean') {
+                            setIsSidebarCollapsed(savedWorkspaceState.isSidebarCollapsed);
+                        }
+
+                        if (resumeView === 'editor') {
+                            setView(transcriptExists ? 'editor' : 'dashboard');
+                        } else if (allowedViews.has(resumeView)) {
+                            if (resumeView === 'observations') {
+                                setView('observations');
+                            } else {
+                                setView(resumeView);
+                            }
+                        }
+                    }
                     if (d['activityTypes']) setActivityTypes(d['activityTypes']);
                     setIsReady(true);
                 };
                 if (startupState === 'open') loadData();
             }, [startupState]);
+
+            useEffect(() => {
+                if (!isReady || startupState !== 'open') return;
+                const allowedViews = new Set(['dashboard', 'artifacts', 'observations', 'participants', 'analysis', 'codebook', 'triangulation', 'backup', 'editor']);
+                const safeView = allowedViews.has(view) ? view : 'dashboard';
+                const transcriptExists = !!transcripts.find((t) => String(t.id) === String(activeId || ''));
+                const observationExists = !!observations.find((o) => String(o.id) === String(activeObservationId || ''));
+
+                const nextState = {
+                    view: safeView,
+                    activeTranscriptId: transcriptExists ? String(activeId) : null,
+                    activeObservationId: observationExists ? String(activeObservationId) : null,
+                    isSidebarCollapsed: !!isSidebarCollapsed,
+                    updatedAt: new Date().toISOString()
+                };
+
+                dbSet('data', workspaceResumeStateKey, nextState).catch(() => {});
+            }, [isReady, startupState, view, activeId, activeObservationId, isSidebarCollapsed, transcripts, observations]);
 
             useEffect(() => {
                 if (isReady && startupState === 'open') {
@@ -3085,6 +3132,69 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                                     )}
                                 </div>
                             )}
+                            <div className="absolute bottom-3 right-3 z-30 w-72 bg-white/95 border border-slate-200 rounded-xl shadow-soft p-3">
+                                <div className="flex items-center justify-between">
+                                    <p className="text-xs font-semibold text-slate-700">Pomodoro Timer</p>
+                                    <button
+                                        type="button"
+                                        onClick={() => setPomodoroMinimized((v) => !v)}
+                                        className="text-slate-400 hover:text-slate-600 text-sm"
+                                        title={pomodoroMinimized ? 'Expand Pomodoro' : 'Minimize Pomodoro'}
+                                    >
+                                        {pomodoroMinimized ? '+' : '−'}
+                                    </button>
+                                </div>
+                                {!pomodoroMinimized && (
+                                    <>
+                                        <p className="mt-2 text-3xl font-display text-ink tracking-wide text-center">{formatPomodoroTime(pomodoroRemainingSeconds)}</p>
+                                        <div className="mt-2 flex items-center justify-center gap-2">
+                                            <button
+                                                type="button"
+                                                onClick={() => adjustPomodoroMinutes(-5)}
+                                                disabled={pomodoroRunning}
+                                                className="px-2 py-1 text-xs rounded border border-slate-300 text-slate-600 disabled:opacity-50"
+                                            >
+                                                -5m
+                                            </button>
+                                            <span className="text-xs text-slate-500">{pomodoroDurationMinutes} min</span>
+                                            <button
+                                                type="button"
+                                                onClick={() => adjustPomodoroMinutes(5)}
+                                                disabled={pomodoroRunning}
+                                                className="px-2 py-1 text-xs rounded border border-slate-300 text-slate-600 disabled:opacity-50"
+                                            >
+                                                +5m
+                                            </button>
+                                        </div>
+                                        <div className="mt-3 flex gap-2">
+                                            {!pomodoroRunning ? (
+                                                <button
+                                                    type="button"
+                                                    onClick={startPomodoro}
+                                                    className="flex-1 bg-tide hover:bg-teal-600 text-white text-xs font-semibold py-2 rounded-lg"
+                                                >
+                                                    Start
+                                                </button>
+                                            ) : (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setPomodoroRunning(false)}
+                                                    className="flex-1 bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold py-2 rounded-lg"
+                                                >
+                                                    Pause
+                                                </button>
+                                            )}
+                                            <button
+                                                type="button"
+                                                onClick={resetPomodoro}
+                                                className="flex-1 bg-slate-700 hover:bg-slate-800 text-white text-xs font-semibold py-2 rounded-lg"
+                                            >
+                                                Reset
+                                            </button>
+                                        </div>
+                                    </>
+                                )}
+                            </div>
                             {showRecoveryPrompt && startupState === 'open' && (
                                 <div className="absolute inset-0 z-40 bg-slate-900/55 flex items-center justify-center p-4">
                                     <div className="w-full max-w-lg bg-white rounded-2xl border shadow-soft p-6 space-y-4">
@@ -3181,6 +3291,13 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                                     onAddObservationTag={(tag) => setObservationTags(prev => [...prev, tag])}
                                     onUpdateObservationTag={(updated) => setObservationTags(prev => prev.map(t => t.id === updated.id ? updated : t))}
                                     onRemoveObservationTag={(id) => setObservationTags(prev => prev.filter(t => t.id !== id))}
+                                    onUpdateObservationSessionState={(id, sessionState) => {
+                                        setObservations((prev) => {
+                                            const next = prev.map((o) => o.id === id ? { ...o, ...sessionState } : o);
+                                            dbSet('data', 'observations', next).catch(() => {});
+                                            return next;
+                                        });
+                                    }}
                                     folders={folders}
                                     onCreateFolder={handleCreateFolder}
                                     onRenameFolder={handleRenameFolder}
@@ -3232,6 +3349,13 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                                         setTags((prev) => {
                                             const next = [...prev, tag];
                                             dbSet('data', 'tags', next).catch(() => {});
+                                            return next;
+                                        });
+                                    }}
+                                    onUpdateSessionState={(id, sessionState) => {
+                                        setTranscripts((prev) => {
+                                            const next = prev.map((t) => t.id === id ? { ...t, ...sessionState } : t);
+                                            dbSet('data', 'transcripts', next).catch(() => {});
                                             return next;
                                         });
                                     }}
@@ -4875,8 +4999,8 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
             );
         }
 
-        function Editor({ transcript, tags, allTags, activityTypes, onAddActivityType, onBack, onUpdateTranscript, onAddTag, onUpdateTag, onRemoveTag }) {
-            const [mode, setMode] = useState('edit');
+        function Editor({ transcript, tags, allTags, activityTypes, onAddActivityType, onBack, onUpdateTranscript, onAddTag, onUpdateTag, onRemoveTag, onUpdateSessionState }) {
+            const [mode, setMode] = useState(transcript.resumeMode || 'edit');
             const [content, setContent] = useState(transcript.content || '');
             const [contentHtml, setContentHtml] = useState(transcript.contentHtml || '');
             const [notes, setNotes] = useState(transcript.notes || '');
@@ -4907,6 +5031,8 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
             const editableRef = useRef(null);
             const audioRef = useRef(null);
             const audioTrackUrlsRef = useRef([]);
+            const audioResumeAppliedRef = useRef(false);
+            const lastSessionPersistAtRef = useRef(0);
             const SPEED_STEPS = [0.5, 0.75, 1, 1.25, 1.5, 2];
 
             const escapeHtml = (value) => String(value || '')
@@ -4948,8 +5074,28 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                 setNotes(transcript.notes || '');
                 setModality(transcript.modality || '');
                 setPlaybackRate(transcript.playbackRate || 1);
+                setMode(transcript.resumeMode || 'edit');
+                audioResumeAppliedRef.current = false;
                 setSaveStatus('saved');
             }, [transcript.id]);
+
+            const persistSessionState = useCallback((force = false) => {
+                if (!onUpdateSessionState) return;
+                const now = Date.now();
+                if (!force && now - lastSessionPersistAtRef.current < 1200) return;
+                lastSessionPersistAtRef.current = now;
+
+                const currentAudioTime = audioRef.current
+                    ? Number((audioRef.current.currentTime || 0).toFixed(2))
+                    : Number(transcript.resumeAudioTimeSec || 0);
+
+                onUpdateSessionState(transcript.id, {
+                    resumeMode: mode,
+                    resumeAudioTrackId: activeAudioTrackId || null,
+                    resumeAudioTimeSec: Number.isFinite(currentAudioTime) ? currentAudioTime : 0,
+                    lastVisitedAt: new Date().toISOString()
+                });
+            }, [onUpdateSessionState, transcript.id, transcript.resumeAudioTimeSec, mode, activeAudioTrackId]);
 
             useEffect(() => {
                 if (!audioRef.current) return;
@@ -5000,8 +5146,10 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                     audioTrackUrlsRef.current = loaded.map((track) => track.url);
                     setAudioTracks(loaded);
                     if (loaded.length > 0) {
-                        setActiveAudioTrackId(loaded[0].id);
-                        setAudioUrl(loaded[0].url);
+                        const resumeTrack = loaded.find((track) => track.id === transcript.resumeAudioTrackId);
+                        const initialTrack = resumeTrack || loaded[0];
+                        setActiveAudioTrackId(initialTrack.id);
+                        setAudioUrl(initialTrack.url);
                     }
                 };
 
@@ -5017,6 +5165,51 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                 const activeTrack = audioTracks.find((track) => track.id === activeAudioTrackId);
                 setAudioUrl(activeTrack ? activeTrack.url : null);
             }, [audioTracks, activeAudioTrackId]);
+
+            useEffect(() => {
+                if (!audioRef.current || !audioUrl || audioResumeAppliedRef.current) return;
+                const target = Math.max(0, Number(transcript.resumeAudioTimeSec) || 0);
+                if (target <= 0) {
+                    audioResumeAppliedRef.current = true;
+                    return;
+                }
+
+                const node = audioRef.current;
+                const applyResume = () => {
+                    try {
+                        if (Number.isFinite(node.duration) && target > node.duration) {
+                            node.currentTime = Math.max(0, node.duration - 0.25);
+                        } else {
+                            node.currentTime = target;
+                        }
+                    } catch (_err) {}
+                    audioResumeAppliedRef.current = true;
+                };
+
+                node.addEventListener('loadedmetadata', applyResume, { once: true });
+                if (node.readyState >= 1) applyResume();
+                return () => node.removeEventListener('loadedmetadata', applyResume);
+            }, [audioUrl, transcript.id, transcript.resumeAudioTimeSec]);
+
+            useEffect(() => {
+                persistSessionState();
+            }, [mode, activeAudioTrackId, persistSessionState]);
+
+            useEffect(() => {
+                if (!audioRef.current) return;
+                const node = audioRef.current;
+                const onTime = () => persistSessionState(false);
+                const onPause = () => persistSessionState(true);
+                const onEnded = () => persistSessionState(true);
+                node.addEventListener('timeupdate', onTime);
+                node.addEventListener('pause', onPause);
+                node.addEventListener('ended', onEnded);
+                return () => {
+                    node.removeEventListener('timeupdate', onTime);
+                    node.removeEventListener('pause', onPause);
+                    node.removeEventListener('ended', onEnded);
+                };
+            }, [audioUrl, persistSessionState]);
 
             const handleEditableInput = () => {
                 if (!editableRef.current) return;
@@ -6043,6 +6236,7 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
         function AnalysisBoard({ tags, canvases, onUpdate, artifacts, transcripts, participants, observations, observationTags, sourceFilterPresets, onSaveSourceFilterPreset, onDeleteSourceFilterPreset }) {
             const [newCanvasName, setNewCanvasName] = useState('');
             const [activeCanvasId, setActiveCanvasId] = useState(canvases[0]?.id || null);
+            const [newCategoryName, setNewCategoryName] = useState('');
             const [newThemeName, setNewThemeName] = useState('');
             const [editingThemeId, setEditingThemeId] = useState(null);
             const [editThemeName, setEditThemeName] = useState('');
@@ -6307,9 +6501,84 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                     .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
             }, [tags, artifacts, observationTags, observations, transcriptById, selectedFolderSet, participantCodeById, selectedSourceSet]);
 
-            const activeCanvas = canvases.find(c => c.id === activeCanvasId) || null;
+            const normalizeCanvas = (canvas) => {
+                if (!canvas) return null;
+                const sourceCategories = Array.isArray(canvas.categories) ? canvas.categories : [];
+                const categories = sourceCategories.map((category, index) => ({
+                    id: category.id || `cat_${index}_${Date.now()}`,
+                    name: String(category.name || '').trim() || `Category ${index + 1}`,
+                    code: String(category.code || '').trim() || String(index + 1),
+                    codes: Array.from(new Set((category.codes || []).map((codeName) => String(codeName || '').trim()).filter(Boolean)))
+                }));
+
+                const categoryNameByCode = {};
+                categories.forEach((category) => {
+                    category.codes.forEach((codeName) => {
+                        categoryNameByCode[codeName] = category.name;
+                    });
+                });
+
+                const themes = (canvas.themes || []).map((theme, index) => {
+                    const explicitCategories = Array.isArray(theme.categories)
+                        ? theme.categories.map((name) => String(name || '').trim()).filter(Boolean)
+                        : [];
+                    const fallbackCategories = explicitCategories.length > 0
+                        ? explicitCategories
+                        : [...new Set((theme.codes || []).map((codeName) => {
+                            const cleanedCode = String(codeName || '').trim();
+                            if (!cleanedCode) return '';
+                            if (categoryNameByCode[cleanedCode]) return categoryNameByCode[cleanedCode];
+                            const found = codeDetails.find((detail) => detail.name === cleanedCode);
+                            return (found?.category || 'Uncategorized').trim() || 'Uncategorized';
+                        }).filter(Boolean))];
+
+                    return {
+                        id: theme.id || `theme_${index}`,
+                        name: (theme.name || '').trim() || `Theme ${index + 1}`,
+                        categories: Array.from(new Set(fallbackCategories))
+                    };
+                });
+
+                return {
+                    id: canvas.id,
+                    name: canvas.name,
+                    categories,
+                    themes
+                };
+            };
+
+            const persistCanvas = (nextCanvas) => {
+                const payload = {
+                    ...nextCanvas,
+                    categories: (nextCanvas.categories || []).map((category) => ({
+                        ...category,
+                        code: String(category.code || '').trim(),
+                        codes: [...new Set((category.codes || []).map((codeName) => String(codeName || '').trim()).filter(Boolean))]
+                    })),
+                    themes: (nextCanvas.themes || []).map((theme) => ({
+                        ...theme,
+                        categories: [...new Set((theme.categories || []).map((name) => String(name || '').trim()).filter(Boolean))]
+                    }))
+                };
+                onUpdate(canvases.map((canvas) => canvas.id === payload.id ? payload : canvas));
+            };
+
+            const getNextCategoryCode = (categories) => {
+                const used = new Set((categories || []).map((category) => String(category.code || '').trim()).filter(Boolean));
+                for (let i = 1; i <= 999; i++) {
+                    const candidate = String(i);
+                    if (!used.has(candidate)) return candidate;
+                }
+                return String(Date.now()).slice(-3);
+            };
+
+            const activeCanvasRaw = canvases.find((c) => c.id === activeCanvasId) || null;
+            const activeCanvas = useMemo(() => (activeCanvasRaw ? normalizeCanvas(activeCanvasRaw) : null), [activeCanvasRaw, codeDetails]);
             const uniqueCodeCount = useMemo(() => new Set(codeDetails.map(c => (c.name || '').trim()).filter(Boolean)).size, [codeDetails]);
-            const uniqueCategoryCount = useMemo(() => new Set(codeDetails.map(c => (c.category || 'Uncategorized').trim() || 'Uncategorized')).size, [codeDetails]);
+            const uniqueCategoryCount = useMemo(() => {
+                if (!activeCanvas) return 0;
+                return new Set((activeCanvas.categories || []).map((category) => (category.name || '').trim()).filter(Boolean)).size;
+            }, [activeCanvas]);
             const uniqueThemeCount = useMemo(() => {
                 if (!activeCanvas) return 0;
                 return new Set((activeCanvas.themes || []).map(t => (t.name || '').trim()).filter(Boolean)).size;
@@ -6317,14 +6586,14 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
 
             const createCanvas = () => {
                 if (!newCanvasName.trim()) return;
-                const c = { id: Date.now().toString(), name: newCanvasName.trim(), themes: [] };
+                const c = { id: Date.now().toString(), name: newCanvasName.trim(), categories: [], themes: [] };
                 onUpdate([c, ...canvases]);
                 setActiveCanvasId(c.id);
                 setNewCanvasName('');
             };
 
             const deleteCanvas = (canvasId) => {
-                if (confirm('Delete this canvas and all its themes?')) {
+                if (confirm('Delete this clustering workspace and all thematic mappings?')) {
                     const updated = canvases.filter(c => c.id !== canvasId);
                     onUpdate(updated);
                     if (activeCanvasId === canvasId) setActiveCanvasId(updated[0]?.id || null);
@@ -6332,16 +6601,85 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
             };
 
             const renameCanvas = (canvasId) => {
-                const newName = prompt('Enter new canvas name:');
+                const newName = prompt('Enter a new name for this clustering workspace.');
                 if (newName && newName.trim()) {
                     onUpdate(canvases.map(c => c.id === canvasId ? { ...c, name: newName.trim() } : c));
                 }
             };
 
+            const addCategory = () => {
+                if (!activeCanvas || !newCategoryName.trim()) return;
+                if (activeCanvas.categories.some((category) => category.name.toLowerCase() === newCategoryName.trim().toLowerCase())) return;
+                const nextCanvas = {
+                    ...activeCanvas,
+                    categories: [...activeCanvas.categories, { id: Date.now().toString(), name: newCategoryName.trim(), code: getNextCategoryCode(activeCanvas.categories), codes: [] }]
+                };
+                persistCanvas(nextCanvas);
+                setNewCategoryName('');
+            };
+
+            const removeCategory = (categoryId) => {
+                if (!activeCanvas) return;
+                const categoryToDelete = activeCanvas.categories.find((category) => category.id === categoryId);
+                if (!categoryToDelete) return;
+                if (!confirm(`Delete category "${categoryToDelete.name}" and unassign its in-vivo codes?`)) return;
+                const nextCanvas = {
+                    ...activeCanvas,
+                    categories: activeCanvas.categories.filter((category) => category.id !== categoryId),
+                    themes: activeCanvas.themes.map((theme) => ({
+                        ...theme,
+                        categories: (theme.categories || []).filter((name) => name !== categoryToDelete.name)
+                    }))
+                };
+                persistCanvas(nextCanvas);
+            };
+
+            const renameCategory = (categoryId) => {
+                if (!activeCanvas) return;
+                const target = activeCanvas.categories.find((category) => category.id === categoryId);
+                if (!target) return;
+                const trimmed = String(prompt('Enter a new category name.', target.name) || '').trim();
+                if (!trimmed || trimmed === target.name) return;
+                if (activeCanvas.categories.some((category) => category.id !== categoryId && category.name.toLowerCase() === trimmed.toLowerCase())) return;
+                const nextCanvas = {
+                    ...activeCanvas,
+                    categories: activeCanvas.categories.map((category) => category.id === categoryId ? { ...category, name: trimmed } : category),
+                    themes: activeCanvas.themes.map((theme) => ({
+                        ...theme,
+                        categories: (theme.categories || []).map((name) => name === target.name ? trimmed : name)
+                    }))
+                };
+                persistCanvas(nextCanvas);
+            };
+
+            const assignCodeToCategory = (categoryId, codeName) => {
+                if (!activeCanvas || !codeName) return;
+                const cleanedCode = String(codeName || '').trim();
+                if (!cleanedCode) return;
+                const nextCategories = activeCanvas.categories.map((category) => ({
+                    ...category,
+                    codes: (category.codes || []).filter((code) => code !== cleanedCode)
+                }));
+                const targetIndex = nextCategories.findIndex((category) => category.id === categoryId);
+                if (targetIndex < 0) return;
+                nextCategories[targetIndex].codes = [...nextCategories[targetIndex].codes, cleanedCode];
+                persistCanvas({ ...activeCanvas, categories: nextCategories });
+            };
+
+            const unassignCodeFromCategory = (categoryId, codeName) => {
+                if (!activeCanvas || !codeName) return;
+                const cleanedCode = String(codeName || '').trim();
+                const nextCategories = activeCanvas.categories.map((category) => category.id === categoryId
+                    ? { ...category, codes: (category.codes || []).filter((code) => code !== cleanedCode) }
+                    : category
+                );
+                persistCanvas({ ...activeCanvas, categories: nextCategories });
+            };
+
             const addTheme = () => {
                 if (!activeCanvas || !newThemeName.trim()) return;
-                const updated = { ...activeCanvas, themes: [...activeCanvas.themes, { id: Date.now().toString(), name: newThemeName.trim(), codes: [] }] };
-                onUpdate(canvases.map(c => c.id === updated.id ? updated : c));
+                const updated = { ...activeCanvas, themes: [...activeCanvas.themes, { id: Date.now().toString(), name: newThemeName.trim(), categories: [] }] };
+                persistCanvas(updated);
                 setNewThemeName('');
             };
 
@@ -6349,7 +6687,7 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                 if (!activeCanvas) return;
                 if (confirm('Delete this theme?')) {
                     const updated = { ...activeCanvas, themes: activeCanvas.themes.filter(t => t.id !== themeId) };
-                    onUpdate(canvases.map(c => c.id === updated.id ? updated : c));
+                    persistCanvas(updated);
                 }
             };
 
@@ -6361,31 +6699,55 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
             const saveEditTheme = () => {
                 if (!activeCanvas || !editingThemeId) return;
                 const updated = { ...activeCanvas, themes: activeCanvas.themes.map(t => t.id === editingThemeId ? { ...t, name: editThemeName.trim() } : t) };
-                onUpdate(canvases.map(c => c.id === updated.id ? updated : c));
+                persistCanvas(updated);
                 setEditingThemeId(null);
                 setEditThemeName('');
             };
 
-            const moveCodeToTheme = (themeId, codeName) => {
-                if (!activeCanvas) return;
-                const nextThemes = activeCanvas.themes.map(t => ({ ...t, codes: t.codes.filter(c => c !== codeName) }));
-                const idx = nextThemes.findIndex(t => t.id === themeId);
-                if (idx >= 0 && !nextThemes[idx].codes.includes(codeName)) nextThemes[idx].codes.push(codeName);
-                const updated = { ...activeCanvas, themes: nextThemes };
-                onUpdate(canvases.map(c => c.id === updated.id ? updated : c));
+            const assignCategoryToTheme = (themeId, categoryName) => {
+                if (!activeCanvas || !themeId || !categoryName) return;
+                const cleanedCategory = String(categoryName || '').trim();
+                if (!cleanedCategory) return;
+                const nextThemes = activeCanvas.themes.map((theme) => ({
+                    ...theme,
+                    categories: (theme.categories || []).filter((name) => name !== cleanedCategory)
+                }));
+                const targetIndex = nextThemes.findIndex((theme) => theme.id === themeId);
+                if (targetIndex < 0) return;
+                nextThemes[targetIndex].categories = [...nextThemes[targetIndex].categories, cleanedCategory];
+                persistCanvas({ ...activeCanvas, themes: nextThemes });
             };
 
-            const removeCodeFromTheme = (themeId, codeName) => {
+            const removeCategoryFromTheme = (themeId, categoryName) => {
                 if (!activeCanvas) return;
                 const updated = {
                     ...activeCanvas,
-                    themes: activeCanvas.themes.map(t => t.id === themeId ? { ...t, codes: t.codes.filter(c => c !== codeName) } : t)
+                    themes: activeCanvas.themes.map((theme) => (
+                        theme.id === themeId
+                            ? { ...theme, categories: (theme.categories || []).filter((name) => name !== categoryName) }
+                            : theme
+                    ))
                 };
-                onUpdate(canvases.map(c => c.id === updated.id ? updated : c));
+                persistCanvas(updated);
             };
 
-            const assignedCodes = new Set((activeCanvas?.themes || []).flatMap(t => t.codes));
-            const unassigned = codeDetails.filter(c => !assignedCodes.has(c.name));
+            const categoryByCode = useMemo(() => {
+                const out = {};
+                (activeCanvas?.categories || []).forEach((category) => {
+                    (category.codes || []).forEach((codeName) => {
+                        out[codeName] = category.name;
+                    });
+                });
+                return out;
+            }, [activeCanvas]);
+
+            const assignedCodes = useMemo(() => new Set(Object.keys(categoryByCode)), [categoryByCode]);
+            const unassignedCodes = codeDetails.filter((code) => !assignedCodes.has(code.name));
+            const unassignedCategories = useMemo(() => {
+                if (!activeCanvas) return [];
+                const assignedCategoryNames = new Set(activeCanvas.themes.flatMap((theme) => theme.categories || []));
+                return activeCanvas.categories.filter((category) => !assignedCategoryNames.has(category.name));
+            }, [activeCanvas]);
 
             const codeDetailByName = useMemo(() => {
                 const detailByCode = {};
@@ -6397,23 +6759,54 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
 
             const buildCanvasTableRows = (canvas) => {
                 if (!canvas) return [];
+                const normalizedCanvas = normalizeCanvas(canvas);
+                if (!normalizedCanvas) return [];
                 const rows = [];
-                (canvas.themes || []).forEach((theme) => {
-                    (theme.codes || []).forEach((codeName) => {
-                        const d = codeDetailByName[codeName] || { count: 0, quotes: [], category: 'Uncategorized' };
-                        rows.push({
-                            theme: theme.name,
-                            code: codeName,
-                            category: d.category,
-                            quoteCount: d.count,
-                            quotes: d.quotes
+                const categoryMap = {};
+                (normalizedCanvas.categories || []).forEach((category) => {
+                    categoryMap[category.name] = category;
+                });
+                (normalizedCanvas.themes || []).forEach((theme) => {
+                    (theme.categories || []).forEach((categoryName) => {
+                        const foundCategory = categoryMap[categoryName] || { name: categoryName, codes: [] };
+                        (foundCategory.codes || []).forEach((codeName) => {
+                            const d = codeDetailByName[codeName] || { count: 0, quotes: [], category: categoryName || 'Uncategorized' };
+                            rows.push({
+                                theme: theme.name,
+                                code: codeName,
+                                category: categoryName || d.category,
+                                quoteCount: d.count,
+                                quotes: d.quotes
+                            });
                         });
                     });
                 });
                 return rows;
             };
 
+            const clusteringRows = useMemo(() => codeDetails.map((code) => ({
+                code: code.name,
+                category: categoryByCode[code.name] || 'Unassigned',
+                quoteCount: code.count,
+                quotes: code.quotes
+            })), [codeDetails, categoryByCode]);
+
             const tableRows = useMemo(() => buildCanvasTableRows(activeCanvas), [activeCanvas, codeDetailByName]);
+
+            const exportClusteringCsv = () => {
+                if (!activeCanvas) return;
+                const lines = ['Code,Category,Quote Count,Quotes'];
+                clusteringRows.forEach((row) => {
+                    const quotes = row.quotes.map((q) => `[${q.source}] ${q.ref}: ${q.text}`).join(' || ');
+                    lines.push([
+                        csvEscape(row.code),
+                        csvEscape(row.category),
+                        csvEscape(row.quoteCount),
+                        csvEscape(quotes)
+                    ].join(','));
+                });
+                downloadCsv(`${activeCanvas.name.replace(/\s+/g, '_')}_clustering_table.csv`, lines);
+            };
 
             const exportCanvasCsv = () => {
                 if (!activeCanvas) return;
@@ -6497,7 +6890,7 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                     <div className="max-w-7xl mx-auto space-y-6">
                         <div className="bg-white border rounded-2xl p-6 shadow-soft">
                             <h2 className="text-3xl font-display">Analysis Canvases</h2>
-                            <p className="text-slate-500 mt-1">Create theme buckets, filter by folder, review theme tables, and export via CSV or APA7 Word formats.</p>
+                            <p className="text-slate-500 mt-1">Build clustering categories from in-vivo codes, then map categories into themes for synthesis and export.</p>
                             <p className="text-slate-500 mt-1">Unique codes: {uniqueCodeCount} • Unique categories: {uniqueCategoryCount} • Unique themes in selected canvas: {uniqueThemeCount}</p>
                         </div>
 
@@ -6557,7 +6950,7 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                                 <div className="grid lg:grid-cols-3 gap-5">
                                     <div className="bg-white border rounded-2xl p-4 shadow-soft lg:col-span-1">
                                         <h3 className="font-bold mb-3">Code Bank (filtered)</h3>
-                                        <p className="text-xs text-slate-500 mb-3">Drag codes into theme buckets. Quote counts reflect selected folders.</p>
+                                        <p className="text-xs text-slate-500 mb-3">Drag in-vivo codes into category clusters. Quote counts reflect selected folders.</p>
                                         <div className="space-y-2 max-h-[520px] overflow-y-auto pr-1">
                                             {codeDetails.map(code => (
                                                 <div
@@ -6567,7 +6960,7 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                                                     className={`border rounded-lg p-2 cursor-grab bg-white hover:border-tide transition ${assignedCodes.has(code.name) ? 'opacity-60' : ''}`}
                                                 >
                                                     <div className="font-semibold text-sm">{code.name}</div>
-                                                    <div className="text-xs text-slate-500">{code.count} quotes • <span className="text-[10px] uppercase font-bold text-slate-400">{code.category}</span></div>
+                                                    <div className="text-xs text-slate-500">{code.count} quotes • <span className="text-[10px] uppercase font-bold text-slate-400">{categoryByCode[code.name] || 'Unassigned'}</span></div>
                                                     {code.source === 'multiple' && <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-full">Multiple sources</span>}
                                                     {code.source === 'artifact' && <span className="text-[10px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded-full">Artifact</span>}
                                                     {code.source === 'observation' && <span className="text-[10px] bg-violet-100 text-violet-800 px-1.5 py-0.5 rounded-full">Observation</span>}
@@ -6579,64 +6972,137 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
 
                                     <div className="bg-white border rounded-2xl p-4 shadow-soft lg:col-span-2">
                                         <div className="flex gap-2 mb-4">
-                                            <input value={newThemeName} onChange={e => setNewThemeName(e.target.value)} placeholder="New theme bucket" className="flex-1 border rounded-lg p-2.5 focus:outline-none focus:ring-2 focus:ring-ember" />
-                                            <button onClick={addTheme} className="bg-ember hover:bg-orange-700 text-white px-4 rounded-lg font-semibold">Add Theme</button>
+                                            <input value={newCategoryName} onChange={e => setNewCategoryName(e.target.value)} placeholder="New category cluster" className="flex-1 border rounded-lg p-2.5 focus:outline-none focus:ring-2 focus:ring-tide" />
+                                            <button onClick={addCategory} className="bg-tide hover:bg-teal-600 text-white px-4 rounded-lg font-semibold">Add Category</button>
                                         </div>
 
-                                        {activeCanvas.themes.length === 0 && <p className="text-slate-400 text-sm">No themes yet in this canvas.</p>}
+                                        {activeCanvas.categories.length === 0 && <p className="text-slate-400 text-sm">No categories yet in this canvas.</p>}
 
-                                        <div className="space-y-3">
-                                            {activeCanvas.themes.map(theme => (
+                                        <div className="space-y-3 max-h-[520px] overflow-y-auto pr-1">
+                                            {activeCanvas.categories.map((category) => (
                                                 <div
-                                                    key={theme.id}
+                                                    key={category.id}
                                                     onDragOver={(e) => e.preventDefault()}
                                                     onDrop={(e) => {
                                                         e.preventDefault();
                                                         const codeName = e.dataTransfer.getData('text/plain');
-                                                        moveCodeToTheme(theme.id, codeName);
+                                                        assignCodeToCategory(category.id, codeName);
                                                     }}
-                                                    className="border-2 border-dashed rounded-xl p-4 bg-slate-50 group"
+                                                    className="border-2 border-dashed rounded-xl p-4 bg-slate-50"
                                                 >
                                                     <div className="flex justify-between items-center mb-3">
-                                                        {editingThemeId === theme.id ? (
-                                                            <div className="flex gap-2 flex-1">
-                                                                <input autoFocus value={editThemeName} onChange={e => setEditThemeName(e.target.value)} className="flex-1 border rounded p-1.5 text-sm focus:ring-2 focus:ring-tide outline-none" />
-                                                                <button onClick={saveEditTheme} className="bg-tide text-white px-2 rounded text-sm font-semibold">Save</button>
-                                                                <button onClick={() => setEditingThemeId(null)} className="bg-slate-300 text-slate-700 px-2 rounded text-sm font-semibold">Cancel</button>
-                                                            </div>
-                                                        ) : (
-                                                            <>
-                                                                <h4 className="font-bold text-ink">{theme.name}</h4>
-                                                                <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition">
-                                                                    <button onClick={() => startEditTheme(theme)} className="text-slate-400 hover:text-blue-600 text-sm">✎</button>
-                                                                    <button onClick={() => deleteTheme(theme.id)} className="text-slate-400 hover:text-red-600 text-sm">✕</button>
-                                                                </div>
-                                                            </>
-                                                        )}
+                                                        <div
+                                                            draggable
+                                                            onDragStart={(e) => e.dataTransfer.setData('text/plain', category.name)}
+                                                            className="cursor-grab"
+                                                            title="Drag this category into a theme"
+                                                        >
+                                                            <h4 className="font-bold text-ink">{category.name}</h4>
+                                                            <p className="text-xs text-slate-500">Cluster #{category.code}</p>
+                                                        </div>
+                                                        <div className="flex gap-1">
+                                                            <button onClick={() => renameCategory(category.id)} className="text-slate-400 hover:text-blue-600 text-sm">✎</button>
+                                                            <button onClick={() => removeCategory(category.id)} className="text-slate-400 hover:text-red-600 text-sm">✕</button>
+                                                        </div>
                                                     </div>
                                                     <div className="flex flex-wrap gap-2">
-                                                        {theme.codes.map(codeName => {
-                                                            const found = codeDetails.find(c => c.name === codeName);
+                                                        {(category.codes || []).map((codeName) => {
+                                                            const found = codeDetails.find((c) => c.name === codeName);
                                                             return (
-                                                                <span key={codeName} className="inline-flex items-center gap-2 text-xs bg-teal-100 text-teal-900 px-3 py-1 rounded-full border border-teal-200">
+                                                                <span key={`${category.id}_${codeName}`} className="inline-flex items-center gap-2 text-xs bg-teal-100 text-teal-900 px-3 py-1 rounded-full border border-teal-200">
                                                                     {codeName} ({found?.count || 0})
-                                                                    <button onClick={() => removeCodeFromTheme(theme.id, codeName)} className="text-teal-700 hover:text-red-600">x</button>
+                                                                    <button onClick={() => unassignCodeFromCategory(category.id, codeName)} className="text-teal-700 hover:text-red-600">x</button>
                                                                 </span>
                                                             );
                                                         })}
-                                                        {theme.codes.length === 0 && <span className="text-xs text-slate-400">Drop codes here</span>}
+                                                        {(category.codes || []).length === 0 && <span className="text-xs text-slate-400">Drop in-vivo codes here</span>}
                                                     </div>
                                                 </div>
                                             ))}
                                         </div>
 
-                                        {unassigned.length > 0 && (
+                                        {unassignedCodes.length > 0 && (
                                             <div className="mt-5 pt-4 border-t">
-                                                <p className="text-xs uppercase text-slate-500 font-bold mb-2">Unassigned in this canvas</p>
-                                                <p className="text-sm text-slate-600">{unassigned.map(c => `${c.name} (${c.count})`).join(', ')}</p>
+                                                <p className="text-xs uppercase text-slate-500 font-bold mb-2">Unassigned Codes</p>
+                                                <p className="text-sm text-slate-600">{unassignedCodes.map(c => `${c.name} (${c.count})`).join(', ')}</p>
                                             </div>
                                         )}
                                     </div>
+                                </div>
+
+                                <div className="bg-white border rounded-2xl p-4 shadow-soft mt-5">
+                                    <div className="flex gap-2 mb-4">
+                                        <input value={newThemeName} onChange={e => setNewThemeName(e.target.value)} placeholder="New theme bucket" className="flex-1 border rounded-lg p-2.5 focus:outline-none focus:ring-2 focus:ring-ember" />
+                                        <button onClick={addTheme} className="bg-ember hover:bg-orange-700 text-white px-4 rounded-lg font-semibold">Add Theme</button>
+                                    </div>
+
+                                    {activeCanvas.themes.length === 0 && <p className="text-slate-400 text-sm">No themes yet in this canvas.</p>}
+
+                                    <div className="space-y-3">
+                                        {activeCanvas.themes.map((theme) => (
+                                            <div
+                                                key={theme.id}
+                                                onDragOver={(e) => e.preventDefault()}
+                                                onDrop={(e) => {
+                                                    e.preventDefault();
+                                                    const categoryName = e.dataTransfer.getData('text/plain');
+                                                    assignCategoryToTheme(theme.id, categoryName);
+                                                }}
+                                                className="border-2 border-dashed rounded-xl p-4 bg-slate-50 group"
+                                            >
+                                                <div className="flex justify-between items-center mb-3">
+                                                    {editingThemeId === theme.id ? (
+                                                        <div className="flex gap-2 flex-1">
+                                                            <input autoFocus value={editThemeName} onChange={e => setEditThemeName(e.target.value)} className="flex-1 border rounded p-1.5 text-sm focus:ring-2 focus:ring-tide outline-none" />
+                                                            <button onClick={saveEditTheme} className="bg-tide text-white px-2 rounded text-sm font-semibold">Save</button>
+                                                            <button onClick={() => setEditingThemeId(null)} className="bg-slate-300 text-slate-700 px-2 rounded text-sm font-semibold">Cancel</button>
+                                                        </div>
+                                                    ) : (
+                                                        <>
+                                                            <h4 className="font-bold text-ink">{theme.name}</h4>
+                                                            <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition">
+                                                                <button onClick={() => startEditTheme(theme)} className="text-slate-400 hover:text-blue-600 text-sm">✎</button>
+                                                                <button onClick={() => deleteTheme(theme.id)} className="text-slate-400 hover:text-red-600 text-sm">✕</button>
+                                                            </div>
+                                                        </>
+                                                    )}
+                                                </div>
+                                                <div className="flex flex-wrap gap-2">
+                                                    {(theme.categories || []).map((categoryName) => (
+                                                        <span key={`${theme.id}_${categoryName}`} className="inline-flex items-center gap-2 text-xs bg-orange-100 text-orange-900 px-3 py-1 rounded-full border border-orange-200">
+                                                            <span
+                                                                draggable
+                                                                onDragStart={(e) => e.dataTransfer.setData('text/plain', categoryName)}
+                                                                className="cursor-grab"
+                                                            >
+                                                                {categoryName}
+                                                            </span>
+                                                            <button onClick={() => removeCategoryFromTheme(theme.id, categoryName)} className="text-orange-700 hover:text-red-600">x</button>
+                                                        </span>
+                                                    ))}
+                                                    {(theme.categories || []).length === 0 && <span className="text-xs text-slate-400">Drag categories here</span>}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+
+                                    {unassignedCategories.length > 0 && (
+                                        <div className="mt-5 pt-4 border-t">
+                                            <p className="text-xs uppercase text-slate-500 font-bold mb-2">Unassigned Categories</p>
+                                            <div className="flex flex-wrap gap-2">
+                                                {unassignedCategories.map((category) => (
+                                                    <span
+                                                        key={`unassigned_${category.id}`}
+                                                        draggable
+                                                        onDragStart={(e) => e.dataTransfer.setData('text/plain', category.name)}
+                                                        className="inline-flex items-center gap-2 text-xs bg-slate-100 text-slate-700 px-3 py-1 rounded-full border border-slate-300 cursor-grab"
+                                                    >
+                                                        {category.name}
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
 
                                 <div className="bg-white border rounded-2xl p-5 shadow-soft mt-6">
@@ -6653,6 +7119,7 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                                             {showExportMenu && (
                                                 <div className="absolute right-0 mt-2 w-64 bg-white border border-slate-200 rounded-xl shadow-soft z-30 p-2">
                                                     <p className="px-2 py-1 text-[11px] uppercase font-bold tracking-wide text-slate-500">CSV</p>
+                                                    <button type="button" onClick={() => { exportClusteringCsv(); setShowExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm text-slate-700">Clustering table (.csv)</button>
                                                     <button type="button" onClick={() => { exportCanvasCsv(); setShowExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm text-slate-700">Canvas table (.csv)</button>
                                                     <button type="button" onClick={() => { exportAllCanvasTablesCsv(); setShowExportMenu(false); }} className="w-full text-left px-2 py-2 rounded hover:bg-slate-100 text-sm text-slate-700">All canvas tables (.csv)</button>
                                                     <div className="my-1 border-t" />
@@ -7018,7 +7485,7 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
             );
         }
 
-        function ObservationsView({ observations, folders = [], onCreateFolder, onRenameFolder, onDeleteFolder, onMoveObservation, observationTags, allTags, compressAudioFile, onAddObservation, onUpdateObservation, onDeleteObservation, onAddObservationTag, onUpdateObservationTag, onRemoveObservationTag }) {
+        function ObservationsView({ observations, folders = [], onCreateFolder, onRenameFolder, onDeleteFolder, onMoveObservation, observationTags, allTags, compressAudioFile, onAddObservation, onUpdateObservation, onDeleteObservation, onAddObservationTag, onUpdateObservationTag, onRemoveObservationTag, onUpdateObservationSessionState }) {
             const [activeObsId, setActiveObsId] = useState(observations[0]?.id || null);
             const [showNewForm, setShowNewForm] = useState(false);
             const [newTitle, setNewTitle] = useState('');
@@ -7211,6 +7678,7 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                             onAddTag={onAddObservationTag}
                             onUpdateTag={onUpdateObservationTag}
                             onRemoveTag={onRemoveObservationTag}
+                            onUpdateSessionState={onUpdateObservationSessionState}
                         />
                     ) : (
                         <div className="flex-1 flex items-center justify-center text-slate-400 italic text-lg">
@@ -7221,8 +7689,8 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
             );
         }
 
-        function ObservationEditor({ observation, tags, allTags, observationTags, observationFolders = [], compressAudioFile, onUpdate, onDelete, onAddTag, onUpdateTag, onRemoveTag }) {
-            const [mode, setMode] = useState('edit');
+        function ObservationEditor({ observation, tags, allTags, observationTags, observationFolders = [], compressAudioFile, onUpdate, onDelete, onAddTag, onUpdateTag, onRemoveTag, onUpdateSessionState }) {
+            const [mode, setMode] = useState(observation.resumeMode || 'edit');
             const [content, setContent] = useState(observation.content || '');
             const [notes, setNotes] = useState(observation.notes || '');
             const [editingTitle, setEditingTitle] = useState(false);
@@ -7246,6 +7714,8 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
             const editableRef = useRef(null);
             const audioRef = useRef(null);
             const audioTrackUrlsRef = useRef([]);
+            const audioResumeAppliedRef = useRef(false);
+            const lastSessionPersistAtRef = useRef(0);
             const SPEED_STEPS = [0.5, 0.75, 1, 1.25, 1.5, 2];
 
             const escapeHtml = (v) => String(v || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;');
@@ -7264,7 +7734,27 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                 setFolderInput(observation.folder || '');
                 setEditingFolder(false);
                 setPlaybackRate(observation.playbackRate || 1);
+                setMode(observation.resumeMode || 'edit');
+                audioResumeAppliedRef.current = false;
             }, [observation.id]);
+
+            const persistSessionState = useCallback((force = false) => {
+                if (!onUpdateSessionState) return;
+                const now = Date.now();
+                if (!force && now - lastSessionPersistAtRef.current < 1200) return;
+                lastSessionPersistAtRef.current = now;
+
+                const currentAudioTime = audioRef.current
+                    ? Number((audioRef.current.currentTime || 0).toFixed(2))
+                    : Number(observation.resumeAudioTimeSec || 0);
+
+                onUpdateSessionState(observation.id, {
+                    resumeMode: mode,
+                    resumeAudioTrackId: activeAudioTrackId || null,
+                    resumeAudioTimeSec: Number.isFinite(currentAudioTime) ? currentAudioTime : 0,
+                    lastVisitedAt: new Date().toISOString()
+                });
+            }, [onUpdateSessionState, observation.id, observation.resumeAudioTimeSec, mode, activeAudioTrackId]);
 
             useEffect(() => {
                 if (!audioRef.current) return;
@@ -7322,8 +7812,10 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                     audioTrackUrlsRef.current = loaded.map((track) => track.url);
                     setAudioTracks(loaded);
                     if (loaded.length > 0) {
-                        setActiveAudioTrackId(loaded[0].id);
-                        setAudioUrl(loaded[0].url);
+                        const resumeTrack = loaded.find((track) => track.id === observation.resumeAudioTrackId);
+                        const initialTrack = resumeTrack || loaded[0];
+                        setActiveAudioTrackId(initialTrack.id);
+                        setAudioUrl(initialTrack.url);
                     }
                 };
 
@@ -7339,6 +7831,51 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                 const activeTrack = audioTracks.find((track) => track.id === activeAudioTrackId);
                 setAudioUrl(activeTrack ? activeTrack.url : null);
             }, [audioTracks, activeAudioTrackId]);
+
+            useEffect(() => {
+                if (!audioRef.current || !audioUrl || audioResumeAppliedRef.current) return;
+                const target = Math.max(0, Number(observation.resumeAudioTimeSec) || 0);
+                if (target <= 0) {
+                    audioResumeAppliedRef.current = true;
+                    return;
+                }
+
+                const node = audioRef.current;
+                const applyResume = () => {
+                    try {
+                        if (Number.isFinite(node.duration) && target > node.duration) {
+                            node.currentTime = Math.max(0, node.duration - 0.25);
+                        } else {
+                            node.currentTime = target;
+                        }
+                    } catch (_err) {}
+                    audioResumeAppliedRef.current = true;
+                };
+
+                node.addEventListener('loadedmetadata', applyResume, { once: true });
+                if (node.readyState >= 1) applyResume();
+                return () => node.removeEventListener('loadedmetadata', applyResume);
+            }, [audioUrl, observation.id, observation.resumeAudioTimeSec]);
+
+            useEffect(() => {
+                persistSessionState();
+            }, [mode, activeAudioTrackId, persistSessionState]);
+
+            useEffect(() => {
+                if (!audioRef.current) return;
+                const node = audioRef.current;
+                const onTime = () => persistSessionState(false);
+                const onPause = () => persistSessionState(true);
+                const onEnded = () => persistSessionState(true);
+                node.addEventListener('timeupdate', onTime);
+                node.addEventListener('pause', onPause);
+                node.addEventListener('ended', onEnded);
+                return () => {
+                    node.removeEventListener('timeupdate', onTime);
+                    node.removeEventListener('pause', onPause);
+                    node.removeEventListener('ended', onEnded);
+                };
+            }, [audioUrl, persistSessionState]);
 
             const handleAudioUpload = async (e) => {
                 const files = Array.from(e.target.files || []);
