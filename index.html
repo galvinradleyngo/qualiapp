@@ -3486,10 +3486,13 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                                 <button
                                     type="button"
                                     onClick={() => setPomodoroOpen((v) => !v)}
-                                    className="pointer-events-auto h-11 w-11 rounded-full bg-white/95 border border-slate-200 shadow-soft flex items-center justify-center hover:bg-white transition"
+                                    className={`pointer-events-auto h-10 rounded-full bg-white/95 border border-slate-200 shadow-soft flex items-center justify-center hover:bg-white transition ${pomodoroRunning ? 'px-2.5 gap-1.5' : 'w-10'}`}
                                     title={pomodoroOpen ? 'Close pomodoro settings' : `Open pomodoro settings (${formatPomodoroTime(pomodoroRemainingSeconds)})`}
                                 >
                                     <span className="text-lg leading-none" aria-hidden="true">🍅</span>
+                                    {pomodoroRunning && (
+                                        <span className="text-[11px] font-semibold text-slate-700 leading-none">{formatPomodoroTime(pomodoroRemainingSeconds)}</span>
+                                    )}
                                 </button>
                                 {pomodoroOpen && (
                                     <div className="pointer-events-auto mt-2 w-72 bg-white/95 border border-slate-200 rounded-xl shadow-soft p-3">
