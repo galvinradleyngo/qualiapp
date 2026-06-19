@@ -1,0 +1,39 @@
+:root {
+  --font-sans: "SF Pro Display", "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-mono: "SF Mono", ui-monospace, Menlo, Monaco, monospace;
+  --window-top: #eaf0fb;
+  --window-bottom: #dce4f3;
+  --panel: rgba(246, 248, 252, 0.88);
+  --panel-strong: rgba(255, 255, 255, 0.94);
+  --surface: rgba(255, 255, 255, 0.72);
+  --surface-raised: rgba(255, 255, 255, 0.88);
+  --surface-hover: rgba(255, 255, 255, 0.94);
+  --line: rgba(51, 65, 85, 0.12);
+  --line-strong: rgba(51, 65, 85, 0.2);
+  --accent-soft: rgba(117, 141, 255, 0.12);
+  --accent-line: rgba(99, 115, 255, 0.22);
+  --accent-strong: #5a67f2;
+  --text-primary: #172033;
+  --text-muted: #5f6980;
+  --shadow-soft: 0 24px 48px rgba(15, 23, 42, 0.12);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --window-top: #131722;
+    --window-bottom: #0a0d14;
+    --panel: rgba(17, 23, 34, 0.88);
+    --panel-strong: rgba(22, 29, 44, 0.94);
+    --surface: rgba(20, 27, 40, 0.82);
+    --surface-raised: rgba(27, 35, 51, 0.94);
+    --surface-hover: rgba(32, 42, 61, 0.98);
+    --line: rgba(148, 163, 184, 0.14);
+    --line-strong: rgba(148, 163, 184, 0.24);
+    --accent-soft: rgba(101, 118, 255, 0.18);
+    --accent-line: rgba(134, 148, 255, 0.28);
+    --accent-strong: #7b86ff;
+    --text-primary: #f3f7ff;
+    --text-muted: #a7b1c6;
+    --shadow-soft: 0 24px 60px rgba(0, 0, 0, 0.34);
+  }
+}
