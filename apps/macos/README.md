@@ -27,6 +27,16 @@ npm run tauri:dev
 npm run tauri:build
 ```
 
+## CI installer build
+
+- Workflow: `.github/workflows/macos-dmg.yml`
+- Trigger manually from GitHub Actions (`Build macOS DMG`) or push macOS-track changes to `main`.
+- Output artifacts:
+	- `qualiapp-macos-dmg` (DMG installer)
+	- `qualiapp-macos-app` (raw `.app` bundle)
+
+Download the DMG artifact from the completed Actions run page when you are ready to test install on your Mac.
+
 ## Desktop prerequisites
 
 - Rust toolchain is required for Tauri desktop builds (`cargo`, `rustc`).

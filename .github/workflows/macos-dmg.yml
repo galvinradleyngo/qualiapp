@@ -1,0 +1,57 @@
+name: Build macOS DMG
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - apps/macos/**
+      - .github/workflows/macos-dmg.yml
+
+jobs:
+  build-macos-dmg:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: apps/macos
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: apps/macos/package-lock.json
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate TypeScript
+        run: npm run check
+
+      - name: Run parity tests
+        run: npm run test:editor
+
+      - name: Build desktop bundle
+        run: npm run tauri:build
+
+      - name: Upload DMG artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: qualiapp-macos-dmg
+          path: apps/macos/src-tauri/target/release/bundle/dmg/*.dmg
+          if-no-files-found: error
+
+      - name: Upload app bundle artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: qualiapp-macos-app
+          path: apps/macos/src-tauri/target/release/bundle/macos/*.app
+          if-no-files-found: warn

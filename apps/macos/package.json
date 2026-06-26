@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "check": "tsc -b",
+    "test:editor": "vitest run src/features/editor/inVivo.test.ts",
     "lint": "eslint .",
     "preview": "vite preview",
     "tauri:dev": "tauri dev",
@@ -30,6 +31,7 @@
     "globals": "^17.6.0",
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.59.2",
-    "vite": "^8.0.12"
+    "vite": "^8.0.12",
+    "vitest": "^3.2.4"
   }
 }
