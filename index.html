@@ -7849,16 +7849,42 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
             const includeAllSources = selectedSourceSet.size === 0;
             const includeAllFolders = selectedFolderSet.size === 0;
 
+            const resolveCodeName = (item) => {
+                const fromTagName = String(item?.tagName || '').trim();
+                if (fromTagName) return fromTagName;
+                const fromCode = String(item?.code || '').trim();
+                if (fromCode) return fromCode;
+                const fromName = String(item?.name || '').trim();
+                if (fromName) return fromName;
+                const fromLabel = String(item?.label || '').trim();
+                if (fromLabel) return fromLabel;
+                return '';
+            };
+
+            const resolveTranscriptId = (item) => {
+                const direct = item?.transcriptId ?? item?.transcriptID ?? item?.sourceId ?? item?.sourceID;
+                return direct == null ? '' : String(direct);
+            };
+
+            const resolveObservationId = (item) => {
+                const direct = item?.observationId ?? item?.observationID ?? item?.sourceId ?? item?.sourceID;
+                return direct == null ? '' : String(direct);
+            };
+
             const codeDetails = useMemo(() => {
                 const map = {};
                 tags.forEach((t) => {
-                    const parent = transcriptById[t.transcriptId];
+                    const codeName = resolveCodeName(t);
+                    if (!codeName) return;
+
+                    const transcriptId = resolveTranscriptId(t);
+                    const parent = transcriptById[transcriptId] || transcriptById[t.transcriptId];
                     const folder = parent?.folder || 'Uncategorized';
-                    if (!includeAllSources && !selectedSourceSet.has(buildSourceFilterId('transcript', t.transcriptId))) return;
+                    if (!includeAllSources && transcriptId && !selectedSourceSet.has(buildSourceFilterId('transcript', transcriptId))) return;
                     if (!includeAllFolders && !selectedFolderSet.has(folder)) return;
-                    if (!map[t.tagName]) {
-                        map[t.tagName] = {
-                            name: t.tagName,
+                    if (!map[codeName]) {
+                        map[codeName] = {
+                            name: codeName,
                             category: t.category || 'Uncategorized',
                             count: 0,
                             sourceSet: new Set(),
@@ -7866,14 +7892,14 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                             folders: new Set()
                         };
                     }
-                    map[t.tagName].count += 1;
-                    map[t.tagName].sourceSet.add('transcript');
-                    map[t.tagName].folders.add(folder);
+                    map[codeName].count += 1;
+                    map[codeName].sourceSet.add('transcript');
+                    map[codeName].folders.add(folder);
                     const participantCode = parent?.participantId ? (participantCodeById[parent.participantId] || parent.participantId) : null;
-                    map[t.tagName].quotes.push({
+                    map[codeName].quotes.push({
                         source: 'Transcript',
                         folder,
-                        ref: participantCode || `Transcript ${String(t.transcriptId).slice(-4)}`,
+                        ref: participantCode || `Transcript ${String(transcriptId || t.transcriptId || '').slice(-4)}`,
                         text: t.textSnippet || ''
                     });
                 });
@@ -7907,13 +7933,17 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                 });
 
                 (observationTags || []).forEach((t) => {
-                    const parent = (observations || []).find((o) => o.id === t.observationId);
+                    const codeName = resolveCodeName(t);
+                    if (!codeName) return;
+
+                    const observationId = resolveObservationId(t);
+                    const parent = (observations || []).find((o) => String(o.id) === String(observationId || t.observationId));
                     const folder = parent?.location || 'Onsite Observation';
-                    if (!includeAllSources && !selectedSourceSet.has(buildSourceFilterId('observation', t.observationId))) return;
+                    if (!includeAllSources && observationId && !selectedSourceSet.has(buildSourceFilterId('observation', observationId))) return;
                     if (!includeAllFolders && !selectedFolderSet.has(folder)) return;
-                    if (!map[t.tagName]) {
-                        map[t.tagName] = {
-                            name: t.tagName,
+                    if (!map[codeName]) {
+                        map[codeName] = {
+                            name: codeName,
                             category: t.category || 'Uncategorized',
                             count: 0,
                             sourceSet: new Set(),
@@ -7921,13 +7951,13 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                             folders: new Set()
                         };
                     }
-                    map[t.tagName].count += 1;
-                    map[t.tagName].sourceSet.add('observation');
-                    map[t.tagName].folders.add(folder);
-                    map[t.tagName].quotes.push({
+                    map[codeName].count += 1;
+                    map[codeName].sourceSet.add('observation');
+                    map[codeName].folders.add(folder);
+                    map[codeName].quotes.push({
                         source: 'Observation',
                         folder,
-                        ref: parent ? parent.title : `Observation ${String(t.observationId).slice(-4)}`,
+                        ref: parent ? parent.title : `Observation ${String(observationId || t.observationId || '').slice(-4)}`,
                         text: t.textSnippet || ''
                     });
                 });
