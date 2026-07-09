@@ -53,6 +53,16 @@ export function TranscriptDashboard({ transcripts, onExportTranscripts, onOpen, 
     return ['Uncategorized', ...keys.filter((k) => k !== 'Uncategorized').sort()]
   }, [grouped])
 
+  const folderColors = useMemo(() => {
+    const colors: Record<string, string> = {}
+    const visibleFolders = folderOrder.filter((folder) => grouped[folder]?.length)
+    visibleFolders.forEach((folder, index) => {
+      const hue = (index * 137.50776405003785) % 360
+      colors[folder] = `hsl(${hue.toFixed(2)} 72% 45%)`
+    })
+    return colors
+  }, [folderOrder, grouped])
+
   return (
     <section className="workspace-panel" aria-labelledby="transcript-dashboard-heading">
       <div className="panel-header">
@@ -116,13 +126,22 @@ export function TranscriptDashboard({ transcripts, onExportTranscripts, onOpen, 
         .filter((folder) => grouped[folder]?.length)
         .map((folder) => (
           <div key={folder} style={{ marginTop: '18px' }}>
-            <p className="hint" style={{ marginBottom: '8px', fontWeight: 600 }}>
+            <p className="hint folder-label" style={{ marginBottom: '8px', fontWeight: 600 }}>
+              <span
+                className="folder-color-swatch"
+                aria-hidden="true"
+                style={{ backgroundColor: folderColors[folder] }}
+              />
               {folder}
             </p>
             <div className="code-list">
               {grouped[folder].map((transcript) => (
                 <article className="code-item" key={transcript.id}>
-                  <span className="code-dot" aria-hidden="true" />
+                  <span
+                    className="code-dot"
+                    aria-hidden="true"
+                    style={{ background: folderColors[folder] }}
+                  />
                   <div>
                     {renamingId === transcript.id ? (
                       <input
@@ -148,7 +167,7 @@ export function TranscriptDashboard({ transcripts, onExportTranscripts, onOpen, 
                       {transcript.audioName ? ` • ${transcript.audioName}` : ''}
                     </span>
                   </div>
-                  <div className="code-toolbar">
+                  <div className="code-toolbar transcript-item-actions">
                     <button type="button" className="code-action" onClick={() => onOpen(transcript.id)}>
                       Open
                     </button>
@@ -159,25 +178,47 @@ export function TranscriptDashboard({ transcripts, onExportTranscripts, onOpen, 
                     ) : (
                       <button
                         type="button"
-                        className="code-action"
+                        className="code-action icon-action"
+                        aria-label={`Rename ${transcript.title}`}
+                        title="Rename"
                         onClick={() => {
                           setRenamingId(transcript.id)
                           setRenameValue(transcript.title)
                         }}
                       >
-                        Rename
+                        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false">
+                          <path
+                            d="M4 20h4l10.5-10.5a1.4 1.4 0 0 0 0-2L16.5 5a1.4 1.4 0 0 0-2 0L4 15.5V20zm12.1-12.9 2.8 2.8"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="1.8"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
                       </button>
                     )}
                     <button
                       type="button"
-                      className="code-action"
+                      className="code-action icon-action danger-action"
+                      aria-label={`Delete ${transcript.title}`}
+                      title="Delete"
                       onClick={() => {
                         if (window.confirm(`Delete "${transcript.title}"? This cannot be undone.`)) {
                           onDelete(transcript.id)
                         }
                       }}
                     >
-                      Delete
+                      <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false">
+                        <path
+                          d="M4 7h16m-5-3h-6l-1 3h8l-1-3zM7 7l1 13h8l1-13M10 11v6m4-6v6"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.8"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
                     </button>
                   </div>
                 </article>
