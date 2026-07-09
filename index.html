@@ -1036,16 +1036,24 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
         };
 
         const folderColorStateBySourceType = {
-            transcript: { assigned: new Map(), usedHues: new Set() },
-            artifact: { assigned: new Map(), usedHues: new Set() },
-            observation: { assigned: new Map(), usedHues: new Set() }
+            transcript: { assigned: new Map(), usedIndices: new Set(), overflowCycle: 0 },
+            artifact: { assigned: new Map(), usedIndices: new Set(), overflowCycle: 0 },
+            observation: { assigned: new Map(), usedIndices: new Set(), overflowCycle: 0 }
         };
 
-        const folderSourceHueOffsets = {
-            transcript: 0,
-            artifact: 120,
-            observation: 240
-        };
+        // Intentionally spaced hue families to avoid near-neighbor picks (e.g., red/pink).
+        const distinctFolderToneFamilies = [
+            { h: 8, s: 82, bgL: 93, borderL: 56, textL: 27 },
+            { h: 30, s: 84, bgL: 93, borderL: 54, textL: 25 },
+            { h: 52, s: 78, bgL: 92, borderL: 49, textL: 24 },
+            { h: 84, s: 70, bgL: 93, borderL: 42, textL: 24 },
+            { h: 124, s: 64, bgL: 92, borderL: 41, textL: 23 },
+            { h: 158, s: 68, bgL: 92, borderL: 40, textL: 23 },
+            { h: 188, s: 72, bgL: 92, borderL: 44, textL: 24 },
+            { h: 214, s: 78, bgL: 93, borderL: 54, textL: 26 },
+            { h: 242, s: 74, bgL: 94, borderL: 58, textL: 27 },
+            { h: 272, s: 72, bgL: 93, borderL: 56, textL: 27 }
+        ];
 
         const sourceTypeBadgeStyles = {
             transcript: { bg: '#e2e8f0', border: '#cbd5e1', text: '#334155' },
@@ -1066,23 +1074,35 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
 
         const toHsl = (h, s, l) => `hsl(${Math.round(h)} ${s}% ${l}%)`;
 
-        const reserveUniqueHue = (state, initialHue) => {
-            const hueStep = 47;
-            let hue = ((Number(initialHue) || 0) % 360 + 360) % 360;
-            let roundedHue = Math.round(hue);
-            while (state.usedHues.has(roundedHue)) {
-                hue = (hue + hueStep) % 360;
-                roundedHue = Math.round(hue);
+        const reserveUniqueFamilySlot = (state, initialSlot, slotCount) => {
+            let slot = ((Number(initialSlot) || 0) % slotCount + slotCount) % slotCount;
+            let attempts = 0;
+            while (state.usedIndices.has(slot) && attempts < slotCount) {
+                slot = (slot + 3) % slotCount;
+                attempts += 1;
             }
-            state.usedHues.add(roundedHue);
-            return roundedHue;
+
+            if (attempts < slotCount) {
+                state.usedIndices.add(slot);
+                return { slot, cycle: 0 };
+            }
+
+            state.overflowCycle += 1;
+            return { slot, cycle: state.overflowCycle };
         };
 
-        const createFolderToneFromHue = (hue) => ({
-            bg: toHsl(hue, 82, 92),
-            border: toHsl(hue, 72, 58),
-            text: toHsl(hue, 66, 26)
-        });
+        const createFolderToneFromFamily = (family, cycle = 0) => {
+            const hue = (family.h + (cycle * 41)) % 360;
+            const saturation = Math.max(56, family.s - Math.min(cycle, 5) * 3);
+            const bgLightness = Math.min(96, family.bgL + (cycle % 2 === 0 ? 0 : 2));
+            const borderLightness = Math.max(40, family.borderL - (cycle % 3 === 0 ? 0 : 3));
+            const textLightness = Math.max(20, family.textL - (cycle % 2 === 0 ? 0 : 2));
+            return {
+                bg: toHsl(hue, saturation, bgLightness),
+                border: toHsl(hue, Math.max(52, saturation - 8), borderLightness),
+                text: toHsl(hue, Math.max(46, saturation - 14), textLightness)
+            };
+        };
 
         const getFolderColorTone = (folderName, sourceType = 'transcript') => {
             const normalizedSource = normalizeFolderSourceType(sourceType);
@@ -1096,10 +1116,10 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
             const existingTone = state.assigned.get(folderKey);
             if (existingTone) return existingTone;
 
-            const sourceOffset = folderSourceHueOffsets[normalizedSource] || 0;
-            const seedHue = (getStablePaletteIndex(`${normalizedSource}:${folderKey}`, 360) + sourceOffset) % 360;
-            const hue = reserveUniqueHue(state, seedHue);
-            const tone = createFolderToneFromHue(hue);
+            const slotCount = distinctFolderToneFamilies.length;
+            const seedSlot = getStablePaletteIndex(`${normalizedSource}:${folderKey}`, slotCount);
+            const { slot, cycle } = reserveUniqueFamilySlot(state, seedSlot, slotCount);
+            const tone = createFolderToneFromFamily(distinctFolderToneFamilies[slot], cycle);
             state.assigned.set(folderKey, tone);
             return tone;
         };
