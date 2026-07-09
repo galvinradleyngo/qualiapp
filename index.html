@@ -6456,6 +6456,30 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                 return `${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
             };
 
+            const getTranscriptLineFromOffset = (text, offset) => {
+                const sourceText = String(text || '');
+                const boundedOffset = Math.max(0, Math.min(sourceText.length, Number(offset) || 0));
+                return sourceText.slice(0, boundedOffset).split('\n').length;
+            };
+
+            const buildTranscriptCitation = (start, end) => {
+                const transcriptName = String(transcript.title || 'Transcript').trim() || 'Transcript';
+                const sourceText = String(content || '');
+                if (!sourceText) return `(${transcriptName})`;
+
+                const boundedStart = Math.max(0, Math.min(sourceText.length, Number(start) || 0));
+                const boundedEnd = Math.max(boundedStart, Math.min(sourceText.length, Number(end) || boundedStart));
+                const startLine = getTranscriptLineFromOffset(sourceText, boundedStart);
+                const endLine = getTranscriptLineFromOffset(sourceText, Math.max(boundedStart, boundedEnd - 1));
+                return `(${transcriptName}, ${startLine}${endLine > startLine ? `-${endLine}` : ''})`;
+            };
+
+            const formatTranscriptQuote = (text, start, end) => {
+                const quoteText = String(text || '').trim();
+                const citation = buildTranscriptCitation(start, end);
+                return `"${quoteText || 'No quote text available.'}" ${citation}`;
+            };
+
             const playFromTimecode = (timeSeconds) => {
                 if (!audioRef.current) return;
                 const safeSeconds = Math.max(0, Number(timeSeconds) || 0);
@@ -7343,7 +7367,15 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                                     </div>
                                     {(pendingSelection || editingTagId) ? (
                                         <form onSubmit={submitTagForm} className={`p-4 rounded-xl border-2 overflow-hidden ${editingTagId ? 'bg-orange-50 border-orange-300' : 'bg-teal-50 border-teal-300'}`}>
-                                            <p className="text-xs text-slate-600 mb-3 line-clamp-3 break-words italic bg-white p-2 rounded border">"{pendingSelection ? pendingSelection.text : tags.find(t=>t.id===editingTagId)?.textSnippet}"</p>
+                                            <p className="text-xs text-slate-600 mb-3 line-clamp-3 break-words italic bg-white p-2 rounded border">
+                                                {(() => {
+                                                    if (pendingSelection) {
+                                                        return formatTranscriptQuote(pendingSelection.text, pendingSelection.start, pendingSelection.end);
+                                                    }
+                                                    const editingTag = tags.find((t) => t.id === editingTagId);
+                                                    return formatTranscriptQuote(editingTag?.textSnippet, editingTag?.start, editingTag?.end);
+                                                })()}
+                                            </p>
                                             {inVivoMode && (
                                                 <div className={`mb-3 text-xs rounded-lg border px-2 py-1.5 ${inVivoAlignment?.passes ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>
                                                     <span className="font-semibold">In-vivo check:</span> {inVivoAlignment?.reason}
@@ -7445,7 +7477,7 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                                                     {formatInVivoCodeLabel(tag.tagName)}
                                                 </span>
                                             </div>
-                                            <p className="text-xs text-slate-600 italic mt-2 line-clamp-2 bg-slate-50 p-1 rounded">"{tag.textSnippet}"</p>
+                                            <p className="text-xs text-slate-600 italic mt-2 line-clamp-2 bg-slate-50 p-1 rounded">{formatTranscriptQuote(tag.textSnippet, tag.start, tag.end)}</p>
                                             {tag.memo && <p className="text-[11px] text-slate-700 mt-2 line-clamp-2">{tag.memo}</p>}
                                             {selectedTagId === tag.id && (
                                                 <div className="mt-3 flex gap-2">
@@ -7877,6 +7909,30 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                 return direct == null ? '' : String(direct);
             };
 
+            const getLineFromOffset = (text, offset) => {
+                const sourceText = String(text || '');
+                const boundedOffset = Math.max(0, Math.min(sourceText.length, Number(offset) || 0));
+                return sourceText.slice(0, boundedOffset).split('\n').length;
+            };
+
+            const buildTranscriptCitation = (transcriptName, transcriptText, start, end) => {
+                const label = String(transcriptName || 'Transcript').trim() || 'Transcript';
+                const sourceText = String(transcriptText || '');
+                if (!sourceText) return `(${label})`;
+
+                const boundedStart = Math.max(0, Math.min(sourceText.length, Number(start) || 0));
+                const boundedEnd = Math.max(boundedStart, Math.min(sourceText.length, Number(end) || boundedStart));
+                const startLine = getLineFromOffset(sourceText, boundedStart);
+                const endLine = getLineFromOffset(sourceText, Math.max(boundedStart, boundedEnd - 1));
+                return `(${label}, ${startLine}${endLine > startLine ? `-${endLine}` : ''})`;
+            };
+
+            const formatQuoteWithCitation = (quote) => {
+                const quoteText = String(quote?.text || '').trim();
+                const citation = String(quote?.citation || '').trim();
+                return `${quoteText}${citation ? ` ${citation}` : ''}`.trim();
+            };
+
             const codeDetails = useMemo(() => {
                 const buildMap = (applyFilters) => {
                     const map = {};
@@ -7911,11 +7967,14 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                         map[codeName].sourceSet.add('transcript');
                         map[codeName].folders.add(folder);
                         const participantCode = parent?.participantId ? (participantCodeById[parent.participantId] || parent.participantId) : null;
+                        const transcriptName = parent?.title || parent?.name || participantCode || `Transcript ${String(transcriptId || t.transcriptId || '').slice(-4)}`;
+                        const transcriptCitation = buildTranscriptCitation(transcriptName, parent?.content || '', t.start, t.end);
                         map[codeName].quotes.push({
                             source: 'Transcript',
                             folder,
                             ref: participantCode || `Transcript ${String(transcriptId || t.transcriptId || '').slice(-4)}`,
-                            text: t.textSnippet || ''
+                            text: t.textSnippet || '',
+                            citation: transcriptCitation
                         });
                     });
 
@@ -9840,8 +9899,8 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                                 <div className="max-h-[55vh] overflow-y-auto pr-1 space-y-2">
                                     {getTranscriptQuotesForCode(selectedInVivoPopup.codeName).map((quote, quoteIndex) => (
                                         <div key={`popup_quote_${selectedInVivoPopup.codeName}_${quoteIndex}`} className="border border-slate-200 rounded-lg p-3 bg-slate-50">
-                                            <p className="text-[11px] font-semibold text-slate-600 mb-1">{quote.ref || 'Transcript'}</p>
-                                            <p className="text-xs text-slate-700 whitespace-pre-wrap">{quote.text || 'No quote text available.'}</p>
+                                            <p className="text-[11px] font-semibold text-slate-600 mb-1">{quote.ref || 'Transcript'}{quote.citation ? ` ${quote.citation}` : ''}</p>
+                                            <p className="text-xs text-slate-700 whitespace-pre-wrap">{formatQuoteWithCitation(quote) || 'No quote text available.'}</p>
                                         </div>
                                     ))}
                                     {getTranscriptQuotesForCode(selectedInVivoPopup.codeName).length === 0 && (
@@ -10984,6 +11043,30 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                 if (normalized.startsWith('"') && normalized.endsWith('"')) return normalized;
                 return `"${normalized}"`;
             };
+
+            const getLineFromOffset = (text, offset) => {
+                const sourceText = String(text || '');
+                const boundedOffset = Math.max(0, Math.min(sourceText.length, Number(offset) || 0));
+                return sourceText.slice(0, boundedOffset).split('\n').length;
+            };
+
+            const buildTranscriptCitation = (transcriptName, transcriptText, start, end) => {
+                const label = String(transcriptName || 'Transcript').trim() || 'Transcript';
+                const sourceText = String(transcriptText || '');
+                if (!sourceText) return `(${label})`;
+
+                const boundedStart = Math.max(0, Math.min(sourceText.length, Number(start) || 0));
+                const boundedEnd = Math.max(boundedStart, Math.min(sourceText.length, Number(end) || boundedStart));
+                const startLine = getLineFromOffset(sourceText, boundedStart);
+                const endLine = getLineFromOffset(sourceText, Math.max(boundedStart, boundedEnd - 1));
+                return `(${label}, ${startLine}${endLine > startLine ? `-${endLine}` : ''})`;
+            };
+
+            const formatQuoteWithCitation = (quote) => {
+                const quoteText = String(quote?.text || '').trim();
+                const citation = String(quote?.citation || '').trim();
+                return `${quoteText}${citation ? ` ${citation}` : ''}`.trim();
+            };
             const observationAudioCount = Array.isArray(observation.audioFiles) && observation.audioFiles.length > 0
                 ? observation.audioFiles.length
                 : observation.hasAudio
@@ -11471,6 +11554,8 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                         ...tag,
                         sourceType: 'Transcript',
                         sourceId: tag.transcriptId,
+                        transcriptTitle: parent?.title || parent?.name || `Transcript ${String(tag.transcriptId).slice(-4)}`,
+                        transcriptContent: String(parent?.content || ''),
                         transcriptLabel: parent?.participantId ? (participantCodeById[parent.participantId] || parent.participantId) : `Transcript ${String(tag.transcriptId).slice(-4)}`,
                         folder: parent?.folder || 'Uncategorized',
                         subfolder: parent?.subfolder || 'General',
@@ -11536,7 +11621,10 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                             sourceType: item.sourceType,
                             label: item.transcriptLabel,
                             folder: item.folder,
-                            subfolder: item.subfolder
+                            subfolder: item.subfolder,
+                            citation: item.sourceType === 'Transcript'
+                                ? buildTranscriptCitation(item.transcriptTitle, item.transcriptContent, item.start, item.end)
+                                : ''
                         });
                     }
                     if (item.memo && item.memo.trim()) {
@@ -11591,7 +11679,10 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
 
             const uniqueCodeCount = useMemo(() => new Set(tableData.map(t => t.tagName)).size, [tableData]);
             const uniqueCategoryCount = useMemo(() => new Set(tableData.map(t => t.category)).size, [tableData]);
-            const pickExamples = (quotes) => Array.from(new Set((quotes || []).map(q => (q?.text || q || '').trim()).filter(Boolean))).slice(0, 3);
+            const pickExamples = (quotes) => Array.from(new Set((quotes || []).map(q => {
+                if (typeof q === 'string') return q.trim();
+                return formatQuoteWithCitation(q);
+            }).filter(Boolean))).slice(0, 3);
 
             const toDefinitionRecord = (value) => {
                 if (!value) return { definition: '', inclusion: '', exclusion: '', exemplars: '' };
@@ -11724,7 +11815,7 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                         csvEscape(folderSummary),
                         csvEscape(subfolderSummary),
                         csvEscape(row.quoteCount),
-                        csvEscape((row.quotes || []).slice(0, 3).map((q) => `[${q.sourceType}] ${q.label}: ${q.text}`).join(' | ')),
+                        csvEscape((row.quotes || []).slice(0, 3).map((q) => `[${q.sourceType}] ${q.label}: ${formatQuoteWithCitation(q)}`).join(' | ')),
                         csvEscape((row.memos || []).map((m) => `[${m.sourceType}] ${m.label}: ${m.text}`).join(' | '))
                     ].join(','));
                 });
@@ -11771,7 +11862,7 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                         String(row.sourceCount || 0),
                         String(row.quoteCount),
                         [
-                            ...(row.quotes || []).slice(0, 3).map((q) => `[${q.sourceType}] ${q.label}: ${q.text}`),
+                            ...(row.quotes || []).slice(0, 3).map((q) => `[${q.sourceType}] ${q.label}: ${formatQuoteWithCitation(q)}`),
                             ...(row.memos || []).slice(0, 2).map((m) => `[${m.sourceType}] ${m.label}: ${m.text}`)
                         ].join(' | ')
                     ]),
@@ -11827,7 +11918,7 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                             String(row.sourceCount || 0),
                             String(row.quoteCount),
                             [
-                                ...(row.quotes || []).slice(0, 3).map((q) => `[${q.sourceType}] ${q.label}: ${q.text}`),
+                                ...(row.quotes || []).slice(0, 3).map((q) => `[${q.sourceType}] ${q.label}: ${formatQuoteWithCitation(q)}`),
                                 ...(row.memos || []).slice(0, 2).map((m) => `[${m.sourceType}] ${m.label}: ${m.text}`)
                             ].join(' | ')
                         ]),
@@ -12006,7 +12097,7 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                                                     {row.quotes.map((quote, quoteIdx) => (
                                                         <div key={`${row.id}_quote_${quoteIdx}`} className="mb-2">
                                                             <p className="text-[11px] text-slate-500 font-semibold">[{quote.sourceType}] {quote.label}</p>
-                                                            <p className="italic text-slate-700 leading-relaxed">"{quote.text}"</p>
+                                                            <p className="italic text-slate-700 leading-relaxed">"{formatQuoteWithCitation(quote)}"</p>
                                                         </div>
                                                     ))}
                                                     {row.memos.map((memo, memoIdx) => (
