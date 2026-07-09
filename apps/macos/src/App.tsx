@@ -111,6 +111,112 @@ function App() {
     }
   }
 
+  const escapeHtmlForDoc = (value: string): string =>
+    String(value || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;')
+
+  const formatDurationHMS = (totalSeconds: number): string => {
+    const safeSeconds = Math.max(0, Math.round(Number(totalSeconds) || 0))
+    const hours = Math.floor(safeSeconds / 3600)
+    const minutes = Math.floor((safeSeconds % 3600) / 60)
+    const seconds = safeSeconds % 60
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+  }
+
+  const getAudioDurationSeconds = async (audioSource: string): Promise<number> =>
+    new Promise((resolve) => {
+      if (!audioSource) {
+        resolve(0)
+        return
+      }
+
+      const audio = document.createElement('audio')
+      let settled = false
+
+      const finalize = (durationSeconds: number) => {
+        if (settled) return
+        settled = true
+        resolve(Math.max(0, Number(durationSeconds) || 0))
+      }
+
+      const timeoutId = window.setTimeout(() => finalize(0), 8000)
+
+      audio.preload = 'metadata'
+      audio.src = audioSource
+      audio.onloadedmetadata = () => {
+        window.clearTimeout(timeoutId)
+        finalize(Number.isFinite(audio.duration) ? audio.duration : 0)
+      }
+      audio.onerror = () => {
+        window.clearTimeout(timeoutId)
+        finalize(0)
+      }
+    })
+
+  const exportTranscriptsDoc = async () => {
+    if (!transcripts.length) {
+      setDataTransferStatus('No transcripts to export yet.')
+      return
+    }
+
+    try {
+      const renderedSections: string[] = []
+
+      for (const transcript of transcripts) {
+        const runningTimeSeconds = transcript.audioDataUrl
+          ? await getAudioDurationSeconds(transcript.audioDataUrl)
+          : Math.max(0, Number(transcript.resumeAudioTimeSec) || 0)
+
+        const transcriptBody = String(transcript.content || '')
+        renderedSections.push(`
+          <section class="transcript-block">
+            <h1>${escapeHtmlForDoc(transcript.title || 'Untitled transcript')}</h1>
+            <div class="meta-line"><strong>Folder:</strong> ${escapeHtmlForDoc(transcript.folder || 'Uncategorized')}</div>
+            <div class="meta-line"><strong>Total Running Time:</strong> ${formatDurationHMS(runningTimeSeconds)}</div>
+            <hr />
+            <pre>${escapeHtmlForDoc(transcriptBody || '[No transcript content]')}</pre>
+          </section>
+        `)
+      }
+
+      const exportedAt = new Date()
+      const docHtml = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>QualiApp Transcript Export</title>
+  <style>
+    body { font-family: Calibri, Arial, sans-serif; font-size: 11pt; color: #0f172a; margin: 28px; }
+    h1 { font-size: 18pt; margin: 0 0 8px; }
+    .meta-line { margin: 3px 0; }
+    .transcript-block { margin-bottom: 36px; page-break-after: always; }
+    .transcript-block:last-child { page-break-after: auto; }
+    pre { white-space: pre-wrap; word-break: break-word; margin-top: 12px; line-height: 1.45; }
+    hr { border: 0; border-top: 1px solid #cbd5e1; margin: 12px 0 10px; }
+  </style>
+</head>
+<body>
+  ${renderedSections.join('\n')}
+</body>
+</html>`
+
+      const blob = new Blob(['\ufeff', docHtml], { type: 'application/msword' })
+      const href = URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      anchor.href = href
+      anchor.download = `qualiapp-macos-transcripts-${exportedAt.toISOString().slice(0, 10)}.doc`
+      anchor.click()
+      URL.revokeObjectURL(href)
+      setDataTransferStatus('Exported transcripts document.')
+    } catch {
+      setDataTransferStatus('Transcript export failed.')
+    }
+  }
+
   const handleCreateTranscript = (data: { title: string; folder?: string }) => {
     const now = Date.now()
     const newTranscript: TranscriptRecord = {
@@ -237,6 +343,7 @@ function App() {
         {activeView === 'transcripts' && activeTranscriptId === null && (
           <TranscriptDashboard
             transcripts={transcripts}
+            onExportTranscripts={exportTranscriptsDoc}
             onOpen={(id) => setActiveTranscriptId(id)}
             onCreate={handleCreateTranscript}
             onDelete={handleDeleteTranscript}

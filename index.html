@@ -1529,6 +1529,112 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
             );
         }
 
+        function ExportTranscriptsDialog({ open, onClose, onConfirm, busy = false }) {
+            const [includeCodes, setIncludeCodes] = useState(false);
+            const [format, setFormat] = useState('doc');
+
+            useEffect(() => {
+                if (!open) return;
+                setIncludeCodes(false);
+                setFormat('doc');
+            }, [open]);
+
+            if (!open) return null;
+
+            return (
+                <div className="fixed inset-0 z-[85] bg-slate-900/60 flex items-center justify-center p-4">
+                    <div className="w-full max-w-xl rounded-2xl border bg-white shadow-soft p-6">
+                        <div className="flex items-start justify-between gap-3">
+                            <div>
+                                <h3 className="text-2xl font-display text-ink">Export Transcripts</h3>
+                                <p className="text-sm text-slate-500 mt-1">Choose transcript content and file format before export.</p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={onClose}
+                                disabled={busy}
+                                className="text-slate-400 hover:text-slate-700 text-xl leading-none disabled:opacity-50"
+                                aria-label="Close export dialog"
+                            >
+                                ×
+                            </button>
+                        </div>
+
+                        <div className="mt-5 grid gap-4 md:grid-cols-2">
+                            <fieldset className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                                <legend className="px-1 text-sm font-semibold text-slate-700">1) What to export</legend>
+                                <label className="flex items-start gap-2 text-sm text-slate-700 mt-2 cursor-pointer">
+                                    <input
+                                        type="radio"
+                                        name="exportMode"
+                                        checked={!includeCodes}
+                                        onChange={() => setIncludeCodes(false)}
+                                    />
+                                    <span>Transcripts only</span>
+                                </label>
+                                <label className="flex items-start gap-2 text-sm text-slate-700 mt-2 cursor-pointer">
+                                    <input
+                                        type="radio"
+                                        name="exportMode"
+                                        checked={includeCodes}
+                                        onChange={() => setIncludeCodes(true)}
+                                    />
+                                    <span>Transcripts with codes</span>
+                                </label>
+                                {includeCodes && (
+                                    <p className="text-xs text-slate-500 mt-2">Includes line numbers, highlighted quote spans, and code references with transcript name + line range.</p>
+                                )}
+                            </fieldset>
+
+                            <fieldset className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                                <legend className="px-1 text-sm font-semibold text-slate-700">2) Export as</legend>
+                                <label className="flex items-start gap-2 text-sm text-slate-700 mt-2 cursor-pointer">
+                                    <input
+                                        type="radio"
+                                        name="exportFormat"
+                                        checked={format === 'doc'}
+                                        onChange={() => setFormat('doc')}
+                                    />
+                                    <span>.doc</span>
+                                </label>
+                                <label className="flex items-start gap-2 text-sm text-slate-700 mt-2 cursor-pointer">
+                                    <input
+                                        type="radio"
+                                        name="exportFormat"
+                                        checked={format === 'pdf'}
+                                        onChange={() => setFormat('pdf')}
+                                    />
+                                    <span>.pdf</span>
+                                </label>
+                                {format === 'pdf' && (
+                                    <p className="text-xs text-slate-500 mt-2">A print dialog opens so you can save as PDF.</p>
+                                )}
+                            </fieldset>
+                        </div>
+
+                        <div className="mt-6 flex justify-end gap-2">
+                            <button
+                                type="button"
+                                onClick={onClose}
+                                disabled={busy}
+                                className="px-4 py-2 rounded-lg bg-slate-100 text-slate-700 font-semibold hover:bg-slate-200 disabled:opacity-50"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => onConfirm({ includeCodes, format })}
+                                disabled={busy}
+                                className="px-4 py-2 rounded-lg bg-tide text-white font-semibold hover:bg-teal-600 disabled:opacity-50"
+                            >
+                                {busy ? 'Exporting…' : 'Export'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
         function LockScreen({ onUnlock }) {
             const [password, setPassword] = useState('');
             const [error, setError] = useState('');
@@ -1874,6 +1980,8 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
             const [pomodoroDurationMinutes, setPomodoroDurationMinutes] = useState(20);
             const [pomodoroRemainingSeconds, setPomodoroRemainingSeconds] = useState(20 * 60);
             const [pomodoroRunning, setPomodoroRunning] = useState(false);
+            const [showTranscriptExportDialog, setShowTranscriptExportDialog] = useState(false);
+            const [transcriptExportBusy, setTranscriptExportBusy] = useState(false);
             const audioOptimizationBusyRef = useRef(false);
             const autoOptimizationTriggeredRef = useRef(false);
 
@@ -1919,7 +2027,7 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
             };
 
             const startPomodoro = () => {
-                setPomodoroRemainingSeconds(pomodoroDurationMinutes * 60);
+                setPomodoroRemainingSeconds((prev) => (prev > 0 ? prev : pomodoroDurationMinutes * 60));
                 setPomodoroRunning(true);
             };
 
@@ -3446,6 +3554,358 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                 }
             };
 
+            const escapeHtmlForDoc = (value) => String(value || '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+
+            const formatDurationHMS = (totalSeconds) => {
+                const safeSeconds = Math.max(0, Math.round(Number(totalSeconds) || 0));
+                const hours = Math.floor(safeSeconds / 3600);
+                const minutes = Math.floor((safeSeconds % 3600) / 60);
+                const seconds = safeSeconds % 60;
+                return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+            };
+
+            const getTranscriptAudioEntriesForExport = (doc) => {
+                if (Array.isArray(doc.audioFiles) && doc.audioFiles.length > 0) {
+                    return doc.audioFiles
+                        .filter((f) => f && typeof f.key === 'string' && f.key.startsWith('audio_'))
+                        .map((f, idx) => ({
+                            id: f.id || `track_${idx}`,
+                            key: f.key,
+                            name: f.name || `Audio ${idx + 1}`
+                        }));
+                }
+                if (doc.hasAudio) {
+                    return [{ id: 'legacy', key: `audio_${doc.id}`, name: 'Audio' }];
+                }
+                return [];
+            };
+
+            const getAudioDurationSeconds = async (blob) => new Promise((resolve) => {
+                if (!(blob instanceof Blob)) {
+                    resolve(0);
+                    return;
+                }
+
+                const url = URL.createObjectURL(blob);
+                const audio = document.createElement('audio');
+                let settled = false;
+
+                const finalize = (durationSeconds) => {
+                    if (settled) return;
+                    settled = true;
+                    URL.revokeObjectURL(url);
+                    resolve(Math.max(0, Number(durationSeconds) || 0));
+                };
+
+                const timeoutId = setTimeout(() => finalize(0), 8000);
+
+                audio.preload = 'metadata';
+                audio.src = url;
+                audio.onloadedmetadata = () => {
+                    clearTimeout(timeoutId);
+                    finalize(Number.isFinite(audio.duration) ? audio.duration : 0);
+                };
+                audio.onerror = () => {
+                    clearTimeout(timeoutId);
+                    finalize(0);
+                };
+            });
+
+            const getTranscriptRunningTimeSeconds = async (transcript) => {
+                const entries = getTranscriptAudioEntriesForExport(transcript);
+                if (!entries.length) return 0;
+
+                let totalSeconds = 0;
+                for (const entry of entries) {
+                    const blob = await dbGet('files', entry.key);
+                    if (!(blob instanceof Blob)) continue;
+                    totalSeconds += await getAudioDurationSeconds(blob);
+                }
+                return Math.round(totalSeconds);
+            };
+
+            const getTranscriptExportBodyText = (transcript) => {
+                if (typeof transcript.content === 'string' && transcript.content.trim()) {
+                    return transcript.content;
+                }
+                if (typeof transcript.contentHtml === 'string' && transcript.contentHtml.trim()) {
+                    const tmp = document.createElement('div');
+                    tmp.innerHTML = transcript.contentHtml;
+                    tmp.querySelectorAll('br').forEach((br) => br.replaceWith('\n'));
+                    return (tmp.innerText || '').replace(/\r/g, '');
+                }
+                return '';
+            };
+
+            const buildLineMetadata = (text) => {
+                const normalized = String(text || '').replace(/\r\n?/g, '\n');
+                const parts = normalized.split('\n');
+                const lines = [];
+                let cursor = 0;
+                for (let i = 0; i < parts.length; i++) {
+                    const lineText = parts[i];
+                    const start = cursor;
+                    const end = start + lineText.length;
+                    lines.push({
+                        number: i + 1,
+                        start,
+                        end,
+                        text: lineText
+                    });
+                    cursor = end + 1;
+                }
+                return lines;
+            };
+
+            const getLineNumberForOffset = (lines, offset) => {
+                if (!lines.length) return 1;
+                const bounded = Math.max(0, Number(offset) || 0);
+                for (const line of lines) {
+                    if (bounded <= line.end) return line.number;
+                }
+                return lines[lines.length - 1].number;
+            };
+
+            const normalizeTranscriptTagsForExport = (transcript, transcriptText, lines) => {
+                const textLength = transcriptText.length;
+                return tags
+                    .filter((tag) => String(tag.transcriptId) === String(transcript.id))
+                    .map((tag) => {
+                        const startRaw = Number(tag.start);
+                        const endRaw = Number(tag.end);
+                        if (!Number.isFinite(startRaw) || !Number.isFinite(endRaw)) return null;
+
+                        const start = Math.max(0, Math.min(textLength, Math.min(startRaw, endRaw)));
+                        let end = Math.max(0, Math.min(textLength, Math.max(startRaw, endRaw)));
+                        if (end <= start) end = Math.min(textLength, start + 1);
+                        if (end <= start) return null;
+
+                        const startLine = getLineNumberForOffset(lines, start);
+                        const endLine = getLineNumberForOffset(lines, Math.max(start, end - 1));
+
+                        return {
+                            ...tag,
+                            start,
+                            end,
+                            startLine,
+                            endLine,
+                            label: String(tag.tagName || tag.category || 'Code').trim() || 'Code'
+                        };
+                    })
+                    .filter(Boolean)
+                    .sort((a, b) => {
+                        if (a.start !== b.start) return a.start - b.start;
+                        return a.end - b.end;
+                    });
+            };
+
+            const renderLineWithHighlights = (line, normalizedTags) => {
+                const boundaries = new Set([0, line.text.length]);
+                const overlaps = [];
+
+                for (const tag of normalizedTags) {
+                    if (tag.end <= line.start || tag.start >= line.end) continue;
+                    const overlapStart = Math.max(tag.start, line.start) - line.start;
+                    const overlapEnd = Math.min(tag.end, line.end) - line.start;
+                    if (overlapEnd <= overlapStart) continue;
+                    overlaps.push({ start: overlapStart, end: overlapEnd });
+                    boundaries.add(overlapStart);
+                    boundaries.add(overlapEnd);
+                }
+
+                const sorted = Array.from(boundaries).sort((a, b) => a - b);
+                if (!sorted.length || sorted.length === 1) {
+                    return line.text
+                        ? escapeHtmlForDoc(line.text)
+                        : '<span class="line-empty">&nbsp;</span>';
+                }
+
+                let rendered = '';
+                for (let i = 0; i < sorted.length - 1; i++) {
+                    const segStart = sorted[i];
+                    const segEnd = sorted[i + 1];
+                    if (segEnd <= segStart) continue;
+                    const segment = line.text.slice(segStart, segEnd);
+                    const escapedSegment = escapeHtmlForDoc(segment || ' ');
+                    const highlighted = overlaps.some((range) => segStart >= range.start && segEnd <= range.end);
+                    rendered += highlighted ? `<mark class="hl">${escapedSegment}</mark>` : escapedSegment;
+                }
+
+                return rendered || '<span class="line-empty">&nbsp;</span>';
+            };
+
+            const buildPlainTranscriptHtml = (transcript, transcriptText) => {
+                const lines = buildLineMetadata(transcriptText);
+                return `
+                    <table class="plain-table">
+                        <thead><tr><th class="line-head">Line</th><th>Transcript Text</th></tr></thead>
+                        <tbody>
+                            ${lines.map((line) => `
+                                <tr>
+                                    <td class="line-num">${line.number}</td>
+                                    <td class="text-cell">${line.text ? escapeHtmlForDoc(line.text) : '<span class="line-empty">&nbsp;</span>'}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                `;
+            };
+
+            const buildCodedTranscriptHtml = (transcript, transcriptText) => {
+                const lines = buildLineMetadata(transcriptText);
+                const normalizedTags = normalizeTranscriptTagsForExport(transcript, transcriptText, lines);
+                const tagsByStartLine = normalizedTags.reduce((acc, tag) => {
+                    const key = String(tag.startLine);
+                    if (!acc[key]) acc[key] = [];
+                    acc[key].push(tag);
+                    return acc;
+                }, {});
+
+                return `
+                    <table class="coded-table">
+                        <thead>
+                            <tr>
+                                <th>Transcript Text (with highlights + line numbers)</th>
+                                <th>Codes</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${lines.map((line) => {
+                                const lineCodes = tagsByStartLine[String(line.number)] || [];
+                                const codeHtml = lineCodes.length
+                                    ? lineCodes.map((tag) => {
+                                        const rangeLabel = tag.startLine === tag.endLine
+                                            ? `${tag.startLine}`
+                                            : `${tag.startLine}-${tag.endLine}`;
+                                        return `<div class="code-item">${escapeHtmlForDoc(tag.label)} (${escapeHtmlForDoc(transcript.title || 'Untitled transcript')}, ${rangeLabel})</div>`;
+                                    }).join('')
+                                    : '';
+
+                                return `
+                                    <tr>
+                                        <td class="text-cell"><span class="line-badge">${line.number}</span> ${renderLineWithHighlights(line, normalizedTags)}</td>
+                                        <td class="code-cell">${codeHtml || '&nbsp;'}</td>
+                                    </tr>
+                                `;
+                            }).join('')}
+                        </tbody>
+                    </table>
+                `;
+            };
+
+            const buildTranscriptExportDocument = async ({ includeCodes }) => {
+                const exportedAt = new Date();
+                const sections = [];
+
+                for (const transcript of transcripts) {
+                    const transcriptName = transcript.title || 'Untitled transcript';
+                    const transcriptFolder = transcript.folder || 'Uncategorized';
+                    const runningTimeSeconds = await getTranscriptRunningTimeSeconds(transcript);
+                    const transcriptText = getTranscriptExportBodyText(transcript);
+
+                    sections.push(`
+                        <section class="transcript-block">
+                            <h2>${escapeHtmlForDoc(transcriptName)}</h2>
+                            <div class="meta-line"><strong>Folder:</strong> ${escapeHtmlForDoc(transcriptFolder)}</div>
+                            <div class="meta-line"><strong>Total Running Time:</strong> ${formatDurationHMS(runningTimeSeconds)}</div>
+                            <div class="meta-line"><strong>Word Count:</strong> ${(transcriptText.trim().match(/\S+/g) || []).length}</div>
+                            <hr />
+                            ${includeCodes ? buildCodedTranscriptHtml(transcript, transcriptText) : buildPlainTranscriptHtml(transcript, transcriptText)}
+                        </section>
+                    `);
+                }
+
+                return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>QualiApp Transcript Export</title>
+  <style>
+    body { font-family: Calibri, Arial, sans-serif; font-size: 11pt; color: #0f172a; margin: 28px; }
+    h1 { font-size: 22pt; margin: 0 0 6px; }
+    h2 { font-size: 16pt; margin: 0 0 8px; }
+    .doc-header { margin-bottom: 20px; border-bottom: 1px solid #cbd5e1; padding-bottom: 10px; }
+    .meta-line { margin: 2px 0; }
+    .transcript-block { margin-bottom: 30px; page-break-after: always; }
+    .transcript-block:last-child { page-break-after: auto; }
+    .plain-table, .coded-table { width: 100%; border-collapse: collapse; margin-top: 10px; table-layout: fixed; }
+    .plain-table th, .plain-table td, .coded-table th, .coded-table td { border: 1px solid #cbd5e1; padding: 6px; vertical-align: top; }
+    .plain-table thead th, .coded-table thead th { background: #f8fafc; text-align: left; }
+    .plain-table .line-head { width: 56px; }
+    .line-num { width: 56px; text-align: right; color: #475569; font-weight: 600; }
+    .text-cell { white-space: pre-wrap; word-break: break-word; }
+    .code-cell { width: 36%; white-space: pre-wrap; }
+    .line-badge { display: inline-block; min-width: 28px; text-align: right; color: #475569; font-weight: 600; margin-right: 6px; }
+    mark.hl { background: #fde68a; color: inherit; padding: 0 1px; }
+    .code-item { margin-bottom: 4px; }
+    .line-empty { color: #94a3b8; }
+    hr { border: 0; border-top: 1px solid #cbd5e1; margin: 12px 0 10px; }
+  </style>
+</head>
+<body>
+  <header class="doc-header">
+    <h1>QualiApp Transcript Export</h1>
+    <div><strong>Export Type:</strong> ${includeCodes ? 'Transcripts With Codes' : 'Transcripts'}</div>
+    <div><strong>Total transcripts:</strong> ${transcripts.length}</div>
+    <div><strong>Exported:</strong> ${escapeHtmlForDoc(exportedAt.toLocaleString())}</div>
+  </header>
+  ${sections.join('\n')}
+</body>
+</html>`;
+            };
+
+            const runTranscriptExport = async ({ includeCodes, format }) => {
+                if (!Array.isArray(transcripts) || transcripts.length === 0) {
+                    alert('No transcripts to export yet.');
+                    return;
+                }
+
+                const docHtml = await buildTranscriptExportDocument({ includeCodes });
+                const now = new Date();
+                const suffix = includeCodes ? 'with_codes' : 'transcripts_only';
+                const datePart = now.toISOString().slice(0, 10);
+
+                if (format === 'doc') {
+                    const blob = new Blob(['\ufeff', docHtml], { type: 'application/msword' });
+                    const a = document.createElement('a');
+                    a.href = URL.createObjectURL(blob);
+                    a.download = `QualiApp_${suffix}_${datePart}.doc`;
+                    a.click();
+                    URL.revokeObjectURL(a.href);
+                    return;
+                }
+
+                const printWindow = window.open('', '_blank');
+                if (!printWindow) {
+                    alert('Unable to open print window. Please allow pop-ups and try again.');
+                    return;
+                }
+                printWindow.document.open();
+                printWindow.document.write(docHtml);
+                printWindow.document.close();
+                printWindow.focus();
+                printWindow.print();
+            };
+
+            const handleConfirmTranscriptExport = async (selection) => {
+                if (transcriptExportBusy) return;
+                setTranscriptExportBusy(true);
+                try {
+                    await runTranscriptExport(selection);
+                    setShowTranscriptExportDialog(false);
+                } catch (err) {
+                    console.error('Transcript export failed:', err);
+                    alert('Export failed. Please try again.');
+                } finally {
+                    setTranscriptExportBusy(false);
+                }
+            };
+
             if (startupState === 'checking') return <div className="h-screen w-screen bg-hero flex flex-col"><div className="flex-1 flex items-center justify-center">Loading...</div><AppFooter /></div>;
             if (startupState === 'welcome') return <WelcomeScreen hasPassword={hasAppPassword} hasRecovery={hasRecoverySetup} onConfigureNewProjectSecurity={handleConfigureNewProjectSecurity} onStartNew={() => setStartupState('open')} onRestoreExisting={() => { setStartupState('open'); setView('backup'); }} />;
             if (startupState === 'locked') return <LockScreen onUnlock={() => setStartupState('open')} />;
@@ -3672,6 +4132,7 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                                     transcripts={transcripts}
                                     folders={folders}
                                     onDownloadApp={handleDownloadApp}
+                                    onExportTranscripts={() => setShowTranscriptExportDialog(true)}
                                     onCreate={handleCreateTranscript}
                                     onCreateFolder={handleCreateFolder}
                                     onRenameFolder={handleRenameFolder}
@@ -3948,6 +4409,12 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                                     }}
                                 />
                             )}
+                            <ExportTranscriptsDialog
+                                open={showTranscriptExportDialog}
+                                onClose={() => !transcriptExportBusy && setShowTranscriptExportDialog(false)}
+                                onConfirm={handleConfirmTranscriptExport}
+                                busy={transcriptExportBusy}
+                            />
                         </main>
                     </div>
                     <AppFooter />
@@ -4345,7 +4812,7 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
             );
         }
 
-        function Dashboard({ transcripts, folders, onDownloadApp, onCreate, onCreateFolder, onRenameFolder, onDeleteFolder, onMoveTranscript, onRenameTranscript, onOpen, onDelete, participants }) {
+        function Dashboard({ transcripts, folders, onDownloadApp, onExportTranscripts, onCreate, onCreateFolder, onRenameFolder, onDeleteFolder, onMoveTranscript, onRenameTranscript, onOpen, onDelete, participants }) {
             const [showModal, setShowModal] = useState(false);
             const [title, setTitle] = useState('');
             const [folder, setFolder] = useState('');
@@ -4438,6 +4905,7 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                                 </div>
                                 <div className="flex gap-3">
                                     <button onClick={onDownloadApp} className="bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 px-5 py-3 rounded-xl shadow font-semibold">Download App</button>
+                                    <button onClick={onExportTranscripts} disabled={!transcripts.length} className="bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 px-5 py-3 rounded-xl shadow font-semibold disabled:opacity-50 disabled:cursor-not-allowed">Export Transcripts</button>
                                     <button onClick={() => setShowModal(true)} className="bg-tide hover:bg-teal-600 text-white px-5 py-3 rounded-xl shadow font-semibold">New Transcript</button>
                                 </div>
                             </div>

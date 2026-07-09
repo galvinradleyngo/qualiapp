@@ -3,13 +3,14 @@ import type { TranscriptRecord } from './models'
 
 type TranscriptDashboardProps = {
   transcripts: TranscriptRecord[]
+  onExportTranscripts: () => void
   onOpen: (transcriptId: string) => void
   onCreate: (data: { title: string; folder?: string }) => void
   onDelete: (transcriptId: string) => void
   onRename: (transcriptId: string, title: string) => void
 }
 
-export function TranscriptDashboard({ transcripts, onOpen, onCreate, onDelete, onRename }: TranscriptDashboardProps) {
+export function TranscriptDashboard({ transcripts, onExportTranscripts, onOpen, onCreate, onDelete, onRename }: TranscriptDashboardProps) {
   const [showNewForm, setShowNewForm] = useState(false)
   const [newTitle, setNewTitle] = useState('')
   const [newFolder, setNewFolder] = useState('')
@@ -62,9 +63,14 @@ export function TranscriptDashboard({ transcripts, onOpen, onCreate, onDelete, o
             {transcripts.length} transcript{transcripts.length !== 1 ? 's' : ''} in this workspace. Open one to start coding.
           </p>
         </div>
-        <button type="button" className="code-action" onClick={() => setShowNewForm((prev) => !prev)}>
-          {showNewForm ? 'Cancel' : '+ New transcript'}
-        </button>
+        <div className="code-toolbar">
+          <button type="button" className="code-action" onClick={onExportTranscripts} disabled={transcripts.length === 0}>
+            Export Transcripts
+          </button>
+          <button type="button" className="code-action" onClick={() => setShowNewForm((prev) => !prev)}>
+            {showNewForm ? 'Cancel' : '+ New transcript'}
+          </button>
+        </div>
       </div>
 
       {showNewForm && (

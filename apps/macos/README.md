@@ -54,3 +54,9 @@ Download the DMG artifact from the completed Actions run page when you are ready
 - Do not edit root `index.html` as part of this track.
 - Keep data portability ahead of native-only enhancements.
 - Validate changes here with isolated builds before moving deeper into feature migration.
+
+## Next Parity Plan
+
+- Standardize in-vivo code labels with double quotes across editor views, categorization, and exported tables (for example, `"new"`).
+- In categorization, support automatic alphabetical sorting of in-vivo codes.
+- In categorization, support manual pre-categorization ordering with adjustable spacing between code rows.

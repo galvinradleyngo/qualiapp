@@ -33,6 +33,8 @@ const checkpoints = [
   'Save is blocked on failed in-vivo alignment',
   'Source text resolves from selection or edited tag',
   'Audio upload/playback/resume is persisted per transcript',
+  'In-vivo code labels display with double quotes across UI and exports',
+  'Categorization supports alphabetical sort and manual ordering with row spacing',
 ]
 
 export function TranscriptWorkspace({

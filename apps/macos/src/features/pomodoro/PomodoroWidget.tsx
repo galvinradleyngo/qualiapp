@@ -43,7 +43,7 @@ export function PomodoroWidget() {
   }
 
   const startTimer = () => {
-    setRemainingSeconds(durationMinutes * 60)
+    setRemainingSeconds((previous) => (previous > 0 ? previous : durationMinutes * 60))
     setIsRunning(true)
   }
 
