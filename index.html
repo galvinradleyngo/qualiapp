@@ -3861,7 +3861,7 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                     const segment = line.text.slice(segStart, segEnd);
                     const escapedSegment = escapeHtmlForDoc(segment || ' ');
                     const highlighted = overlaps.some((range) => segStart >= range.start && segEnd <= range.end);
-                    rendered += highlighted ? `<mark class="hl">${escapedSegment}</mark>` : escapedSegment;
+                    rendered += highlighted ? `<span class="hl">${escapedSegment}</span>` : escapedSegment;
                 }
 
                 return rendered || '<span class="line-empty">&nbsp;</span>';
@@ -3969,7 +3969,7 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
     .text-cell { white-space: pre-wrap; word-break: break-word; }
     .code-cell { width: 36%; white-space: pre-wrap; }
     .line-badge { display: inline-block; min-width: 28px; text-align: right; color: #475569; font-weight: 600; margin-right: 6px; }
-    mark.hl { background: #fde68a; color: inherit; padding: 0 1px; }
+    .hl { background-color: #fde68a; mso-highlight: yellow; color: inherit; padding: 0 1px; }
     .code-item { margin-bottom: 4px; }
     .line-empty { color: #94a3b8; }
     hr { border: 0; border-top: 1px solid #cbd5e1; margin: 12px 0 10px; }
