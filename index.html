@@ -3881,7 +3881,7 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                     const escapedSegment = escapeHtmlForDoc(segment || ' ');
                     const highlighted = overlaps.some((range) => segStart >= range.start && segEnd <= range.end);
                     rendered += highlighted
-                        ? `<span class="hl" style="background-color:#fff59d;mso-highlight:yellow;">${escapedSegment}</span>`
+                        ? `<span style="background:yellow;background-color:yellow;mso-highlight:yellow;">${escapedSegment}</span>`
                         : escapedSegment;
                 }
 
@@ -7773,6 +7773,12 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                 return Array.from(set).sort((a, b) => a.localeCompare(b));
             }, [transcripts, artifacts, observations]);
 
+            const availableFolderSet = useMemo(() => new Set(availableFolders), [availableFolders]);
+            const knownSourceIdSet = useMemo(
+                () => new Set(sourceFilterGroups.flatMap((group) => group.items.map((item) => item.filterId))),
+                [sourceFilterGroups]
+            );
+
             useEffect(() => {
                 if (hasAppliedResumeRef.current) return;
                 hasAppliedResumeRef.current = true;
@@ -7872,97 +7878,122 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
             };
 
             const codeDetails = useMemo(() => {
-                const map = {};
-                tags.forEach((t) => {
-                    const codeName = resolveCodeName(t);
-                    if (!codeName) return;
+                const buildMap = (applyFilters) => {
+                    const map = {};
 
-                    const transcriptId = resolveTranscriptId(t);
-                    const parent = transcriptById[transcriptId] || transcriptById[t.transcriptId];
-                    const folder = parent?.folder || 'Uncategorized';
-                    if (!includeAllSources && transcriptId && !selectedSourceSet.has(buildSourceFilterId('transcript', transcriptId))) return;
-                    if (!includeAllFolders && !selectedFolderSet.has(folder)) return;
-                    if (!map[codeName]) {
-                        map[codeName] = {
-                            name: codeName,
-                            category: t.category || 'Uncategorized',
-                            count: 0,
-                            sourceSet: new Set(),
-                            quotes: [],
-                            folders: new Set()
-                        };
-                    }
-                    map[codeName].count += 1;
-                    map[codeName].sourceSet.add('transcript');
-                    map[codeName].folders.add(folder);
-                    const participantCode = parent?.participantId ? (participantCodeById[parent.participantId] || parent.participantId) : null;
-                    map[codeName].quotes.push({
-                        source: 'Transcript',
-                        folder,
-                        ref: participantCode || `Transcript ${String(transcriptId || t.transcriptId || '').slice(-4)}`,
-                        text: t.textSnippet || ''
-                    });
-                });
+                    tags.forEach((t) => {
+                        const codeName = resolveCodeName(t);
+                        if (!codeName) return;
 
-                (artifacts || []).forEach((art) => {
-                    const folder = art.folder || 'Uncategorized';
-                    if (!includeAllSources && !selectedSourceSet.has(buildSourceFilterId('artifact', art.id))) return;
-                    if (!includeAllFolders && !selectedFolderSet.has(folder)) return;
-                    (art.codes || []).forEach((codeName) => {
+                        const transcriptId = resolveTranscriptId(t);
+                        const parent = transcriptById[transcriptId] || transcriptById[t.transcriptId];
+                        const folder = parent?.folder || 'Uncategorized';
+
+                        if (applyFilters) {
+                            const transcriptFilterId = transcriptId ? buildSourceFilterId('transcript', transcriptId) : '';
+                            const shouldEnforceSourceFilter = !includeAllSources && transcriptFilterId && knownSourceIdSet.has(transcriptFilterId);
+                            if (shouldEnforceSourceFilter && !selectedSourceSet.has(transcriptFilterId)) return;
+                            const shouldEnforceFolderFilter = !includeAllFolders && availableFolderSet.has(folder);
+                            if (shouldEnforceFolderFilter && !selectedFolderSet.has(folder)) return;
+                        }
+
                         if (!map[codeName]) {
                             map[codeName] = {
                                 name: codeName,
-                                category: 'Artifact',
+                                category: t.category || 'Uncategorized',
                                 count: 0,
                                 sourceSet: new Set(),
                                 quotes: [],
                                 folders: new Set()
                             };
                         }
-                        map[codeName].sourceSet.add('artifact');
+                        map[codeName].count += 1;
+                        map[codeName].sourceSet.add('transcript');
                         map[codeName].folders.add(folder);
-                        if (art.notes && art.notes.trim()) {
-                            map[codeName].quotes.push({
-                                source: 'Artifact',
-                                folder,
-                                ref: art.name,
-                                text: art.notes
-                            });
+                        const participantCode = parent?.participantId ? (participantCodeById[parent.participantId] || parent.participantId) : null;
+                        map[codeName].quotes.push({
+                            source: 'Transcript',
+                            folder,
+                            ref: participantCode || `Transcript ${String(transcriptId || t.transcriptId || '').slice(-4)}`,
+                            text: t.textSnippet || ''
+                        });
+                    });
+
+                    (artifacts || []).forEach((art) => {
+                        const folder = art.folder || 'Uncategorized';
+                        if (applyFilters) {
+                            if (!includeAllSources && !selectedSourceSet.has(buildSourceFilterId('artifact', art.id))) return;
+                            const shouldEnforceFolderFilter = !includeAllFolders && availableFolderSet.has(folder);
+                            if (shouldEnforceFolderFilter && !selectedFolderSet.has(folder)) return;
                         }
+                        (art.codes || []).forEach((codeName) => {
+                            if (!map[codeName]) {
+                                map[codeName] = {
+                                    name: codeName,
+                                    category: 'Artifact',
+                                    count: 0,
+                                    sourceSet: new Set(),
+                                    quotes: [],
+                                    folders: new Set()
+                                };
+                            }
+                            map[codeName].sourceSet.add('artifact');
+                            map[codeName].folders.add(folder);
+                            if (art.notes && art.notes.trim()) {
+                                map[codeName].quotes.push({
+                                    source: 'Artifact',
+                                    folder,
+                                    ref: art.name,
+                                    text: art.notes
+                                });
+                            }
+                        });
                     });
-                });
 
-                (observationTags || []).forEach((t) => {
-                    const codeName = resolveCodeName(t);
-                    if (!codeName) return;
+                    (observationTags || []).forEach((t) => {
+                        const codeName = resolveCodeName(t);
+                        if (!codeName) return;
 
-                    const observationId = resolveObservationId(t);
-                    const parent = (observations || []).find((o) => String(o.id) === String(observationId || t.observationId));
-                    const folder = parent?.location || 'Onsite Observation';
-                    if (!includeAllSources && observationId && !selectedSourceSet.has(buildSourceFilterId('observation', observationId))) return;
-                    if (!includeAllFolders && !selectedFolderSet.has(folder)) return;
-                    if (!map[codeName]) {
-                        map[codeName] = {
-                            name: codeName,
-                            category: t.category || 'Uncategorized',
-                            count: 0,
-                            sourceSet: new Set(),
-                            quotes: [],
-                            folders: new Set()
-                        };
-                    }
-                    map[codeName].count += 1;
-                    map[codeName].sourceSet.add('observation');
-                    map[codeName].folders.add(folder);
-                    map[codeName].quotes.push({
-                        source: 'Observation',
-                        folder,
-                        ref: parent ? parent.title : `Observation ${String(observationId || t.observationId || '').slice(-4)}`,
-                        text: t.textSnippet || ''
+                        const observationId = resolveObservationId(t);
+                        const parent = (observations || []).find((o) => String(o.id) === String(observationId || t.observationId));
+                        const folder = parent?.location || 'Onsite Observation';
+
+                        if (applyFilters) {
+                            const observationFilterId = observationId ? buildSourceFilterId('observation', observationId) : '';
+                            const shouldEnforceSourceFilter = !includeAllSources && observationFilterId && knownSourceIdSet.has(observationFilterId);
+                            if (shouldEnforceSourceFilter && !selectedSourceSet.has(observationFilterId)) return;
+                            const shouldEnforceFolderFilter = !includeAllFolders && availableFolderSet.has(folder);
+                            if (shouldEnforceFolderFilter && !selectedFolderSet.has(folder)) return;
+                        }
+
+                        if (!map[codeName]) {
+                            map[codeName] = {
+                                name: codeName,
+                                category: t.category || 'Uncategorized',
+                                count: 0,
+                                sourceSet: new Set(),
+                                quotes: [],
+                                folders: new Set()
+                            };
+                        }
+                        map[codeName].count += 1;
+                        map[codeName].sourceSet.add('observation');
+                        map[codeName].folders.add(folder);
+                        map[codeName].quotes.push({
+                            source: 'Observation',
+                            folder,
+                            ref: parent ? parent.title : `Observation ${String(observationId || t.observationId || '').slice(-4)}`,
+                            text: t.textSnippet || ''
+                        });
                     });
-                });
 
-                return Object.values(map)
+                    return map;
+                };
+
+                const filteredMap = buildMap(true);
+                const effectiveMap = Object.keys(filteredMap).length > 0 ? filteredMap : buildMap(false);
+
+                return Object.values(effectiveMap)
                     .map((c) => ({
                         ...c,
                         source: (() => {
@@ -7975,7 +8006,7 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                         })()
                     }))
                     .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
-            }, [tags, artifacts, observationTags, observations, transcriptById, participantCodeById, selectedSourceSet, selectedFolderSet, includeAllSources, includeAllFolders]);
+            }, [tags, artifacts, observationTags, observations, transcriptById, participantCodeById, selectedSourceSet, selectedFolderSet, includeAllSources, includeAllFolders, knownSourceIdSet, availableFolderSet]);
 
             const codeDetailByName = useMemo(() => {
                 const out = {};
