@@ -649,7 +649,7 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
             }
         })();
 
-        const localStorage = safeLocalStorage;
+        const appLocalStorage = safeLocalStorage;
 
         const safeIndexedDB = (() => {
             if (typeof window.indexedDB !== 'undefined' && window.indexedDB) return window.indexedDB;
@@ -722,13 +722,13 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
             };
         })();
 
-        const indexedDB = safeIndexedDB;
+        const appIndexedDB = safeIndexedDB;
 
         let _dbCache = null;
         const openDB = () => {
             if (_dbCache) return Promise.resolve(_dbCache);
             return new Promise((resolve, reject) => {
-                const req = indexedDB.open(dbName, 1);
+                const req = appIndexedDB.open(dbName, 1);
                 req.onupgradeneeded = (e) => {
                     const db = e.target.result;
                     if (!db.objectStoreNames.contains('data')) db.createObjectStore('data');
@@ -1762,11 +1762,11 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                     return;
                 }
                 // Fall back to legacy btoa format, then auto-migrate to PBKDF2+IDB
-                const saved = localStorage.getItem('quali_pin');
+                const saved = appLocalStorage.getItem('quali_pin');
                 if (saved && btoa(password) === saved) {
                     const newPin = await secPbkdf2Hash(password);
                     await dbSet('data', secAppPinIdbKey, newPin);
-                    localStorage.removeItem('quali_pin');
+                    appLocalStorage.removeItem('quali_pin');
                     onUnlock();
                     return;
                 }
@@ -1777,7 +1777,7 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                 (async () => {
                     const idbRecovery = await dbGet('data', secRecoveryIdbKey);
                     if (idbRecovery) setRecoveryQuestion(idbRecovery.question || '');
-                    else setRecoveryQuestion(localStorage.getItem(recoveryQuestionKey) || '');
+                    else setRecoveryQuestion(appLocalStorage.getItem(recoveryQuestionKey) || '');
                 })();
             }, []);
 
@@ -1800,7 +1800,7 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                 if (idbRecovery) {
                     recoveryValid = await secPbkdf2Verify(normalizeRecoveryAnswer(recoveryAnswer), idbRecovery.answerHash, idbRecovery.answerSalt);
                 } else {
-                    const savedHash = localStorage.getItem(recoveryAnswerHashKey);
+                    const savedHash = appLocalStorage.getItem(recoveryAnswerHashKey);
                     if (!savedHash) { setError('Recovery is not configured on this device.'); return; }
                     const answerHash = await stringHash(normalizeRecoveryAnswer(recoveryAnswer));
                     recoveryValid = answerHash === savedHash;
@@ -1812,7 +1812,7 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                 // Write new password as PBKDF2 in IDB
                 const newPin = await secPbkdf2Hash(newPassword);
                 await dbSet('data', secAppPinIdbKey, newPin);
-                localStorage.removeItem('quali_pin');
+                appLocalStorage.removeItem('quali_pin');
                 setError('Password reset successful. You can now unlock.');
                 setShowRecovery(false);
                 setRecoveryAnswer('');
@@ -2171,9 +2171,9 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                         dbGet('data', 'auto_lock_enabled')
                     ]);
                     if (savedAutoLock === false) setAutoLockEnabled(false);
-                    const legacyPin = localStorage.getItem('quali_pin');
+                    const legacyPin = appLocalStorage.getItem('quali_pin');
                     const hasPin = !!(idbAppPin || legacyPin);
-                    const legacyRecovery = !!(localStorage.getItem(recoveryQuestionKey) && localStorage.getItem(recoveryAnswerHashKey));
+                    const legacyRecovery = !!(appLocalStorage.getItem(recoveryQuestionKey) && appLocalStorage.getItem(recoveryAnswerHashKey));
                     const hasRecovery = !!(idbRecovery || legacyRecovery);
                     const batch = await dbBatchGet('data', ['transcripts', 'tags', 'global_artifacts', 'participants', 'analysis_canvases']);
                     const existingTranscripts = batch['transcripts'] || [];
@@ -3092,10 +3092,10 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
 
                     // Estimate security section
                     const securitySize = new Blob([JSON.stringify({
-                        appPin: localStorage.getItem('quali_pin') || null,
-                        participantPinHash: localStorage.getItem(participantPinKey) || null,
-                        recoveryQuestion: localStorage.getItem(recoveryQuestionKey) || null,
-                        recoveryAnswerHash: localStorage.getItem(recoveryAnswerHashKey) || null
+                        appPin: appLocalStorage.getItem('quali_pin') || null,
+                        participantPinHash: appLocalStorage.getItem(participantPinKey) || null,
+                        recoveryQuestion: appLocalStorage.getItem(recoveryQuestionKey) || null,
+                        recoveryAnswerHash: appLocalStorage.getItem(recoveryAnswerHashKey) || null
                     })]).size;
 
                     // Calculate base size
@@ -3195,10 +3195,10 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                         appPinV2: await dbGet('data', secAppPinIdbKey),
                         participantPinV2: await dbGet('data', secParticipantPinIdbKey),
                         recoveryV2: await dbGet('data', secRecoveryIdbKey),
-                        appPin: localStorage.getItem('quali_pin') || null,
-                        participantPinHash: localStorage.getItem(participantPinKey) || null,
-                        recoveryQuestion: localStorage.getItem(recoveryQuestionKey) || null,
-                        recoveryAnswerHash: localStorage.getItem(recoveryAnswerHashKey) || null
+                        appPin: appLocalStorage.getItem('quali_pin') || null,
+                        participantPinHash: appLocalStorage.getItem(participantPinKey) || null,
+                        recoveryQuestion: appLocalStorage.getItem(recoveryQuestionKey) || null,
+                        recoveryAnswerHash: appLocalStorage.getItem(recoveryAnswerHashKey) || null
                     }
                 };
 
@@ -3443,18 +3443,18 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                 report('Restoring settings…', 95);
                 if (payload.security) {
                     if (payload.security.appPinV2) await dbSet('data', secAppPinIdbKey, payload.security.appPinV2);
-                    else if (payload.security.appPin) localStorage.setItem('quali_pin', payload.security.appPin);
+                    else if (payload.security.appPin) appLocalStorage.setItem('quali_pin', payload.security.appPin);
                     if (payload.security.participantPinV2) await dbSet('data', secParticipantPinIdbKey, payload.security.participantPinV2);
-                    else if (payload.security.participantPinHash) localStorage.setItem(participantPinKey, payload.security.participantPinHash);
+                    else if (payload.security.participantPinHash) appLocalStorage.setItem(participantPinKey, payload.security.participantPinHash);
                     if (payload.security.recoveryV2) await dbSet('data', secRecoveryIdbKey, payload.security.recoveryV2);
                     else {
-                        if (payload.security.recoveryQuestion) localStorage.setItem(recoveryQuestionKey, payload.security.recoveryQuestion);
-                        if (payload.security.recoveryAnswerHash) localStorage.setItem(recoveryAnswerHashKey, payload.security.recoveryAnswerHash);
+                        if (payload.security.recoveryQuestion) appLocalStorage.setItem(recoveryQuestionKey, payload.security.recoveryQuestion);
+                        if (payload.security.recoveryAnswerHash) appLocalStorage.setItem(recoveryAnswerHashKey, payload.security.recoveryAnswerHash);
                     }
                     const idbAppPin = await dbGet('data', secAppPinIdbKey);
                     const idbRecovery = await dbGet('data', secRecoveryIdbKey);
-                    const hasAppPinNow = !!(idbAppPin || localStorage.getItem('quali_pin'));
-                    const hasRecoveryNow = !!(idbRecovery || (localStorage.getItem(recoveryQuestionKey) && localStorage.getItem(recoveryAnswerHashKey)));
+                    const hasAppPinNow = !!(idbAppPin || appLocalStorage.getItem('quali_pin'));
+                    const hasRecoveryNow = !!(idbRecovery || (appLocalStorage.getItem(recoveryQuestionKey) && appLocalStorage.getItem(recoveryAnswerHashKey)));
                     setHasAppPassword(hasAppPinNow);
                     setHasRecoverySetup(hasRecoveryNow);
                     setShowRecoveryPrompt(hasAppPinNow && !hasRecoveryNow);
@@ -3465,10 +3465,10 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
             const handleSetAppPassword = async (password) => {
                 const newPin = await secPbkdf2Hash(password);
                 await dbSet('data', secAppPinIdbKey, newPin);
-                localStorage.removeItem('quali_pin');
+                appLocalStorage.removeItem('quali_pin');
                 setHasAppPassword(true);
                 const idbRecovery = await dbGet('data', secRecoveryIdbKey);
-                const hasRecovery = !!(idbRecovery || (localStorage.getItem(recoveryQuestionKey) && localStorage.getItem(recoveryAnswerHashKey)));
+                const hasRecovery = !!(idbRecovery || (appLocalStorage.getItem(recoveryQuestionKey) && appLocalStorage.getItem(recoveryAnswerHashKey)));
                 setHasRecoverySetup(hasRecovery);
                 if (!hasRecovery) setShowRecoveryPrompt(true);
                 alert('App password saved.');
@@ -3480,8 +3480,8 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                 if (!cleanQuestion || !cleanAnswer) return;
                 const { hash: answerHash, salt: answerSalt } = await secPbkdf2Hash(cleanAnswer);
                 await dbSet('data', secRecoveryIdbKey, { question: cleanQuestion, answerHash, answerSalt });
-                localStorage.removeItem(recoveryQuestionKey);
-                localStorage.removeItem(recoveryAnswerHashKey);
+                appLocalStorage.removeItem(recoveryQuestionKey);
+                appLocalStorage.removeItem(recoveryAnswerHashKey);
                 setHasRecoverySetup(true);
                 setShowRecoveryPrompt(false);
             };
@@ -5831,7 +5831,7 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
             useEffect(() => {
                 (async () => {
                     const idbPin = await dbGet('data', secParticipantPinIdbKey);
-                    const legacyPin = localStorage.getItem(participantPinKey);
+                    const legacyPin = appLocalStorage.getItem(participantPinKey);
                     if (!idbPin && !legacyPin) setIsSetup(true);
                 })();
             }, []);
@@ -5842,12 +5842,12 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                     if (password.length < 4) return setError('Participant password must be at least 4 characters.');
                     // Prevent reuse of main app password (check IDB then legacy)
                     const idbMainPin = await dbGet('data', secAppPinIdbKey);
-                    const legacyMainPin = localStorage.getItem('quali_pin');
+                    const legacyMainPin = appLocalStorage.getItem('quali_pin');
                     if (idbMainPin && await secPbkdf2Verify(password, idbMainPin.hash, idbMainPin.salt)) return setError('Use a different password from the main platform password.');
                     if (!idbMainPin && legacyMainPin && btoa(password) === legacyMainPin) return setError('Use a different password from the main platform password.');
                     const newPin = await secPbkdf2Hash(password);
                     await dbSet('data', secParticipantPinIdbKey, newPin);
-                    localStorage.removeItem(participantPinKey);
+                    appLocalStorage.removeItem(participantPinKey);
                     setIsUnlocked(true);
                     return;
                 }
@@ -5859,12 +5859,12 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                     return;
                 }
                 // Fall back to legacy SHA-256 in localStorage, then auto-migrate
-                const savedHash = localStorage.getItem(participantPinKey);
+                const savedHash = appLocalStorage.getItem(participantPinKey);
                 const inputHash = await stringHash(password);
                 if (savedHash === inputHash) {
                     const newPin = await secPbkdf2Hash(password);
                     await dbSet('data', secParticipantPinIdbKey, newPin);
-                    localStorage.removeItem(participantPinKey);
+                    appLocalStorage.removeItem(participantPinKey);
                     setIsUnlocked(true);
                 } else {
                     setError('Incorrect participant password.');
