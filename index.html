@@ -11563,6 +11563,12 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                 return `(${label}, ${startLine}${endLine > startLine ? `-${endLine}` : ''})`;
             };
 
+            const formatQuoteWithCitation = (quote) => {
+                const quoteText = String(quote?.text || '').trim();
+                const citation = String(quote?.citation || '').trim();
+                return `${quoteText}${citation ? ` ${citation}` : ''}`.trim();
+            };
+
             const tableData = useMemo(() => {
                 const participantCodeById = {};
                 (participants || []).forEach(p => { participantCodeById[p.id] = p.pseudonym || p.id; });
