@@ -3905,50 +3905,59 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                 `;
             };
 
+            const buildTranscriptCodeSummaryHtml = (transcript, transcriptText) => {
+                const lines = buildLineMetadata(transcriptText);
+                const transcriptTags = tags
+                    .filter((tag) => String(tag.transcriptId) === String(transcript.id))
+                    .map((tag) => {
+                        const label = String(tag.tagName || tag.category || 'Code').trim() || 'Code';
+                        const snippet = String(tag.textSnippet || '').trim();
+                        const category = String(tag.category || '').trim();
+                        const startRaw = Number(tag.start);
+                        const endRaw = Number(tag.end);
+                        let rangeLabel = '';
+
+                        if (Number.isFinite(startRaw) && Number.isFinite(endRaw) && lines.length) {
+                            const start = Math.max(0, Math.min(transcriptText.length, Math.min(startRaw, endRaw)));
+                            const end = Math.max(start, Math.min(transcriptText.length, Math.max(startRaw, endRaw)));
+                            const startLine = getLineNumberForOffset(lines, start);
+                            const endLine = getLineNumberForOffset(lines, Math.max(start, end - 1));
+                            rangeLabel = startLine === endLine ? `${startLine}` : `${startLine}-${endLine}`;
+                        }
+
+                        return {
+                            id: String(tag.id || `${label}_${snippet}`),
+                            label,
+                            category,
+                            snippet,
+                            rangeLabel
+                        };
+                    })
+                    .sort((a, b) => a.label.localeCompare(b.label) || a.rangeLabel.localeCompare(b.rangeLabel) || a.snippet.localeCompare(b.snippet));
+
+                if (!transcriptTags.length) {
+                    return '<div class="code-summary-empty">No codes saved for this transcript.</div>';
+                }
+
+                return `
+                    <div class="code-summary">
+                        <div class="code-summary-title">Saved Codes</div>
+                        ${transcriptTags.map((tag) => `
+                            <div class="code-summary-item">
+                                <div class="code-summary-label">${escapeHtmlForDoc(tag.label)}${tag.category ? ` <span class="code-summary-category">(${escapeHtmlForDoc(tag.category)})</span>` : ''}${tag.rangeLabel ? ` <span class="code-summary-range">Lines ${escapeHtmlForDoc(tag.rangeLabel)}</span>` : ''}</div>
+                                <div class="code-summary-snippet">${tag.snippet ? escapeHtmlForDoc(tag.snippet) : '<span class="line-empty">No quote text saved.</span>'}</div>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+            };
+
             const buildCodedTranscriptHtml = (transcript, transcriptText) => {
                 const lines = buildLineMetadata(transcriptText);
                 const normalizedTags = normalizeTranscriptTagsForExport(transcript, transcriptText, lines);
-                const tagsByStartLine = normalizedTags.reduce((acc, tag) => {
-                    const key = String(tag.startLine);
-                    if (!acc[key]) acc[key] = [];
-                    acc[key].push(tag);
-                    return acc;
-                }, {});
-
-                const mergedCellsByStartLine = {};
-                const ownerByLine = {};
-                const lineCount = lines.length;
-
-                const sortedStartLines = Object.keys(tagsByStartLine)
-                    .map((key) => Number(key))
-                    .filter((value) => Number.isFinite(value) && value >= 1)
-                    .sort((a, b) => a - b);
-
-                sortedStartLines.forEach((startLine) => {
-                    const tagsAtStart = tagsByStartLine[String(startLine)] || [];
-                    if (!tagsAtStart.length) return;
-
-                    const existingOwner = ownerByLine[startLine];
-                    if (existingOwner) {
-                        mergedCellsByStartLine[existingOwner].tags.push(...tagsAtStart);
-                        return;
-                    }
-
-                    const maxEndLine = tagsAtStart.reduce((acc, tag) => Math.max(acc, tag.endLine), startLine);
-                    const boundedEndLine = Math.max(startLine, Math.min(lineCount, maxEndLine));
-                    const rowspan = boundedEndLine - startLine + 1;
-
-                    mergedCellsByStartLine[startLine] = {
-                        rowspan,
-                        tags: [...tagsAtStart]
-                    };
-
-                    for (let lineNumber = startLine; lineNumber <= boundedEndLine; lineNumber++) {
-                        ownerByLine[lineNumber] = startLine;
-                    }
-                });
 
                 return `
+                    ${buildTranscriptCodeSummaryHtml(transcript, transcriptText)}
                     <table class="coded-table">
                         <thead>
                             <tr>
@@ -3958,11 +3967,10 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                         </thead>
                         <tbody>
                             ${lines.map((line) => {
-                                const ownerLine = ownerByLine[line.number] || null;
-                                const cell = mergedCellsByStartLine[line.number] || null;
+                                const lineTags = normalizedTags.filter((tag) => tag.startLine <= line.number && tag.endLine >= line.number);
 
-                                const codeHtml = cell && cell.tags.length
-                                    ? cell.tags.map((tag) => {
+                                const codeHtml = lineTags.length
+                                    ? lineTags.map((tag) => {
                                         const rangeLabel = tag.startLine === tag.endLine
                                             ? `${tag.startLine}`
                                             : `${tag.startLine}-${tag.endLine}`;
@@ -3970,16 +3978,10 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                                     }).join('')
                                     : '';
 
-                                const codeCell = cell
-                                    ? `<td class="code-cell" rowspan="${cell.rowspan}">${codeHtml || '&nbsp;'}</td>`
-                                    : ownerLine
-                                        ? ''
-                                        : '<td class="code-cell">&nbsp;</td>';
-
                                 return `
                                     <tr>
                                         <td class="text-cell"><span class="line-badge">${line.number}</span> ${renderLineWithHighlights(line, normalizedTags)}</td>
-                                        ${codeCell}
+                                        <td class="code-cell">${codeHtml || '&nbsp;'}</td>
                                     </tr>
                                 `;
                             }).join('')}
@@ -4030,6 +4032,14 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
     .line-num { width: 56px; text-align: right; color: #475569; font-weight: 600; }
     .text-cell { white-space: pre-wrap; word-break: break-word; }
     .code-cell { width: 36%; white-space: pre-wrap; }
+    .code-summary { margin: 10px 0 14px; border: 1px solid #cbd5e1; background: #f8fafc; padding: 10px 12px; }
+    .code-summary-title { font-weight: 700; margin-bottom: 8px; }
+    .code-summary-item { margin-bottom: 8px; }
+    .code-summary-item:last-child { margin-bottom: 0; }
+    .code-summary-label { font-weight: 600; }
+    .code-summary-category, .code-summary-range { font-weight: 400; color: #475569; }
+    .code-summary-snippet { margin-top: 2px; white-space: pre-wrap; color: #334155; }
+    .code-summary-empty { margin: 10px 0 14px; border: 1px dashed #cbd5e1; background: #f8fafc; padding: 10px 12px; color: #64748b; }
     .line-badge { display: inline-block; min-width: 28px; text-align: right; color: #475569; font-weight: 600; margin-right: 6px; }
     .hl { background-color: #fde68a; mso-highlight: yellow; color: inherit; padding: 0 1px; }
     .code-item { margin-bottom: 4px; }
