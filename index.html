@@ -7274,6 +7274,11 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                 return container.innerHTML;
             };
 
+            const highlightedCodeHtml = useMemo(
+                () => renderHighlightedHtml(),
+                [contentHtml, content, tags, editingTagId]
+            );
+
             const handleCodeClick = (e) => {
                 if (handleTimecodeBookmarkClick(e)) return;
                 const target = e.target.closest('mark[data-tag-id]');
@@ -7446,7 +7451,7 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                                 {mode === 'code' && (
                                     <div ref={textRef} onMouseUp={handleMouseUp} onClick={handleCodeClick} className="code-surface max-w-full overflow-x-hidden break-words text-lg leading-relaxed whitespace-pre-wrap outline-none pb-32 text-slate-800 p-2">
                                         {content ? (
-                                            <div dangerouslySetInnerHTML={{ __html: renderHighlightedHtml() }} />
+                                            <div dangerouslySetInnerHTML={{ __html: highlightedCodeHtml }} />
                                         ) : <span className="text-slate-400 italic">No text found. Switch to Edit mode to paste your transcript.</span>}
                                     </div>
                                 )}
