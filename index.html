@@ -11545,6 +11545,24 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                 return `"${normalized}"`;
             };
 
+            const getLineFromOffset = (text, offset) => {
+                const sourceText = String(text || '');
+                const boundedOffset = Math.max(0, Math.min(sourceText.length, Number(offset) || 0));
+                return sourceText.slice(0, boundedOffset).split('\n').length;
+            };
+
+            const buildTranscriptCitation = (transcriptName, transcriptText, start, end) => {
+                const label = String(transcriptName || 'Transcript').trim() || 'Transcript';
+                const sourceText = String(transcriptText || '');
+                if (!sourceText) return `(${label})`;
+
+                const boundedStart = Math.max(0, Math.min(sourceText.length, Number(start) || 0));
+                const boundedEnd = Math.max(boundedStart, Math.min(sourceText.length, Number(end) || boundedStart));
+                const startLine = getLineFromOffset(sourceText, boundedStart);
+                const endLine = getLineFromOffset(sourceText, Math.max(boundedStart, boundedEnd - 1));
+                return `(${label}, ${startLine}${endLine > startLine ? `-${endLine}` : ''})`;
+            };
+
             const tableData = useMemo(() => {
                 const participantCodeById = {};
                 (participants || []).forEach(p => { participantCodeById[p.id] = p.pseudonym || p.id; });
