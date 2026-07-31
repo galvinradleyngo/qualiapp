@@ -1657,21 +1657,35 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
             );
         }
 
-        function ExportTranscriptsDialog({ open, onClose, onConfirm, busy = false }) {
+        function ExportTranscriptsDialog({ open, onClose, onConfirm, transcripts = [], busy = false }) {
             const [includeCodes, setIncludeCodes] = useState(false);
             const [format, setFormat] = useState('doc');
+            const [scope, setScope] = useState('all');
+            const [selectedTranscriptIds, setSelectedTranscriptIds] = useState([]);
 
             useEffect(() => {
                 if (!open) return;
                 setIncludeCodes(false);
                 setFormat('doc');
-            }, [open]);
+                setScope('all');
+                setSelectedTranscriptIds(transcripts.map((transcript) => String(transcript.id)));
+            }, [open, transcripts]);
 
             if (!open) return null;
 
+            const toggleTranscript = (transcriptId) => {
+                const normalizedId = String(transcriptId);
+                setSelectedTranscriptIds((prev) => prev.includes(normalizedId)
+                    ? prev.filter((id) => id !== normalizedId)
+                    : [...prev, normalizedId]
+                );
+            };
+
+            const canExport = scope === 'all' || selectedTranscriptIds.length > 0;
+
             return (
                 <div className="fixed inset-0 z-[85] bg-slate-900/60 flex items-center justify-center p-4">
-                    <div className="w-full max-w-xl rounded-2xl border bg-white shadow-soft p-6">
+                    <div className="w-full max-w-3xl rounded-2xl border bg-white shadow-soft p-6">
                         <div className="flex items-start justify-between gap-3">
                             <div>
                                 <h3 className="text-2xl font-display text-ink">Export Transcripts</h3>
@@ -1688,7 +1702,7 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                             </button>
                         </div>
 
-                        <div className="mt-5 grid gap-4 md:grid-cols-2">
+                        <div className="mt-5 grid gap-4 md:grid-cols-3">
                             <fieldset className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                                 <legend className="px-1 text-sm font-semibold text-slate-700">1) What to export</legend>
                                 <label className="flex items-start gap-2 text-sm text-slate-700 mt-2 cursor-pointer">
@@ -1715,7 +1729,69 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                             </fieldset>
 
                             <fieldset className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                                <legend className="px-1 text-sm font-semibold text-slate-700">2) Export as</legend>
+                                <legend className="px-1 text-sm font-semibold text-slate-700">2) Which transcripts</legend>
+                                <label className="flex items-start gap-2 text-sm text-slate-700 mt-2 cursor-pointer">
+                                    <input
+                                        type="radio"
+                                        name="exportScope"
+                                        checked={scope === 'all'}
+                                        onChange={() => setScope('all')}
+                                    />
+                                    <span>All transcripts</span>
+                                </label>
+                                <label className="flex items-start gap-2 text-sm text-slate-700 mt-2 cursor-pointer">
+                                    <input
+                                        type="radio"
+                                        name="exportScope"
+                                        checked={scope === 'selected'}
+                                        onChange={() => setScope('selected')}
+                                    />
+                                    <span>Select transcripts</span>
+                                </label>
+                                {scope === 'selected' && (
+                                    <div className="mt-3">
+                                        <div className="flex items-center justify-between gap-2 mb-2">
+                                            <button
+                                                type="button"
+                                                onClick={() => setSelectedTranscriptIds(transcripts.map((transcript) => String(transcript.id)))}
+                                                className="text-xs font-semibold text-tide hover:text-teal-700"
+                                            >
+                                                Select all
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setSelectedTranscriptIds([])}
+                                                className="text-xs font-semibold text-slate-500 hover:text-slate-700"
+                                            >
+                                                Clear
+                                            </button>
+                                        </div>
+                                        <div className="max-h-52 overflow-y-auto rounded-lg border border-slate-200 bg-white p-2 space-y-2">
+                                            {transcripts.map((transcript) => {
+                                                const transcriptId = String(transcript.id);
+                                                return (
+                                                    <label key={transcriptId} className="flex items-start gap-2 text-sm text-slate-700 cursor-pointer">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={selectedTranscriptIds.includes(transcriptId)}
+                                                            onChange={() => toggleTranscript(transcriptId)}
+                                                        />
+                                                        <span>
+                                                            {transcript.title || 'Untitled transcript'}
+                                                            <span className="block text-xs text-slate-500">{transcript.folder || 'Uncategorized'}</span>
+                                                        </span>
+                                                    </label>
+                                                );
+                                            })}
+                                            {transcripts.length === 0 && <p className="text-xs text-slate-500">No transcripts available.</p>}
+                                        </div>
+                                        <p className="text-xs text-slate-500 mt-2">{selectedTranscriptIds.length} selected</p>
+                                    </div>
+                                )}
+                            </fieldset>
+
+                            <fieldset className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                                <legend className="px-1 text-sm font-semibold text-slate-700">3) Export as</legend>
                                 <label className="flex items-start gap-2 text-sm text-slate-700 mt-2 cursor-pointer">
                                     <input
                                         type="radio"
@@ -1751,8 +1827,8 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                             </button>
                             <button
                                 type="button"
-                                onClick={() => onConfirm({ includeCodes, format })}
-                                disabled={busy}
+                                onClick={() => onConfirm({ includeCodes, format, transcriptIds: scope === 'all' ? [] : selectedTranscriptIds })}
+                                disabled={busy || !canExport}
                                 className="px-4 py-2 rounded-lg bg-tide text-white font-semibold hover:bg-teal-600 disabled:opacity-50"
                             >
                                 {busy ? 'Exporting…' : 'Export'}
@@ -3818,6 +3894,35 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                 return lines[lines.length - 1].number;
             };
 
+            const escapeRegExp = (value) => String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+            const findSnippetRangeInTranscript = (transcriptText, snippet) => {
+                const sourceText = String(transcriptText || '');
+                const normalizedSnippet = String(snippet || '').trim().replace(/\s+/g, ' ');
+                if (!sourceText || !normalizedSnippet) return null;
+
+                const exactIndex = sourceText.indexOf(normalizedSnippet);
+                if (exactIndex !== -1) {
+                    return { start: exactIndex, end: exactIndex + normalizedSnippet.length };
+                }
+
+                const pattern = normalizedSnippet
+                    .split(' ')
+                    .filter(Boolean)
+                    .map((part) => escapeRegExp(part))
+                    .join('\\s+');
+                if (!pattern) return null;
+
+                const regex = new RegExp(pattern, 'i');
+                const match = sourceText.match(regex);
+                if (!match || match.index == null) return null;
+
+                return {
+                    start: match.index,
+                    end: match.index + match[0].length
+                };
+            };
+
             const normalizeTranscriptTagsForExport = (transcript, transcriptText, lines) => {
                 const textLength = transcriptText.length;
                 return tags
@@ -3825,11 +3930,27 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                     .map((tag) => {
                         const startRaw = Number(tag.start);
                         const endRaw = Number(tag.end);
-                        if (!Number.isFinite(startRaw) || !Number.isFinite(endRaw)) return null;
+                        const snippetRange = findSnippetRangeInTranscript(transcriptText, tag.textSnippet);
+                        const hasOffsetRange = Number.isFinite(startRaw) && Number.isFinite(endRaw);
 
-                        const start = Math.max(0, Math.min(textLength, Math.min(startRaw, endRaw)));
-                        let end = Math.max(0, Math.min(textLength, Math.max(startRaw, endRaw)));
-                        if (end <= start) end = Math.min(textLength, start + 1);
+                        let start = 0;
+                        let end = 0;
+
+                        if (hasOffsetRange) {
+                            start = Math.max(0, Math.min(textLength, Math.min(startRaw, endRaw)));
+                            end = Math.max(0, Math.min(textLength, Math.max(startRaw, endRaw)));
+                            if (end <= start) end = Math.min(textLength, start + 1);
+                        }
+
+                        const savedSnippet = String(tag.textSnippet || '').trim().replace(/\s+/g, ' ');
+                        const selectedText = String(transcriptText.slice(start, end) || '').trim().replace(/\s+/g, ' ');
+                        const shouldUseSnippetFallback = !!snippetRange && (!hasOffsetRange || end <= start || (savedSnippet && selectedText && !selectedText.includes(savedSnippet) && !savedSnippet.includes(selectedText)));
+
+                        if (shouldUseSnippetFallback) {
+                            start = snippetRange.start;
+                            end = snippetRange.end;
+                        }
+
                         if (end <= start) return null;
 
                         const startLine = getLineNumberForOffset(lines, start);
@@ -3915,13 +4036,24 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                         const category = String(tag.category || '').trim();
                         const startRaw = Number(tag.start);
                         const endRaw = Number(tag.end);
+                        const snippetRange = findSnippetRangeInTranscript(transcriptText, snippet);
                         let rangeLabel = '';
 
                         if (Number.isFinite(startRaw) && Number.isFinite(endRaw) && lines.length) {
-                            const start = Math.max(0, Math.min(transcriptText.length, Math.min(startRaw, endRaw)));
-                            const end = Math.max(start, Math.min(transcriptText.length, Math.max(startRaw, endRaw)));
+                            let start = Math.max(0, Math.min(transcriptText.length, Math.min(startRaw, endRaw)));
+                            let end = Math.max(start, Math.min(transcriptText.length, Math.max(startRaw, endRaw)));
+                            const selectedText = String(transcriptText.slice(start, end) || '').trim().replace(/\s+/g, ' ');
+                            const savedSnippet = snippet.replace(/\s+/g, ' ');
+                            if (snippetRange && (!savedSnippet || !selectedText || (!selectedText.includes(savedSnippet) && !savedSnippet.includes(selectedText)))) {
+                                start = snippetRange.start;
+                                end = snippetRange.end;
+                            }
                             const startLine = getLineNumberForOffset(lines, start);
                             const endLine = getLineNumberForOffset(lines, Math.max(start, end - 1));
+                            rangeLabel = startLine === endLine ? `${startLine}` : `${startLine}-${endLine}`;
+                        } else if (snippetRange && lines.length) {
+                            const startLine = getLineNumberForOffset(lines, snippetRange.start);
+                            const endLine = getLineNumberForOffset(lines, Math.max(snippetRange.start, snippetRange.end - 1));
                             rangeLabel = startLine === endLine ? `${startLine}` : `${startLine}-${endLine}`;
                         }
 
@@ -3990,11 +4122,15 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                 `;
             };
 
-            const buildTranscriptExportDocument = async ({ includeCodes }) => {
+            const buildTranscriptExportDocument = async ({ includeCodes, transcriptIds = [] }) => {
                 const exportedAt = new Date();
                 const sections = [];
+                const selectedIdSet = new Set((transcriptIds || []).map((id) => String(id)));
+                const transcriptsToExport = selectedIdSet.size
+                    ? transcripts.filter((transcript) => selectedIdSet.has(String(transcript.id)))
+                    : transcripts;
 
-                for (const transcript of transcripts) {
+                for (const transcript of transcriptsToExport) {
                     const transcriptName = transcript.title || 'Untitled transcript';
                     const transcriptFolder = transcript.folder || 'Uncategorized';
                     const runningTimeSeconds = await getTranscriptRunningTimeSeconds(transcript);
@@ -4051,7 +4187,7 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
   <header class="doc-header">
     <h1>QualiApp Transcript Export</h1>
     <div><strong>Export Type:</strong> ${includeCodes ? 'Transcripts With Codes' : 'Transcripts'}</div>
-    <div><strong>Total transcripts:</strong> ${transcripts.length}</div>
+    <div><strong>Total transcripts:</strong> ${transcriptsToExport.length}</div>
     <div><strong>Exported:</strong> ${escapeHtmlForDoc(exportedAt.toLocaleString())}</div>
   </header>
   ${sections.join('\n')}
@@ -4059,13 +4195,22 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
 </html>`;
             };
 
-            const runTranscriptExport = async ({ includeCodes, format }) => {
+            const runTranscriptExport = async ({ includeCodes, format, transcriptIds = [] }) => {
                 if (!Array.isArray(transcripts) || transcripts.length === 0) {
                     alert('No transcripts to export yet.');
                     return;
                 }
 
-                const docHtml = await buildTranscriptExportDocument({ includeCodes });
+                const selectedIdSet = new Set((transcriptIds || []).map((id) => String(id)));
+                const transcriptsToExport = selectedIdSet.size
+                    ? transcripts.filter((transcript) => selectedIdSet.has(String(transcript.id)))
+                    : transcripts;
+                if (!transcriptsToExport.length) {
+                    alert('Choose at least one transcript to export.');
+                    return;
+                }
+
+                const docHtml = await buildTranscriptExportDocument({ includeCodes, transcriptIds });
                 const now = new Date();
                 const suffix = includeCodes ? 'with_codes' : 'transcripts_only';
                 const datePart = now.toISOString().slice(0, 10);
@@ -4612,6 +4757,7 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                             <ExportTranscriptsDialog
                                 open={showTranscriptExportDialog}
                                 onClose={() => !transcriptExportBusy && setShowTranscriptExportDialog(false)}
+                                transcripts={transcripts}
                                 onConfirm={handleConfirmTranscriptExport}
                                 busy={transcriptExportBusy}
                             />
