@@ -8685,15 +8685,25 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                 });
             };
 
-            const reorderCanvasCategories = (draggedCategoryId, targetCategoryId) => {
-                if (!activeCanvas || !draggedCategoryId || !targetCategoryId || draggedCategoryId === targetCategoryId) return;
-                const fromIndex = activeCanvas.categories.findIndex((category) => category.id === draggedCategoryId);
-                const toIndex = activeCanvas.categories.findIndex((category) => category.id === targetCategoryId);
-                if (fromIndex < 0 || toIndex < 0) return;
-                persistCanvas({
-                    ...activeCanvas,
-                    categories: reorderArray(activeCanvas.categories, fromIndex, toIndex)
-                });
+            const compareCategoryCode = (leftCategory, rightCategory) => {
+                const leftCode = String(leftCategory?.code || '').trim();
+                const rightCode = String(rightCategory?.code || '').trim();
+                const leftMatch = leftCode.match(/^C(\d+)$/i);
+                const rightMatch = rightCode.match(/^C(\d+)$/i);
+
+                if (leftMatch && rightMatch) {
+                    const leftNumber = Number(leftMatch[1]);
+                    const rightNumber = Number(rightMatch[1]);
+                    if (leftNumber !== rightNumber) return leftNumber - rightNumber;
+                }
+
+                if (leftCode && rightCode && leftCode !== rightCode) {
+                    return leftCode.localeCompare(rightCode, undefined, { numeric: true, sensitivity: 'base' });
+                }
+
+                const leftName = String(leftCategory?.name || '').trim();
+                const rightName = String(rightCategory?.name || '').trim();
+                return leftName.localeCompare(rightName, undefined, { sensitivity: 'base' });
             };
 
             const reorderCodeWithinCategory = (categoryId, draggedCodeName, targetCodeName) => {
@@ -8752,6 +8762,11 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                 if (!activeCanvas) return [];
                 const assignedCategoryNames = new Set(activeCanvas.themes.flatMap((theme) => theme.categories));
                 return activeCanvas.categories.filter((category) => !assignedCategoryNames.has(category.name));
+            }, [activeCanvas]);
+
+            const orderedCategories = useMemo(() => {
+                if (!activeCanvas) return [];
+                return [...(activeCanvas.categories || [])].sort(compareCategoryCode);
             }, [activeCanvas]);
 
             const clusteringRows = useMemo(() => codeDetails.map((code) => ({
