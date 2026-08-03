@@ -9431,7 +9431,7 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                                                                 onClick={() => toggleInVivoPopup(code.name, `unassigned_${code.name}`)}
                                                                 className="text-left"
                                                             >
-                                                                <span className="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">{detail.category || 'Uncategorized'}</span>
+                                                                <span className="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">{code.category || 'Uncategorized'}</span>
                                                                 <span className="block font-semibold text-sm text-ink hover:text-tide">{formatInVivoCode(code.name)}</span>
                                                             </button>
                                                             {unassignedSortMode === 'manual' && (
