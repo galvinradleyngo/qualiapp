@@ -7626,7 +7626,7 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                                     {tags.map(tag => (
                                         <div key={tag.id} className={`bg-white p-3 rounded-lg border shadow-sm relative group transition cursor-pointer ${editingTagId === tag.id ? 'ring-2 ring-orange-400 border-orange-400' : (selectedTagId === tag.id ? 'ring-2 ring-tide border-tide' : 'hover:border-tide')}`} onClick={() => focusTag(tag)}>
                                             <div className="mb-1 pr-6">
-                                                <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">{tag.category || 'Uncategorized'}</span>
+                                                <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">Group: {tag.category || 'Uncategorized'}</span>
                                                 <span
                                                     className="text-xs font-bold border px-2 py-0.5 rounded inline-block"
                                                     style={{
@@ -9429,9 +9429,10 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                                                             <button
                                                                 type="button"
                                                                 onClick={() => toggleInVivoPopup(code.name, `unassigned_${code.name}`)}
-                                                                className="font-semibold text-sm text-ink hover:text-tide text-left"
+                                                                className="text-left"
                                                             >
-                                                                {formatInVivoCode(code.name)}
+                                                                <span className="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">{detail.category || 'Uncategorized'}</span>
+                                                                <span className="block font-semibold text-sm text-ink hover:text-tide">{formatInVivoCode(code.name)}</span>
                                                             </button>
                                                             {unassignedSortMode === 'manual' && (
                                                                 <div className="inline-flex rounded border border-slate-300 overflow-hidden">
@@ -9532,9 +9533,10 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                                                                         <button
                                                                             type="button"
                                                                             onClick={() => toggleInVivoPopup(codeName, `category_${category.id}_${codeName}`)}
-                                                                            className="font-semibold hover:text-tide"
+                                                                            className="text-left"
                                                                         >
-                                                                            {formatInVivoCode(codeName)}
+                                                                            <span className="block text-[10px] uppercase font-bold text-slate-400 leading-none mb-0.5">Group: {codeDetailByName[codeName]?.category || 'Uncategorized'}</span>
+                                                                            <span className="block font-semibold hover:text-tide leading-none">{formatInVivoCode(codeName)}</span>
                                                                         </button>
                                                                         <span className="text-slate-500">({codeDetailByName[codeName]?.count || 0})</span>
                                                                         <button onClick={() => unassignCode(codeName)} className="text-red-600 hover:text-red-700">x</button>
@@ -9756,7 +9758,8 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                                                                                     className={`text-xs px-2.5 py-1 rounded-full border transition ${isSelected ? 'bg-ink text-white border-ink' : 'bg-white text-slate-700 border-slate-300 hover:border-slate-400'}`}
                                                                                     title="Show transcript quote"
                                                                                 >
-                                                                                    {formatInVivoCode(codeName)}
+                                                                                    <span className="block text-[10px] uppercase font-bold leading-none mb-0.5 opacity-70">Group: {codeDetailByName[codeName]?.category || 'Uncategorized'}</span>
+                                                                                    <span className="block font-semibold leading-none">{formatInVivoCode(codeName)}</span>
                                                                                 </button>
                                                                             );
                                                                         })}
@@ -10028,7 +10031,8 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                                                                                         onClick={() => toggleInVivoPopup(codeName, `theme_${theme.id}_${categoryName}_${codeName}`)}
                                                                                         className="text-[11px] bg-teal-100 text-teal-900 px-2 py-0.5 rounded-full border border-teal-200 hover:border-teal-400"
                                                                                     >
-                                                                                        {formatInVivoCode(codeName)}
+                                                                                        <span className="block text-[10px] uppercase font-bold leading-none mb-0.5 opacity-70">Group: {codeDetailByName[codeName]?.category || 'Uncategorized'}</span>
+                                                                                        <span className="block font-semibold leading-none">{formatInVivoCode(codeName)}</span>
                                                                                     </button>
                                                                                 ))}
                                                                                 {visibleCodes.length === 0 && <span className="text-xs text-slate-400">No filtered in-vivo codes in this category.</span>}

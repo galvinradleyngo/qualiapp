@@ -586,7 +586,7 @@ export function TranscriptWorkspace({
                   ? `transcript-highlight transcript-highlight-tagged${selectedTagId === segment.tag.id ? ' transcript-highlight-selected' : ''}`
                   : 'transcript-highlight transcript-highlight-pending'
                 const label = segment.tag
-                  ? `${segment.tag.tagName} (${segment.tag.category})`
+                  ? `${segment.tag.tagName} (group: ${segment.tag.category})`
                   : 'Pending selection'
 
                 return (
@@ -666,7 +666,7 @@ export function TranscriptWorkspace({
                   type="text"
                   value={tagFormCategory}
                   onChange={(event) => setTagFormCategory(event.target.value)}
-                  placeholder="Parent category"
+                  placeholder="Group"
                   list="editor-categories"
                   className="code-action"
                   style={{ width: '100%', marginBottom: '8px' }}
@@ -730,8 +730,9 @@ export function TranscriptWorkspace({
                 >
                   <span className="code-dot" aria-hidden="true" />
                   <div>
+                    <span style={{ display: 'block' }}>Group: {tag.category || 'Uncategorized'}</span>
                     <strong>{tag.tagName}</strong>
-                    <span>{tag.category} • {tag.textSnippet}</span>
+                    <span>{tag.textSnippet}</span>
                   </div>
                   <button
                     type="button"
