@@ -250,6 +250,37 @@ function App() {
     )
   }
 
+  const handleDuplicateTranscript = (transcriptId: string) => {
+    const sourceTranscript = transcripts.find((transcript) => transcript.id === transcriptId)
+    if (!sourceTranscript) return
+
+    const copyId = `tx_${Date.now()}`
+    const copyTitle = sourceTranscript.title.trim()
+      ? `Copy of ${sourceTranscript.title.trim()}`
+      : 'Copy of Untitled transcript'
+    const copiedTranscript: TranscriptRecord = {
+      ...sourceTranscript,
+      id: copyId,
+      title: copyTitle,
+      activityLog: (sourceTranscript.activityLog || []).map((entry, index) => ({
+        ...entry,
+        id: `log_${Date.now()}_${index}`,
+      })),
+    }
+
+    const copiedTags = editorTags
+      .filter((tag) => tag.transcriptId === transcriptId)
+      .map((tag, index) => ({
+        ...tag,
+        id: `tag_${Date.now()}_${index}`,
+        transcriptId: copyId,
+      }))
+
+    setTranscripts((prev) => [copiedTranscript, ...prev])
+    setEditorTags((prev) => [...copiedTags, ...prev])
+    setActiveTranscriptId(copyId)
+  }
+
   const editorSummary = useMemo(() => {
     const categoryCount = new Set(editorTags.map((tag) => tag.category).filter(Boolean)).size
     return {
@@ -359,6 +390,7 @@ function App() {
               activityTypes={activityTypes}
               initialActiveTranscriptId={activeTranscriptId}
               onBack={() => setActiveTranscriptId(null)}
+              onDuplicateTranscript={handleDuplicateTranscript}
               onUpdateTranscript={(updatedTranscript) =>
                 setTranscripts((prev) =>
                   prev.map((transcript) =>

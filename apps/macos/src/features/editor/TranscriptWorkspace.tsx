@@ -16,6 +16,7 @@ type TranscriptWorkspaceProps = {
   activityTypes: string[]
   initialActiveTranscriptId?: string
   onBack?: () => void
+  onDuplicateTranscript: (transcriptId: string) => void
   onUpdateTranscript: (transcript: TranscriptRecord) => void
   onAddTag: (tag: EditorTagRecord) => void
   onUpdateTag: (tag: EditorTagRecord) => void
@@ -43,6 +44,7 @@ export function TranscriptWorkspace({
   activityTypes,
   initialActiveTranscriptId,
   onBack,
+  onDuplicateTranscript,
   onUpdateTranscript,
   onAddTag,
   onUpdateTag,
@@ -523,6 +525,14 @@ export function TranscriptWorkspace({
               {button.label}
             </button>
           ))}
+          <button
+            type="button"
+            className="code-action"
+            onClick={() => activeTranscript && onDuplicateTranscript(activeTranscript.id)}
+            disabled={!activeTranscript}
+          >
+            Duplicate workspace
+          </button>
         </div>
       </div>
 
@@ -681,6 +691,9 @@ export function TranscriptWorkspace({
                     <option key={code} value={code} />
                   ))}
                 </datalist>
+                <p className="hint" style={{ marginTop: '-2px', marginBottom: '2px' }}>
+                  In-vivo codes available: {existingCodes.length}
+                </p>
 
                 <textarea
                   value={tagFormMemo}
