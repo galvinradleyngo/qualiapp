@@ -9822,9 +9822,12 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                                                 {sortedConnectingCategories.map((category) => {
                                                     const currentNarrative = (activeCanvas.connectionNotes || {})[category.code] || '';
                                                     const relatedCategoryCodes = getConnectedCategoryCodes(category.code);
-                                                    const relatedCategories = relatedCategoryCodes
-                                                        .map((code) => (activeCanvas.categories || []).find((item) => item.code === code))
-                                                        .filter(Boolean);
+                                                    const relatedCategories = [
+                                                        category,
+                                                        ...relatedCategoryCodes
+                                                            .map((code) => (activeCanvas.categories || []).find((item) => item.code === code))
+                                                            .filter(Boolean)
+                                                    ];
                                                     const totalVisibleCodes = relatedCategories.reduce((acc, relatedCategory) => {
                                                         const visibleCount = (relatedCategory.codes || []).filter((codeName) => !!codeDetailByName[codeName]).length;
                                                         return acc + visibleCount;
@@ -9848,13 +9851,17 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                                                                     </div>
                                                                     <div className="space-y-2">
                                                                         {relatedCategories.map((relatedCategory) => {
+                                                                            const isMainCategory = relatedCategory.code === category.code;
                                                                             const relatedCodes = (relatedCategory.codes || []).filter((codeName) => !!codeDetailByName[codeName]);
                                                                             const toggleKey = getNarrativeInVivoToggleKey(category.code, relatedCategory.code);
                                                                             const showNarrativeInVivoCodes = expandedNarrativeInVivoByCategoryCode[toggleKey] === true;
                                                                             return (
-                                                                                <div key={`narrative_group_${category.code}_${relatedCategory.code}`} className="space-y-1 rounded-lg border border-slate-200 bg-slate-50/60 p-2">
+                                                                                <div key={`narrative_group_${category.code}_${relatedCategory.code}`} className={`space-y-1 rounded-lg border p-2 ${isMainCategory ? 'border-tide/40 bg-tide/5' : 'border-slate-200 bg-slate-50/60'}`}>
                                                                                     <div className="flex items-center justify-between gap-2">
-                                                                                        <p className="text-sm font-semibold tracking-wide text-slate-700">{buildCategoryLabelByCode(relatedCategory.code)}</p>
+                                                                                        <p className="text-sm font-semibold tracking-wide text-slate-700">
+                                                                                            {buildCategoryLabelByCode(relatedCategory.code)}
+                                                                                            {isMainCategory && <span className="ml-1.5 text-[10px] font-bold uppercase tracking-wide text-tide">Main category</span>}
+                                                                                        </p>
                                                                                         <button
                                                                                             type="button"
                                                                                             onClick={() => toggleNarrativeInVivoCodes(category.code, relatedCategory.code)}
