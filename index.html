@@ -9058,11 +9058,8 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
             const buildConnectionStatement = (categoryCode) => {
                 if (!activeCanvas || !categoryCode) return '';
                 const connectedCodes = getConnectedCategoryCodes(categoryCode);
-                const connectionCount = connectedCodes.length;
-                const categoryLabel = buildCategoryLabelByCode(categoryCode);
-                if (connectionCount === 0) return `${categoryLabel} (0): none`;
-                const connectedLabels = connectedCodes.map((code) => buildCategoryLabelByCode(code));
-                return `${categoryLabel} (${connectionCount}): ${connectedLabels.join(' - ')}`;
+                if (connectedCodes.length === 0) return `${categoryCode}:none`;
+                return `${categoryCode}:${connectedCodes.join(',')}`;
             };
 
             const buildCategoryLabelByCode = (categoryCode) => {
@@ -9077,14 +9074,6 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                 const foundCategory = (activeCanvas.categories || []).find((category) => category.code === categoryCode);
                 if (!foundCategory) return categoryCode;
                 return `${foundCategory.name} (${foundCategory.code})`;
-            };
-
-            const buildInVivoCategoryLabel = (categoryName) => {
-                const normalizedName = (categoryName || '').trim() || 'Uncategorized';
-                if (!activeCanvas) return normalizedName;
-                const matchedCategory = (activeCanvas.categories || []).find((category) => category.name === normalizedName);
-                if (!matchedCategory) return normalizedName;
-                return `${matchedCategory.code} (${matchedCategory.name})`;
             };
 
             const buildNarrativeDefault = (categoryCode) => {
@@ -9239,7 +9228,7 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                         category.code,
                         connectedSummary,
                         rationaleSummary,
-                        (activeCanvas.connectionNotes || {})[category.code] || buildNarrativeDefault(category.code)
+                        (activeCanvas.connectionNotes || {})[category.code] || ''
                     ];
                 });
             }, [activeCanvas, sortedConnectingCategories]);
@@ -9810,18 +9799,15 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                                         ) : (
                                             <div className="space-y-3">
                                                 {sortedConnectingCategories.map((category) => {
-                                                    const defaultNarrative = buildNarrativeDefault(category.code);
-                                                    const currentNarrative = (activeCanvas.connectionNotes || {})[category.code] || defaultNarrative;
-                                                    const visibleCodes = (category.codes || []).filter((codeName) => !!codeDetailByName[codeName]);
-                                                    const visibleCodesByCategory = visibleCodes.reduce((acc, codeName) => {
-                                                        const codeCategory = (codeDetailByName[codeName]?.category || 'Uncategorized').trim() || 'Uncategorized';
-                                                        if (!acc[codeCategory]) acc[codeCategory] = [];
-                                                        acc[codeCategory].push(codeName);
-                                                        return acc;
-                                                    }, {});
-                                                    const sortedCodeCategories = Object.keys(visibleCodesByCategory).sort((a, b) => (
-                                                        buildInVivoCategoryLabel(a).localeCompare(buildInVivoCategoryLabel(b))
-                                                    ));
+                                                    const currentNarrative = (activeCanvas.connectionNotes || {})[category.code] || '';
+                                                    const relatedCategoryCodes = getConnectedCategoryCodes(category.code);
+                                                    const relatedCategories = relatedCategoryCodes
+                                                        .map((code) => (activeCanvas.categories || []).find((item) => item.code === code))
+                                                        .filter(Boolean);
+                                                    const totalVisibleCodes = relatedCategories.reduce((acc, relatedCategory) => {
+                                                        const visibleCount = (relatedCategory.codes || []).filter((codeName) => !!codeDetailByName[codeName]).length;
+                                                        return acc + visibleCount;
+                                                    }, 0);
                                                     return (
                                                         <div key={`narrative_${category.code}`} className="border border-slate-200 rounded-lg p-3">
                                                             <p className="text-sm font-semibold text-slate-800 mb-2">{buildConnectionStatement(category.code)}</p>
@@ -9837,22 +9823,24 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                                                                 <div className="relative">
                                                                     <div className="flex items-center justify-between gap-2 mb-1.5">
                                                                         <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">In-vivo codes</p>
-                                                                        <span className="text-[11px] font-semibold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-full">{visibleCodes.length} total</span>
+                                                                        <span className="text-[11px] font-semibold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-full">{totalVisibleCodes} total</span>
                                                                     </div>
                                                                     <div className="space-y-2">
-                                                                        {sortedCodeCategories.map((codeCategory) => (
-                                                                            <div key={`narrative_group_${category.code}_${codeCategory}`} className="space-y-1">
-                                                                                <p className="text-[10px] uppercase font-bold tracking-wide text-slate-500">Category label: {buildInVivoCategoryLabel(codeCategory)}</p>
+                                                                        {relatedCategories.map((relatedCategory) => {
+                                                                            const relatedCodes = (relatedCategory.codes || []).filter((codeName) => !!codeDetailByName[codeName]);
+                                                                            return (
+                                                                            <div key={`narrative_group_${category.code}_${relatedCategory.code}`} className="space-y-1">
+                                                                                <p className="text-[10px] uppercase font-bold tracking-wide text-slate-500">{buildCategoryLabelByCode(relatedCategory.code)}</p>
                                                                                 <div className="flex flex-wrap gap-1.5">
-                                                                                    {[...(visibleCodesByCategory[codeCategory] || [])]
+                                                                                    {[...relatedCodes]
                                                                                         .sort((a, b) => formatInVivoCode(a).localeCompare(formatInVivoCode(b)))
                                                                                         .map((codeName) => {
                                                                                             const isSelected = selectedInVivoPopup?.codeName === codeName;
                                                                                             return (
                                                                                                 <button
-                                                                                                    key={`narrative_code_${category.code}_${codeName}`}
+                                                                                                    key={`narrative_code_${category.code}_${relatedCategory.code}_${codeName}`}
                                                                                                     type="button"
-                                                                                                    onClick={() => toggleInVivoPopup(codeName, `narrative_${category.code}_${codeName}`)}
+                                                                                                    onClick={() => toggleInVivoPopup(codeName, `narrative_${category.code}_${relatedCategory.code}_${codeName}`)}
                                                                                                     className={`text-xs px-2.5 py-1 rounded-full border transition ${isSelected ? 'bg-ink text-white border-ink' : 'bg-white text-slate-700 border-slate-300 hover:border-slate-400'}`}
                                                                                                     title="Show transcript quote"
                                                                                                 >
@@ -9860,10 +9848,12 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                                                                                                 </button>
                                                                                             );
                                                                                         })}
+                                                                                    {relatedCodes.length === 0 && <span className="text-xs text-slate-400">No in-vivo codes assigned.</span>}
                                                                                 </div>
                                                                             </div>
-                                                                        ))}
-                                                                        {visibleCodes.length === 0 && <span className="text-xs text-slate-400">No in-vivo codes assigned.</span>}
+                                                                            );
+                                                                        })}
+                                                                        {relatedCategories.length === 0 && <span className="text-xs text-slate-400">No related categories available.</span>}
                                                                     </div>
                                                                 </div>
                                                             </div>
