@@ -7709,6 +7709,14 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
             const hasAppliedResumeRef = useRef(false);
             const guidedPromptQuestionRef = useRef(null);
 
+            const DEGREE_TIER_COLORS = { low: '#60a5fa', mid: '#f59e0b', high: '#dc2626' };
+            const RATIONALE_LINE_STYLES = {
+                A: { color: '#2563eb', dash: '', label: 'A: specificity' },
+                B: { color: '#7c3aed', dash: '', label: 'B: part-whole' },
+                C: { color: '#d97706', dash: '7 5', label: 'C: conditional' },
+                '': { color: '#94a3b8', dash: '2 4', label: 'No rationale set' }
+            };
+
             const parseCategoryCodeNumber = (value) => {
                 const match = /^C(\d+)$/i.exec(String(value || '').trim());
                 return match ? Number(match[1]) : null;
@@ -7796,19 +7804,18 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                     const sourceNode = geometry.nodes.find((node) => node.code === link.sourceCode);
                     const targetNode = geometry.nodes.find((node) => node.code === link.targetCode);
                     if (!sourceNode || !targetNode) return '';
-                    return `<line x1="${sourceNode.x}" y1="${sourceNode.y}" x2="${targetNode.x}" y2="${targetNode.y}" stroke="#64748b" stroke-width="2" />`;
+                    const style = RATIONALE_LINE_STYLES[link.rationale || ''] || RATIONALE_LINE_STYLES[''];
+                    const dashAttr = style.dash ? ` stroke-dasharray="${style.dash}"` : '';
+                    return `<line x1="${sourceNode.x}" y1="${sourceNode.y}" x2="${targetNode.x}" y2="${targetNode.y}" stroke="${style.color}" stroke-width="2"${dashAttr} />`;
                 }).join('');
 
                 const nodeMarkup = geometry.nodes.map((node) => {
-                    const tierColor = node.tier === 'low'
-                        ? '#ef4444'
-                        : node.tier === 'mid'
-                            ? '#3b82f6'
-                            : '#16a34a';
+                    const tierColor = DEGREE_TIER_COLORS[node.tier] || DEGREE_TIER_COLORS.low;
+                    const radius = node.radius || 32;
 
                     return `
                         <g>
-                            <circle cx="${node.x}" cy="${node.y}" r="34" fill="${tierColor}" stroke="#ffffff" stroke-width="2" />
+                            <circle cx="${node.x}" cy="${node.y}" r="${radius}" fill="${tierColor}" stroke="#ffffff" stroke-width="2" />
                             <text x="${node.x}" y="${node.y}" text-anchor="middle" dominant-baseline="middle" fill="#ffffff" font-weight="700" font-size="12">${escapeForHtml(`${node.code} (${node.degree})`)}</text>
                         </g>
                     `;
@@ -8621,6 +8628,32 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                 persistCanvas(nextCanvas);
             };
 
+            const createThemeFromTierLegend = async (tierKey) => {
+                if (!activeCanvas || !tierKey) return;
+                const tierCategories = (activeCanvas.categories || []).filter((category) => getDegreeTier(category.code) === tierKey);
+                if (tierCategories.length === 0) return;
+                const tierLabel = tierKey === 'low' ? 'Low' : tierKey === 'mid' ? 'Medium' : 'High';
+                const codeList = tierCategories.map((category) => category.code).join(', ');
+                const shouldCreate = await requestConfirmation({
+                    title: 'Create Theme From Tier',
+                    message: `Create a new theme from the ${tierCategories.length} ${tierLabel.toLowerCase()}-connectivity categories (${codeList})? Categories already assigned to another theme will be moved here.`,
+                    confirmLabel: 'Create Theme'
+                });
+                if (!shouldCreate) return;
+                const categoryNames = tierCategories.map((category) => category.name);
+                const nextThemes = (activeCanvas.themes || []).map((theme) => ({
+                    ...theme,
+                    categories: theme.categories.filter((name) => !categoryNames.includes(name))
+                }));
+                nextThemes.push({
+                    id: Date.now().toString(),
+                    name: `${tierLabel} connectivity (${codeList})`,
+                    categories: categoryNames
+                });
+                persistCanvas({ ...activeCanvas, themes: nextThemes });
+                setLegendFilter(null);
+            };
+
             const toggleFolder = (folder) => {
                 setSelectedFolders((prev) => prev.includes(folder) ? prev.filter((name) => name !== folder) : [...prev, folder]);
             };
@@ -9184,38 +9217,222 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                 return 'high';
             };
 
+            // Fruchterman-Reingold force-directed layout: nodes with many connections pull toward
+            // shared neighbors (ending up central), while mutual repulsion pushes disconnected or
+            // low-connectivity categories apart, mirroring how the source article visually separates
+            // autonomous category pairs from the main network (see Christodoulou 2024, Figure 4).
+            // A final collision-resolution pass (using each node's actual rendered radius) guarantees
+            // circles never overlap, letting the canvas grow rather than compressing dense clusters.
+            const computeForceDirectedLayout = (codes, edgePairs, radiusByCode, baseWidth, baseHeight) => {
+                const n = codes.length;
+                if (n === 0) return { positions: {}, width: baseWidth, height: baseHeight };
+                const centerX = baseWidth / 2;
+                const centerY = baseHeight / 2;
+                const seedRadius = Math.max(120, Math.min(220, n * 18));
+                const positions = codes.map((code, index) => {
+                    const angle = ((Math.PI * 2) / Math.max(n, 1)) * index;
+                    return { code, x: centerX + Math.cos(angle) * seedRadius, y: centerY + Math.sin(angle) * seedRadius };
+                });
+                const codeIndex = {};
+                codes.forEach((code, index) => { codeIndex[code] = index; });
+                const edges = edgePairs
+                    .map(([a, b]) => [codeIndex[a], codeIndex[b]])
+                    .filter(([a, b]) => a != null && b != null);
+
+                // Connected components (BFS): categories in the same component get tight collision
+                // padding, while separate components (e.g. an autonomous pair) get a wider padding
+                // so they read as visually distinct without the layout ballooning in size.
+                const adjacency = codes.map(() => []);
+                edges.forEach(([i, j]) => { adjacency[i].push(j); adjacency[j].push(i); });
+                const componentId = new Array(n).fill(-1);
+                let nextComponentId = 0;
+                for (let start = 0; start < n; start += 1) {
+                    if (componentId[start] !== -1) continue;
+                    const queue = [start];
+                    componentId[start] = nextComponentId;
+                    while (queue.length > 0) {
+                        const current = queue.pop();
+                        adjacency[current].forEach((neighbor) => {
+                            if (componentId[neighbor] === -1) {
+                                componentId[neighbor] = nextComponentId;
+                                queue.push(neighbor);
+                            }
+                        });
+                    }
+                    nextComponentId += 1;
+                }
+
+                const area = baseWidth * baseHeight;
+                const k = Math.sqrt(area / n) * 0.9;
+                const iterations = 200;
+                let temperature = Math.max(baseWidth, baseHeight) / 12;
+                const cooling = temperature / iterations;
+
+                for (let iter = 0; iter < iterations; iter += 1) {
+                    const disp = positions.map(() => ({ x: 0, y: 0 }));
+
+                    for (let i = 0; i < n; i += 1) {
+                        for (let j = i + 1; j < n; j += 1) {
+                            const dx = positions[i].x - positions[j].x;
+                            const dy = positions[i].y - positions[j].y;
+                            const distance = Math.sqrt(dx * dx + dy * dy) || 0.01;
+                            const force = (k * k) / distance;
+                            const fx = (dx / distance) * force;
+                            const fy = (dy / distance) * force;
+                            disp[i].x += fx; disp[i].y += fy;
+                            disp[j].x -= fx; disp[j].y -= fy;
+                        }
+                    }
+
+                    edges.forEach(([i, j]) => {
+                        const dx = positions[i].x - positions[j].x;
+                        const dy = positions[i].y - positions[j].y;
+                        const distance = Math.sqrt(dx * dx + dy * dy) || 0.01;
+                        const force = (distance * distance) / k;
+                        const fx = (dx / distance) * force;
+                        const fy = (dy / distance) * force;
+                        disp[i].x -= fx; disp[i].y -= fy;
+                        disp[j].x += fx; disp[j].y += fy;
+                    });
+
+                    // Mild pull toward center so components with no attractive edges between them
+                    // (e.g. an isolated pair) settle a bounded distance away instead of drifting
+                    // apart indefinitely under pure repulsion.
+                    for (let i = 0; i < n; i += 1) {
+                        disp[i].x += (centerX - positions[i].x) * 0.02;
+                        disp[i].y += (centerY - positions[i].y) * 0.02;
+                    }
+
+                    for (let i = 0; i < n; i += 1) {
+                        const dist = Math.sqrt(disp[i].x * disp[i].x + disp[i].y * disp[i].y) || 0.01;
+                        const limited = Math.min(dist, temperature);
+                        positions[i].x += (disp[i].x / dist) * limited;
+                        positions[i].y += (disp[i].y / dist) * limited;
+                    }
+                    temperature = Math.max(0.5, temperature - cooling);
+                }
+
+                // Fit the raw simulated span into the base canvas. Any spacing this compresses away
+                // (e.g. within a dense cluster) is restored precisely by the collision pass below,
+                // which uses each node's real rendered radius rather than the pre-scale geometry.
+                const margin = 70;
+                const xs = positions.map((p) => p.x);
+                const ys = positions.map((p) => p.y);
+                const spanX = Math.max(1, Math.max(...xs) - Math.min(...xs));
+                const spanY = Math.max(1, Math.max(...ys) - Math.min(...ys));
+                const scale = Math.min(1.4, (baseWidth - margin * 2) / spanX, (baseHeight - margin * 2) / spanY);
+                const minX = Math.min(...xs);
+                const minY = Math.min(...ys);
+                positions.forEach((p) => {
+                    p.x = margin + (p.x - minX) * scale;
+                    p.y = margin + (p.y - minY) * scale;
+                });
+
+                const sameComponentPadding = 14;
+                const crossComponentPadding = 56;
+                for (let pass = 0; pass < 80; pass += 1) {
+                    let moved = false;
+                    for (let i = 0; i < n; i += 1) {
+                        for (let j = i + 1; j < n; j += 1) {
+                            const a = positions[i];
+                            const b = positions[j];
+                            const padding = componentId[i] === componentId[j] ? sameComponentPadding : crossComponentPadding;
+                            const minDist = (radiusByCode[a.code] || 30) + (radiusByCode[b.code] || 30) + padding;
+                            const dx = b.x - a.x;
+                            const dy = b.y - a.y;
+                            const dist = Math.sqrt(dx * dx + dy * dy) || 0.01;
+                            if (dist < minDist) {
+                                moved = true;
+                                const overlap = (minDist - dist) / 2;
+                                const ux = dx / dist;
+                                const uy = dy / dist;
+                                a.x -= ux * overlap; a.y -= uy * overlap;
+                                b.x += ux * overlap; b.y += uy * overlap;
+                            }
+                        }
+                    }
+                    if (!moved) break;
+                }
+
+                const finalXsMin = positions.map((p) => p.x - (radiusByCode[p.code] || 30));
+                const finalYsMin = positions.map((p) => p.y - (radiusByCode[p.code] || 30));
+                const finalXsMax = positions.map((p) => p.x + (radiusByCode[p.code] || 30));
+                const finalYsMax = positions.map((p) => p.y + (radiusByCode[p.code] || 30));
+                const finalMinX = Math.min(...finalXsMin);
+                const finalMinY = Math.min(...finalYsMin);
+                const finalWidth = Math.max(baseWidth, Math.max(...finalXsMax) - finalMinX + margin);
+                const finalHeight = Math.max(baseHeight, Math.max(...finalYsMax) - finalMinY + margin);
+                const shiftX = margin / 2 - finalMinX;
+                const shiftY = margin / 2 - finalMinY;
+
+                const out = {};
+                positions.forEach((p) => {
+                    out[p.code] = { x: p.x + shiftX, y: p.y + shiftY };
+                });
+                return { positions: out, width: finalWidth, height: finalHeight };
+            };
+
+            const relationalMapLayoutInputs = activeCanvas
+                ? [
+                    (activeCanvas.categories || []).map((category) => category.code).join(','),
+                    JSON.stringify(activeCanvas.connections || {}),
+                    JSON.stringify(activeCanvas.connectionRationales || {})
+                ].join('|')
+                : '';
+
             const relationalMapGeometry = useMemo(() => {
                 if (!activeCanvas) return null;
                 const categories = activeCanvas.categories || [];
-                const width = 980;
-                const height = 560;
-                const centerX = width / 2;
-                const centerY = height / 2;
-                const layoutRadius = Math.max(160, Math.min(230, categories.length * 24));
-                const nodes = categories.map((category, index) => {
-                    const angle = ((Math.PI * 2) / Math.max(categories.length, 1)) * index - Math.PI / 2;
-                    return {
-                        ...category,
-                        x: centerX + Math.cos(angle) * layoutRadius,
-                        y: centerY + Math.sin(angle) * layoutRadius,
-                        degree: categoryDegrees?.[category.code] || 0,
-                        tier: getDegreeTier(category.code)
-                    };
-                });
+                const baseWidth = 980;
+                const baseHeight = 560;
 
-                const links = [];
-                for (let i = 0; i < nodes.length; i++) {
-                    for (let j = i + 1; j < nodes.length; j++) {
-                        const sourceCode = nodes[i].code;
-                        const targetCode = nodes[j].code;
+                const edgePairs = [];
+                for (let i = 0; i < categories.length; i += 1) {
+                    for (let j = i + 1; j < categories.length; j += 1) {
+                        const sourceCode = categories[i].code;
+                        const targetCode = categories[j].code;
                         if (getConnectionValue(sourceCode, targetCode) === 1) {
-                            links.push({ sourceCode, targetCode });
+                            edgePairs.push([sourceCode, targetCode]);
                         }
                     }
                 }
 
-                return { width, height, nodes, links };
-            }, [activeCanvas, categoryDegrees, degreeRangeLegend]);
+                const maxDegree = Math.max(1, degreeRangeLegend.max);
+                const radiusByCode = {};
+                categories.forEach((category) => {
+                    const degree = categoryDegrees?.[category.code] || 0;
+                    radiusByCode[category.code] = 26 + (degree / maxDegree) * 14;
+                });
+
+                const layout = computeForceDirectedLayout(
+                    categories.map((category) => category.code),
+                    edgePairs,
+                    radiusByCode,
+                    baseWidth,
+                    baseHeight
+                );
+
+                const nodes = categories.map((category) => {
+                    const degree = categoryDegrees?.[category.code] || 0;
+                    const position = layout.positions[category.code] || { x: layout.width / 2, y: layout.height / 2 };
+                    return {
+                        ...category,
+                        x: position.x,
+                        y: position.y,
+                        degree,
+                        tier: getDegreeTier(category.code),
+                        radius: radiusByCode[category.code]
+                    };
+                });
+
+                const links = edgePairs.map(([sourceCode, targetCode]) => ({
+                    sourceCode,
+                    targetCode,
+                    rationale: getConnectionRationale(sourceCode, targetCode)
+                }));
+
+                return { width: layout.width, height: layout.height, nodes, links };
+            }, [relationalMapLayoutInputs, categoryDegrees, degreeRangeLegend]);
 
             const connectingMatrixRows = useMemo(() => {
                 if (!activeCanvas) return [];
@@ -9298,7 +9515,7 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                     1,
                     'Relational Map of Category Connections',
                     figureInner,
-                    'Nodes show category codes with degree counts. Node color indicates tier (low, medium, high connectivity). Lines represent identified inter-category links.'
+                    'Nodes show category codes with degree counts; node size and color indicate connectivity tier (blue=low, amber=medium, red=high). Line color/style indicates connection rationale: blue solid=specificity, purple solid=part-whole, amber dashed=conditional, gray dotted=rationale not set.'
                 );
                 downloadWordDoc(`${activeCanvas.name.replace(/\s+/g, '_')}_APA7_connecting_figure.doc`, html);
             };
@@ -9936,30 +10153,52 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                                             </div>
                                         </div>
 
-                                        <div className="flex flex-wrap gap-2 text-xs">
-                                            {[{
-                                                key: 'low',
-                                                label: `Low (${degreeRangeLegend.min}-${degreeRangeLegend.lowMax})`,
-                                                color: '#ef4444'
-                                            }, {
-                                                key: 'mid',
-                                                label: `Medium (${degreeRangeLegend.lowMax + 1}-${Math.min(degreeRangeLegend.midMax, degreeRangeLegend.max)})`,
-                                                color: '#3b82f6'
-                                            }, {
-                                                key: 'high',
-                                                label: `High (${Math.min(degreeRangeLegend.midMax + 1, degreeRangeLegend.max)}-${degreeRangeLegend.max})`,
-                                                color: '#16a34a'
-                                            }].map((item) => (
-                                                <button
-                                                    key={`legend_${item.key}`}
-                                                    type="button"
-                                                    onClick={() => setLegendFilter((prev) => prev === item.key ? null : item.key)}
-                                                    className={`inline-flex items-center gap-2 px-2.5 py-1.5 rounded-full border ${legendFilter === item.key ? 'border-slate-900' : 'border-slate-300'}`}
-                                                >
-                                                    <span className="h-3 w-3 rounded-full" style={{ backgroundColor: item.color }} />
-                                                    {item.label}
-                                                </button>
-                                            ))}
+                                        <div className="space-y-2">
+                                            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Connectivity tier (click to filter; most-connected categories run hot)</p>
+                                            <div className="flex flex-wrap items-center gap-2 text-xs">
+                                                {[{
+                                                    key: 'low',
+                                                    label: `Low (${degreeRangeLegend.min}-${degreeRangeLegend.lowMax})`,
+                                                    color: DEGREE_TIER_COLORS.low
+                                                }, {
+                                                    key: 'mid',
+                                                    label: `Medium (${degreeRangeLegend.lowMax + 1}-${Math.min(degreeRangeLegend.midMax, degreeRangeLegend.max)})`,
+                                                    color: DEGREE_TIER_COLORS.mid
+                                                }, {
+                                                    key: 'high',
+                                                    label: `High (${Math.min(degreeRangeLegend.midMax + 1, degreeRangeLegend.max)}-${degreeRangeLegend.max})`,
+                                                    color: DEGREE_TIER_COLORS.high
+                                                }].map((item) => (
+                                                    <button
+                                                        key={`legend_${item.key}`}
+                                                        type="button"
+                                                        onClick={() => setLegendFilter((prev) => prev === item.key ? null : item.key)}
+                                                        className={`inline-flex items-center gap-2 px-2.5 py-1.5 rounded-full border ${legendFilter === item.key ? 'border-slate-900' : 'border-slate-300'}`}
+                                                    >
+                                                        <span className="h-3 w-3 rounded-full" style={{ backgroundColor: item.color }} />
+                                                        {item.label}
+                                                    </button>
+                                                ))}
+                                                {legendFilter && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => createThemeFromTierLegend(legendFilter)}
+                                                        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full border border-ember bg-ember/10 text-ember font-semibold hover:bg-ember/20"
+                                                        title="Group the categories in this tier into a new Step 3 theme"
+                                                    >
+                                                        Create theme from this tier →
+                                                    </button>
+                                                )}
+                                            </div>
+                                            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 pt-1">Connection rationale (line style)</p>
+                                            <div className="flex flex-wrap items-center gap-3 text-xs text-slate-600">
+                                                {Object.entries(RATIONALE_LINE_STYLES).map(([code, style]) => (
+                                                    <span key={`rationale_legend_${code || 'none'}`} className="inline-flex items-center gap-1.5">
+                                                        <svg width="20" height="8"><line x1="0" y1="4" x2="20" y2="4" stroke={style.color} strokeWidth="2.5" strokeDasharray={style.dash || undefined} /></svg>
+                                                        {style.label}
+                                                    </span>
+                                                ))}
+                                            </div>
                                         </div>
 
                                         {showRelationalMap && relationalMapGeometry && relationalMapGeometry.nodes.length > 0 ? (
@@ -9971,7 +10210,8 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                                                         if (!sourceNode || !targetNode) return null;
                                                         const sourceActive = !legendFilter || sourceNode.tier === legendFilter;
                                                         const targetActive = !legendFilter || targetNode.tier === legendFilter;
-                                                        const lineColor = sourceActive && targetActive ? '#64748b' : '#d1d5db';
+                                                        const isActive = sourceActive && targetActive;
+                                                        const style = RATIONALE_LINE_STYLES[link.rationale || ''] || RATIONALE_LINE_STYLES[''];
                                                         return (
                                                             <line
                                                                 key={`link_${link.sourceCode}_${link.targetCode}`}
@@ -9979,25 +10219,22 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                                                                 y1={sourceNode.y}
                                                                 x2={targetNode.x}
                                                                 y2={targetNode.y}
-                                                                stroke={lineColor}
+                                                                stroke={isActive ? style.color : '#d1d5db'}
                                                                 strokeWidth="2"
+                                                                strokeDasharray={style.dash || undefined}
                                                             />
                                                         );
                                                     })}
 
                                                     {relationalMapGeometry.nodes.map((node) => {
-                                                        const tierColor = node.tier === 'low'
-                                                            ? '#ef4444'
-                                                            : node.tier === 'mid'
-                                                                ? '#3b82f6'
-                                                                : '#16a34a';
+                                                        const tierColor = DEGREE_TIER_COLORS[node.tier] || DEGREE_TIER_COLORS.low;
                                                         const activeColor = !legendFilter || node.tier === legendFilter;
                                                         return (
                                                             <g key={`node_${node.code}`}>
                                                                 <circle
                                                                     cx={node.x}
                                                                     cy={node.y}
-                                                                    r="34"
+                                                                    r={node.radius}
                                                                     fill={activeColor ? tierColor : '#d1d5db'}
                                                                     stroke={selectedMapNodeCode === node.code ? '#0f172a' : '#ffffff'}
                                                                     strokeWidth={selectedMapNodeCode === node.code ? '3' : '2'}
