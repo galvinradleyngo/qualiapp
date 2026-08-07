@@ -8481,19 +8481,58 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                 if (!categoryToDelete) return;
                 const shouldDelete = await requestConfirmation({
                     title: 'Delete Category',
-                    message: `Delete category "${categoryToDelete.name}" and unassign its in-vivo codes?`,
+                    message: `Delete category "${categoryToDelete.name}" and unassign its in-vivo codes? Remaining category codes will renumber to close the gap.`,
                     confirmLabel: 'Delete Category'
                 });
                 if (!shouldDelete) return;
 
+                // Renumber remaining categories to C1..Cn (in their current display order) so deleting
+                // a category never leaves a gap in the sequence, and remap the connection matrix,
+                // rationale matrix, and narrative notes from their old codes to the new ones so no
+                // existing connecting-analysis data is lost or orphaned under a stale code.
+                const codeMap = {};
+                const renumberedCategories = activeCanvas.categories
+                    .filter((category) => category.id !== categoryId)
+                    .map((category, index) => {
+                        const newCode = `C${index + 1}`;
+                        if (category.code !== newCode) codeMap[category.code] = newCode;
+                        return category.code === newCode ? category : { ...category, code: newCode };
+                    });
+                const remapCode = (code) => codeMap[code] || code;
+                const remapPairMatrix = (matrix) => {
+                    const next = {};
+                    Object.keys(matrix || {}).forEach((sourceCode) => {
+                        if (sourceCode === categoryToDelete.code) return;
+                        const newSource = remapCode(sourceCode);
+                        next[newSource] = { ...(next[newSource] || {}) };
+                        Object.keys(matrix[sourceCode] || {}).forEach((targetCode) => {
+                            if (targetCode === categoryToDelete.code) return;
+                            next[newSource][remapCode(targetCode)] = matrix[sourceCode][targetCode];
+                        });
+                    });
+                    return next;
+                };
+                const remapNoteMap = (notes) => {
+                    const next = {};
+                    Object.keys(notes || {}).forEach((code) => {
+                        if (code === categoryToDelete.code) return;
+                        next[remapCode(code)] = notes[code];
+                    });
+                    return next;
+                };
+
                 const nextCanvas = {
                     ...activeCanvas,
-                    categories: activeCanvas.categories.filter((category) => category.id !== categoryId),
+                    categories: renumberedCategories,
+                    connections: remapPairMatrix(activeCanvas.connections),
+                    connectionRationales: remapPairMatrix(activeCanvas.connectionRationales),
+                    connectionNotes: remapNoteMap(activeCanvas.connectionNotes),
                     themes: activeCanvas.themes.map((theme) => ({
                         ...theme,
                         categories: theme.categories.filter((name) => name !== categoryToDelete.name)
                     }))
                 };
+                setSelectedMapNodeCode(null);
                 persistCanvas(nextCanvas);
             };
 
