@@ -9763,20 +9763,22 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                                         {!activeCanvas || (activeCanvas.categories || []).length === 0 ? (
                                             <p className="text-sm text-slate-500">No categories available yet.</p>
                                         ) : (
-                                            <div className="overflow-x-auto">
+                                            <>
+                                            <p className="text-xs text-slate-500 mb-2">{(activeCanvas.categories || []).length} × {(activeCanvas.categories || []).length} matrix ({(activeCanvas.categories || []).length} categories). Row and column headers stay pinned while you scroll.</p>
+                                            <div className="overflow-auto max-h-[70vh] border rounded-lg">
                                                 <table className="w-full text-sm border-collapse">
                                                     <thead>
                                                         <tr className="bg-slate-50 border-b">
-                                                            <th className="p-2 text-left">Category</th>
+                                                            <th className="p-2 text-left sticky top-0 left-0 z-30 bg-slate-50">Category</th>
                                                             {(activeCanvas.categories || []).map((category) => (
-                                                                <th key={`col_${category.code}`} className="p-2 text-center font-semibold">{category.code}</th>
+                                                                <th key={`col_${category.code}`} className="p-2 text-center font-semibold sticky top-0 z-20 bg-slate-50">{category.code}</th>
                                                             ))}
                                                         </tr>
                                                     </thead>
                                                     <tbody>
                                                         {(activeCanvas.categories || []).map((rowCategory) => (
                                                             <tr key={`row_${rowCategory.code}`} className="border-b">
-                                                                <td className="p-2 font-semibold">{rowCategory.code}</td>
+                                                                <td className="p-2 font-semibold sticky left-0 z-10 bg-white">{rowCategory.code}</td>
                                                                 {(activeCanvas.categories || []).map((columnCategory) => {
                                                                     const isDiagonal = rowCategory.code === columnCategory.code;
                                                                     const value = isDiagonal ? 1 : getConnectionValue(rowCategory.code, columnCategory.code);
@@ -9810,6 +9812,7 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                                                     </tbody>
                                                 </table>
                                             </div>
+                                            </>
                                         )}
                                     </div>
 
