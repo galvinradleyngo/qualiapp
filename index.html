@@ -7696,6 +7696,7 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
             const [showConnectingExportMenu, setShowConnectingExportMenu] = useState(false);
             const [processStepView, setProcessStepView] = useState('both');
             const [expandedCategoryIds, setExpandedCategoryIds] = useState({});
+            const [expandedNarrativeInVivoByCategoryCode, setExpandedNarrativeInVivoByCategoryCode] = useState({});
             const [connectingCursor, setConnectingCursor] = useState(0);
             const [showRelationalMap, setShowRelationalMap] = useState(false);
             const [legendFilter, setLegendFilter] = useState(null);
@@ -8453,6 +8454,14 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                 }));
             };
 
+            const toggleNarrativeInVivoCodes = (categoryCode) => {
+                if (!categoryCode) return;
+                setExpandedNarrativeInVivoByCategoryCode((prev) => ({
+                    ...prev,
+                    [categoryCode]: !(prev[categoryCode] === true)
+                }));
+            };
+
             const removeCategory = async (categoryId) => {
                 if (!activeCanvas) return;
                 const categoryToDelete = activeCanvas.categories.find((category) => category.id === categoryId);
@@ -8923,6 +8932,7 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                 setLegendFilter(null);
                 setSelectedMapNodeCode(null);
                 setSelectedInVivoPopup(null);
+                setExpandedNarrativeInVivoByCategoryCode({});
             }, [activeCanvasId, uniqueCategoryCount]);
 
             const getConnectionValue = (rowCode, columnCode) => {
@@ -9808,6 +9818,7 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                                                         const visibleCount = (relatedCategory.codes || []).filter((codeName) => !!codeDetailByName[codeName]).length;
                                                         return acc + visibleCount;
                                                     }, 0);
+                                                    const showNarrativeInVivoCodes = expandedNarrativeInVivoByCategoryCode[category.code] === true;
                                                     return (
                                                         <div key={`narrative_${category.code}`} className="border border-slate-200 rounded-lg p-3">
                                                             <p className="text-sm font-semibold text-slate-800 mb-2">{buildConnectionStatement(category.code)}</p>
@@ -9823,38 +9834,51 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                                                                 <div className="relative">
                                                                     <div className="flex items-center justify-between gap-2 mb-1.5">
                                                                         <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">In-vivo codes</p>
-                                                                        <span className="text-[11px] font-semibold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-full">{totalVisibleCodes} total</span>
+                                                                        <div className="flex items-center gap-2">
+                                                                            <span className="text-[11px] font-semibold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-full">{totalVisibleCodes} total</span>
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => toggleNarrativeInVivoCodes(category.code)}
+                                                                                className="text-[11px] font-semibold text-slate-700 border border-slate-300 rounded-md px-2 py-0.5 hover:bg-slate-50"
+                                                                            >
+                                                                                {showNarrativeInVivoCodes ? 'Hide' : 'Show'}
+                                                                            </button>
+                                                                        </div>
                                                                     </div>
-                                                                    <div className="space-y-2">
-                                                                        {relatedCategories.map((relatedCategory) => {
-                                                                            const relatedCodes = (relatedCategory.codes || []).filter((codeName) => !!codeDetailByName[codeName]);
-                                                                            return (
-                                                                            <div key={`narrative_group_${category.code}_${relatedCategory.code}`} className="space-y-1">
-                                                                                <p className="text-[10px] uppercase font-bold tracking-wide text-slate-500">{buildCategoryLabelByCode(relatedCategory.code)}</p>
-                                                                                <div className="flex flex-wrap gap-1.5">
-                                                                                    {[...relatedCodes]
-                                                                                        .sort((a, b) => formatInVivoCode(a).localeCompare(formatInVivoCode(b)))
-                                                                                        .map((codeName) => {
-                                                                                            const isSelected = selectedInVivoPopup?.codeName === codeName;
-                                                                                            return (
-                                                                                                <button
-                                                                                                    key={`narrative_code_${category.code}_${relatedCategory.code}_${codeName}`}
-                                                                                                    type="button"
-                                                                                                    onClick={() => toggleInVivoPopup(codeName, `narrative_${category.code}_${relatedCategory.code}_${codeName}`)}
-                                                                                                    className={`text-xs px-2.5 py-1 rounded-full border transition ${isSelected ? 'bg-ink text-white border-ink' : 'bg-white text-slate-700 border-slate-300 hover:border-slate-400'}`}
-                                                                                                    title="Show transcript quote"
-                                                                                                >
-                                                                                                    <span className="block font-semibold leading-none">{formatInVivoCode(codeName)}</span>
-                                                                                                </button>
-                                                                                            );
-                                                                                        })}
-                                                                                    {relatedCodes.length === 0 && <span className="text-xs text-slate-400">No in-vivo codes assigned.</span>}
+                                                                    {showNarrativeInVivoCodes ? (
+                                                                        <div className="space-y-2">
+                                                                            {relatedCategories.map((relatedCategory) => {
+                                                                                const relatedCodes = (relatedCategory.codes || []).filter((codeName) => !!codeDetailByName[codeName]);
+                                                                                return (
+                                                                                <div key={`narrative_group_${category.code}_${relatedCategory.code}`} className="space-y-1">
+                                                                                    <p className="text-[10px] uppercase font-bold tracking-wide text-slate-500">{buildCategoryLabelByCode(relatedCategory.code)}</p>
+                                                                                    <div className="flex flex-wrap gap-1.5">
+                                                                                        {[...relatedCodes]
+                                                                                            .sort((a, b) => formatInVivoCode(a).localeCompare(formatInVivoCode(b)))
+                                                                                            .map((codeName) => {
+                                                                                                const isSelected = selectedInVivoPopup?.codeName === codeName;
+                                                                                                return (
+                                                                                                    <button
+                                                                                                        key={`narrative_code_${category.code}_${relatedCategory.code}_${codeName}`}
+                                                                                                        type="button"
+                                                                                                        onClick={() => toggleInVivoPopup(codeName, `narrative_${category.code}_${relatedCategory.code}_${codeName}`)}
+                                                                                                        className={`text-xs px-2.5 py-1 rounded-full border transition ${isSelected ? 'bg-ink text-white border-ink' : 'bg-white text-slate-700 border-slate-300 hover:border-slate-400'}`}
+                                                                                                        title="Show transcript quote"
+                                                                                                    >
+                                                                                                        <span className="block font-semibold leading-none">{formatInVivoCode(codeName)}</span>
+                                                                                                    </button>
+                                                                                                );
+                                                                                            })}
+                                                                                        {relatedCodes.length === 0 && <span className="text-xs text-slate-400">No in-vivo codes assigned.</span>}
+                                                                                    </div>
                                                                                 </div>
-                                                                            </div>
-                                                                            );
-                                                                        })}
-                                                                        {relatedCategories.length === 0 && <span className="text-xs text-slate-400">No related categories available.</span>}
-                                                                    </div>
+                                                                                );
+                                                                            })}
+                                                                            {relatedCategories.length === 0 && <span className="text-xs text-slate-400">No related categories available.</span>}
+                                                                        </div>
+                                                                    ) : (
+                                                                        <p className="text-xs text-slate-400">Hidden by default. Click Show to view in-vivo codes.</p>
+                                                                    )}
                                                                 </div>
                                                             </div>
                                                         </div>
