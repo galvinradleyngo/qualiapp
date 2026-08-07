@@ -9669,6 +9669,12 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                                         {currentConnectingPair ? (
                                             <>
                                                 <div ref={guidedPromptQuestionRef} className="space-y-2">
+                                                    {(() => {
+                                                        const selectedConnectionValue = getConnectionValue(currentConnectingPair.rowCode, currentConnectingPair.columnCode);
+                                                        const isYesSelected = selectedConnectionValue === 1;
+                                                        const isNoSelected = selectedConnectionValue === 0;
+                                                        return (
+                                                            <>
                                                     <p className="text-sm text-slate-700">
                                                         Is <span className="font-semibold">{buildCategoryPromptLabelByCode(currentConnectingPair.rowCode)}</span> connected to <span className="font-semibold">{buildCategoryPromptLabelByCode(currentConnectingPair.columnCode)}</span>?
                                                     </p>
@@ -9710,14 +9716,14 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                                                         <button
                                                             type="button"
                                                             onClick={() => handleGuidedConnectionAnswer(1)}
-                                                            className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700"
+                                                            className={`px-4 py-2 rounded-lg text-sm font-semibold transition border ${isYesSelected ? 'bg-emerald-600 border-emerald-700 text-white shadow-sm ring-2 ring-emerald-300' : 'bg-slate-200 border-slate-300 text-slate-700 hover:bg-slate-300'}`}
                                                         >
                                                             Yes
                                                         </button>
                                                         <button
                                                             type="button"
                                                             onClick={() => handleGuidedConnectionAnswer(0)}
-                                                            className="px-4 py-2 rounded-lg bg-slate-200 text-slate-700 text-sm font-semibold hover:bg-slate-300"
+                                                            className={`px-4 py-2 rounded-lg text-sm font-semibold transition border ${isNoSelected ? 'bg-emerald-600 border-emerald-700 text-white shadow-sm ring-2 ring-emerald-300' : 'bg-slate-200 border-slate-300 text-slate-700 hover:bg-slate-300'}`}
                                                         >
                                                             No
                                                         </button>
@@ -9740,6 +9746,9 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                                                             Next
                                                         </button>
                                                     </div>
+                                                            </>
+                                                        );
+                                                    })()}
                                                 </div>
                                             </>
                                         ) : (
@@ -9851,7 +9860,7 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                                                                                 const relatedCodes = (relatedCategory.codes || []).filter((codeName) => !!codeDetailByName[codeName]);
                                                                                 return (
                                                                                 <div key={`narrative_group_${category.code}_${relatedCategory.code}`} className="space-y-1">
-                                                                                    <p className="text-[10px] uppercase font-bold tracking-wide text-slate-500">{buildCategoryLabelByCode(relatedCategory.code)}</p>
+                                                                                <p className="text-sm font-semibold tracking-wide text-slate-700">{buildCategoryLabelByCode(relatedCategory.code)}</p>
                                                                                     <div className="flex flex-wrap gap-1.5">
                                                                                         {[...relatedCodes]
                                                                                             .sort((a, b) => formatInVivoCode(a).localeCompare(formatInVivoCode(b)))
