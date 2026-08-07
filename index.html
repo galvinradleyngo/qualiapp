@@ -8941,6 +8941,8 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                 return value === 'A' || value === 'B' || value === 'C' ? value : '';
             };
 
+            const hasConnectionRationale = (rowCode, columnCode) => getConnectionRationale(rowCode, columnCode) !== '';
+
             const updateConnectionValue = (rowCode, columnCode, nextValue) => {
                 if (!activeCanvas || !rowCode || !columnCode) return;
                 if (rowCode === columnCode) return;
@@ -9027,20 +9029,40 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
             const handleGuidedConnectionAnswer = (value) => {
                 if (!currentConnectingPair) return;
                 updateConnectionValue(currentConnectingPair.rowCode, currentConnectingPair.columnCode, value);
+            };
+
+            const goToNextConnectingPair = () => {
+                if (connectingPairs.length === 0) return;
                 setConnectingCursor((prev) => {
-                    if (connectingPairs.length === 0) return 0;
                     return (prev + 1) % connectingPairs.length;
                 });
             };
 
-            const buildConnectionStatement = (categoryCode) => {
-                if (!activeCanvas || !categoryCode) return '';
-                const connectedCodes = (activeCanvas.categories || [])
+            const getConnectedCategoryCodes = (categoryCode) => {
+                if (!activeCanvas || !categoryCode) return [];
+                return (activeCanvas.categories || [])
                     .filter((category) => category.code !== categoryCode)
                     .map((category) => category.code)
                     .filter((code) => getConnectionValue(categoryCode, code) === 1);
-                if (connectedCodes.length === 0) return `${categoryCode}: none`;
-                return `${categoryCode}: ${connectedCodes.join(' - ')}`;
+            };
+
+            const sortedConnectingCategories = useMemo(() => {
+                if (!activeCanvas) return [];
+                return [...(activeCanvas.categories || [])].sort((a, b) => {
+                    const connectionDiff = getConnectedCategoryCodes(b.code).length - getConnectedCategoryCodes(a.code).length;
+                    if (connectionDiff !== 0) return connectionDiff;
+                    return (a.code || '').localeCompare(b.code || '');
+                });
+            }, [activeCanvas]);
+
+            const buildConnectionStatement = (categoryCode) => {
+                if (!activeCanvas || !categoryCode) return '';
+                const connectedCodes = getConnectedCategoryCodes(categoryCode);
+                const connectionCount = connectedCodes.length;
+                const categoryLabel = buildCategoryLabelByCode(categoryCode);
+                if (connectionCount === 0) return `${categoryLabel} (0): none`;
+                const connectedLabels = connectedCodes.map((code) => buildCategoryLabelByCode(code));
+                return `${categoryLabel} (${connectionCount}): ${connectedLabels.join(' - ')}`;
             };
 
             const buildCategoryLabelByCode = (categoryCode) => {
@@ -9057,14 +9079,40 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                 return `${foundCategory.name} (${foundCategory.code})`;
             };
 
+            const buildInVivoCategoryLabel = (categoryName) => {
+                const normalizedName = (categoryName || '').trim() || 'Uncategorized';
+                if (!activeCanvas) return normalizedName;
+                const matchedCategory = (activeCanvas.categories || []).find((category) => category.name === normalizedName);
+                if (!matchedCategory) return normalizedName;
+                return `${matchedCategory.code} (${matchedCategory.name})`;
+            };
+
             const buildNarrativeDefault = (categoryCode) => {
                 if (!activeCanvas || !categoryCode) return '';
-                const connectedCodes = (activeCanvas.categories || [])
-                    .filter((item) => item.code !== categoryCode)
-                    .map((item) => item.code)
-                    .filter((code) => getConnectionValue(categoryCode, code) === 1);
-                const labels = [categoryCode, ...connectedCodes].map((code) => buildCategoryLabelByCode(code));
-                return `Contents of ${labels.join(', ')}`;
+                const categoryLabel = buildCategoryLabelByCode(categoryCode);
+                const rationaleLabelByCode = {
+                    A: 'A: specificity',
+                    B: 'B: part-whole',
+                    C: 'C: conditional'
+                };
+                const otherCategories = (activeCanvas.categories || []).filter((category) => category.code !== categoryCode);
+                if (otherCategories.length === 0) {
+                    return `Contents of ${categoryLabel}. No other category titles are available for connection analysis yet.`;
+                }
+                const relationshipSummary = otherCategories.map((category) => {
+                    const otherLabel = buildCategoryLabelByCode(category.code);
+                    const value = getConnectionValue(categoryCode, category.code);
+                    if (value === 1) {
+                        const rationaleCode = getConnectionRationale(categoryCode, category.code);
+                        const rationaleLabel = rationaleCode ? ` (${rationaleLabelByCode[rationaleCode] || rationaleCode})` : '';
+                        return `${otherLabel} is connected${rationaleLabel}`;
+                    }
+                    if (value === 0) {
+                        return `${otherLabel} is not connected`;
+                    }
+                    return `${otherLabel} is not identified yet`;
+                });
+                return `Contents of ${categoryLabel}. Category titles reviewed: ${relationshipSummary.join('; ')}.`;
             };
 
             const toggleInVivoPopup = (codeName, origin = null) => {
@@ -9178,23 +9226,23 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
 
             const connectingNarrativeRows = useMemo(() => {
                 if (!activeCanvas) return [];
-                return (activeCanvas.categories || []).map((category) => {
-                    const connectedCodes = (activeCanvas.categories || [])
-                        .filter((item) => item.code !== category.code)
-                        .map((item) => item.code)
-                        .filter((code) => getConnectionValue(category.code, code) === 1);
+                return sortedConnectingCategories.map((category) => {
+                    const connectedCodes = getConnectedCategoryCodes(category.code);
+                    const connectedSummary = connectedCodes.length > 0
+                        ? `${connectedCodes.length}: ${connectedCodes.join(' - ')}`
+                        : '0: none';
                     const rationaleSummary = connectedCodes.map((code) => {
                         const rationale = getConnectionRationale(category.code, code);
                         return rationale ? `${code}:${rationale}` : `${code}:`;
-                    }).join(' | ');
+                    }).join(' | ') || '-';
                     return [
                         category.code,
-                        connectedCodes.join(' - '),
+                        connectedSummary,
                         rationaleSummary,
                         (activeCanvas.connectionNotes || {})[category.code] || buildNarrativeDefault(category.code)
                     ];
                 });
-            }, [activeCanvas]);
+            }, [activeCanvas, sortedConnectingCategories]);
 
             const exportConnectingMatrixApaDoc = () => {
                 if (!activeCanvas) return;
@@ -9633,23 +9681,31 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                                                     </p>
                                                     <div className="rounded-lg border border-slate-200 bg-white p-3 space-y-2">
                                                         <p className="text-xs font-semibold text-slate-700">Select rationale for this connection</p>
-                                                        {!isConnectionIdentified(currentConnectingPair.rowCode, currentConnectingPair.columnCode) ? (
+                                                        {!isConnectionIdentified(currentConnectingPair.rowCode, currentConnectingPair.columnCode) && (
                                                             <p className="text-xs text-amber-700">Set Yes or No first, then choose one rationale (A, B, or C).</p>
-                                                        ) : (
-                                                            <div className="space-y-1.5">
-                                                                {rationaleOptions.map((option) => (
-                                                                    <label key={`rationale_${option.code}`} className="flex items-start gap-2 text-xs text-slate-700 cursor-pointer">
-                                                                        <input
-                                                                            type="radio"
-                                                                            name={`rationale_${currentConnectingPair.rowCode}_${currentConnectingPair.columnCode}`}
-                                                                            checked={getConnectionRationale(currentConnectingPair.rowCode, currentConnectingPair.columnCode) === option.code}
-                                                                            onChange={() => updateConnectionRationale(currentConnectingPair.rowCode, currentConnectingPair.columnCode, option.code)}
-                                                                        />
-                                                                        <span>{option.label}</span>
-                                                                    </label>
-                                                                ))}
-                                                            </div>
                                                         )}
+                                                        {isConnectionIdentified(currentConnectingPair.rowCode, currentConnectingPair.columnCode)
+                                                            && !hasConnectionRationale(currentConnectingPair.rowCode, currentConnectingPair.columnCode) && (
+                                                                <p className="text-xs text-amber-700">Choose one rationale to continue to the next pair.</p>
+                                                            )}
+                                                        {isConnectionIdentified(currentConnectingPair.rowCode, currentConnectingPair.columnCode)
+                                                            && hasConnectionRationale(currentConnectingPair.rowCode, currentConnectingPair.columnCode) && (
+                                                                <p className="text-xs text-emerald-700">Rationale selected. You can now move to the next pair.</p>
+                                                            )}
+                                                        <div className="space-y-1.5">
+                                                            {rationaleOptions.map((option) => (
+                                                                <label key={`rationale_${option.code}`} className={`flex items-start gap-2 text-xs ${isConnectionIdentified(currentConnectingPair.rowCode, currentConnectingPair.columnCode) ? 'text-slate-700 cursor-pointer' : 'text-slate-400 cursor-not-allowed'}`}>
+                                                                    <input
+                                                                        type="radio"
+                                                                        name={`rationale_${currentConnectingPair.rowCode}_${currentConnectingPair.columnCode}`}
+                                                                        checked={getConnectionRationale(currentConnectingPair.rowCode, currentConnectingPair.columnCode) === option.code}
+                                                                        onChange={() => updateConnectionRationale(currentConnectingPair.rowCode, currentConnectingPair.columnCode, option.code)}
+                                                                        disabled={!isConnectionIdentified(currentConnectingPair.rowCode, currentConnectingPair.columnCode)}
+                                                                    />
+                                                                    <span>{option.label}</span>
+                                                                </label>
+                                                            ))}
+                                                        </div>
                                                     </div>
                                                     <div className="flex gap-2">
                                                         <button
@@ -9672,6 +9728,17 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                                                             className="px-4 py-2 rounded-lg border border-slate-300 text-slate-700 text-sm font-semibold hover:bg-slate-50"
                                                         >
                                                             Previous
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={goToNextConnectingPair}
+                                                            className="px-4 py-2 rounded-lg bg-ink text-white text-sm font-semibold hover:bg-slate-800 disabled:bg-slate-300 disabled:text-slate-500 disabled:cursor-not-allowed"
+                                                            disabled={
+                                                                !isConnectionIdentified(currentConnectingPair.rowCode, currentConnectingPair.columnCode)
+                                                                || !hasConnectionRationale(currentConnectingPair.rowCode, currentConnectingPair.columnCode)
+                                                            }
+                                                        >
+                                                            Next
                                                         </button>
                                                     </div>
                                                 </div>
@@ -9742,10 +9809,19 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                                             <p className="text-sm text-slate-500">No categories available yet.</p>
                                         ) : (
                                             <div className="space-y-3">
-                                                {(activeCanvas.categories || []).map((category) => {
+                                                {sortedConnectingCategories.map((category) => {
                                                     const defaultNarrative = buildNarrativeDefault(category.code);
                                                     const currentNarrative = (activeCanvas.connectionNotes || {})[category.code] || defaultNarrative;
                                                     const visibleCodes = (category.codes || []).filter((codeName) => !!codeDetailByName[codeName]);
+                                                    const visibleCodesByCategory = visibleCodes.reduce((acc, codeName) => {
+                                                        const codeCategory = (codeDetailByName[codeName]?.category || 'Uncategorized').trim() || 'Uncategorized';
+                                                        if (!acc[codeCategory]) acc[codeCategory] = [];
+                                                        acc[codeCategory].push(codeName);
+                                                        return acc;
+                                                    }, {});
+                                                    const sortedCodeCategories = Object.keys(visibleCodesByCategory).sort((a, b) => (
+                                                        buildInVivoCategoryLabel(a).localeCompare(buildInVivoCategoryLabel(b))
+                                                    ));
                                                     return (
                                                         <div key={`narrative_${category.code}`} className="border border-slate-200 rounded-lg p-3">
                                                             <p className="text-sm font-semibold text-slate-800 mb-2">{buildConnectionStatement(category.code)}</p>
@@ -9763,22 +9839,30 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                                                                         <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">In-vivo codes</p>
                                                                         <span className="text-[11px] font-semibold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-full">{visibleCodes.length} total</span>
                                                                     </div>
-                                                                    <div className="flex flex-wrap gap-1.5">
-                                                                        {visibleCodes.map((codeName) => {
-                                                                            const isSelected = selectedInVivoPopup?.codeName === codeName;
-                                                                            return (
-                                                                                <button
-                                                                                    key={`narrative_code_${category.code}_${codeName}`}
-                                                                                    type="button"
-                                                                                    onClick={() => toggleInVivoPopup(codeName, `narrative_${category.code}_${codeName}`)}
-                                                                                    className={`text-xs px-2.5 py-1 rounded-full border transition ${isSelected ? 'bg-ink text-white border-ink' : 'bg-white text-slate-700 border-slate-300 hover:border-slate-400'}`}
-                                                                                    title="Show transcript quote"
-                                                                                >
-                                                                                    <span className="block text-[10px] uppercase font-bold leading-none mb-0.5 opacity-70">{codeDetailByName[codeName]?.category || 'Uncategorized'}</span>
-                                                                                    <span className="block font-semibold leading-none">{formatInVivoCode(codeName)}</span>
-                                                                                </button>
-                                                                            );
-                                                                        })}
+                                                                    <div className="space-y-2">
+                                                                        {sortedCodeCategories.map((codeCategory) => (
+                                                                            <div key={`narrative_group_${category.code}_${codeCategory}`} className="space-y-1">
+                                                                                <p className="text-[10px] uppercase font-bold tracking-wide text-slate-500">Category label: {buildInVivoCategoryLabel(codeCategory)}</p>
+                                                                                <div className="flex flex-wrap gap-1.5">
+                                                                                    {[...(visibleCodesByCategory[codeCategory] || [])]
+                                                                                        .sort((a, b) => formatInVivoCode(a).localeCompare(formatInVivoCode(b)))
+                                                                                        .map((codeName) => {
+                                                                                            const isSelected = selectedInVivoPopup?.codeName === codeName;
+                                                                                            return (
+                                                                                                <button
+                                                                                                    key={`narrative_code_${category.code}_${codeName}`}
+                                                                                                    type="button"
+                                                                                                    onClick={() => toggleInVivoPopup(codeName, `narrative_${category.code}_${codeName}`)}
+                                                                                                    className={`text-xs px-2.5 py-1 rounded-full border transition ${isSelected ? 'bg-ink text-white border-ink' : 'bg-white text-slate-700 border-slate-300 hover:border-slate-400'}`}
+                                                                                                    title="Show transcript quote"
+                                                                                                >
+                                                                                                    <span className="block font-semibold leading-none">{formatInVivoCode(codeName)}</span>
+                                                                                                </button>
+                                                                                            );
+                                                                                        })}
+                                                                                </div>
+                                                                            </div>
+                                                                        ))}
                                                                         {visibleCodes.length === 0 && <span className="text-xs text-slate-400">No in-vivo codes assigned.</span>}
                                                                     </div>
                                                                 </div>
