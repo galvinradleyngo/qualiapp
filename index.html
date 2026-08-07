@@ -2160,6 +2160,7 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
             const [activeId, setActiveId] = useState(null);
             const [analysisResumeState, setAnalysisResumeState] = useState(null);
             const [connectingResumeState, setConnectingResumeState] = useState(null);
+            const [activeAnalysisCanvasId, setActiveAnalysisCanvasId] = useState(null);
             const [codebookResumeState, setCodebookResumeState] = useState(null);
             const [isReady, setIsReady] = useState(false);
             const [autoLockEnabled, setAutoLockEnabled] = useState(true);
@@ -2565,6 +2566,18 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                         setAnalysisResumeState(savedWorkspaceState.analysis || null);
                         setConnectingResumeState(savedWorkspaceState.connecting || null);
                         setCodebookResumeState(savedWorkspaceState.codebook || null);
+
+                        // Analysis Canvas and Connecting Analysis used to remember their own "last
+                        // active workspace" independently, which could silently drift apart (e.g.
+                        // Connecting Analysis showing an old workspace after switching workspaces in
+                        // Analysis Canvas). Prefer the shared id saved by this fix; for data saved
+                        // before this fix existed, fall back to migrating whichever per-view value
+                        // matches the view being resumed into.
+                        const migratedCanvasId = savedWorkspaceState.activeAnalysisCanvasId
+                            || (resumeView === 'connecting'
+                                ? (savedWorkspaceState.connecting?.activeCanvasId || savedWorkspaceState.analysis?.activeCanvasId || null)
+                                : (savedWorkspaceState.analysis?.activeCanvasId || savedWorkspaceState.connecting?.activeCanvasId || null));
+                        if (migratedCanvasId) setActiveAnalysisCanvasId(String(migratedCanvasId));
                     }
                     if (d['activityTypes']) setActivityTypes(d['activityTypes']);
                     setIsReady(true);
@@ -2587,11 +2600,12 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                     analysis: analysisResumeState || null,
                     connecting: connectingResumeState || null,
                     codebook: codebookResumeState || null,
+                    activeAnalysisCanvasId: activeAnalysisCanvasId || null,
                     updatedAt: new Date().toISOString()
                 };
 
                 dbSet('data', workspaceResumeStateKey, nextState).catch(() => {});
-            }, [isReady, startupState, view, activeId, activeObservationId, isSidebarCollapsed, analysisResumeState, connectingResumeState, codebookResumeState, transcripts, observations]);
+            }, [isReady, startupState, view, activeId, activeObservationId, isSidebarCollapsed, analysisResumeState, connectingResumeState, codebookResumeState, activeAnalysisCanvasId, transcripts, observations]);
 
             useEffect(() => {
                 if (isReady && startupState === 'open') {
@@ -4544,8 +4558,8 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                                 />
                             )}
                             {view === 'participants' && <ParticipantVault participants={participants} onUpdate={setParticipants} />}
-                            {view === 'analysis' && <AnalysisBoard tags={tags} canvases={analysisCanvases} onUpdate={setAnalysisCanvases} artifacts={globalArtifacts} transcripts={transcripts} participants={participants} observations={observations} observationTags={observationTags} sourceFilterPresets={sourceFilterPresets} onSaveSourceFilterPreset={handleSaveSourceFilterPreset} onDeleteSourceFilterPreset={handleDeleteSourceFilterPreset} panelMode="analysis" resumeState={analysisResumeState} onResumeStateChange={setAnalysisResumeState} />}
-                            {view === 'connecting' && <AnalysisBoard tags={tags} canvases={analysisCanvases} onUpdate={setAnalysisCanvases} artifacts={globalArtifacts} transcripts={transcripts} participants={participants} observations={observations} observationTags={observationTags} sourceFilterPresets={sourceFilterPresets} onSaveSourceFilterPreset={handleSaveSourceFilterPreset} onDeleteSourceFilterPreset={handleDeleteSourceFilterPreset} panelMode="connecting" resumeState={connectingResumeState} onResumeStateChange={setConnectingResumeState} />}
+                            {view === 'analysis' && <AnalysisBoard tags={tags} canvases={analysisCanvases} onUpdate={setAnalysisCanvases} artifacts={globalArtifacts} transcripts={transcripts} participants={participants} observations={observations} observationTags={observationTags} sourceFilterPresets={sourceFilterPresets} onSaveSourceFilterPreset={handleSaveSourceFilterPreset} onDeleteSourceFilterPreset={handleDeleteSourceFilterPreset} panelMode="analysis" resumeState={analysisResumeState} onResumeStateChange={setAnalysisResumeState} activeCanvasId={activeAnalysisCanvasId} onActiveCanvasIdChange={setActiveAnalysisCanvasId} />}
+                            {view === 'connecting' && <AnalysisBoard tags={tags} canvases={analysisCanvases} onUpdate={setAnalysisCanvases} artifacts={globalArtifacts} transcripts={transcripts} participants={participants} observations={observations} observationTags={observationTags} sourceFilterPresets={sourceFilterPresets} onSaveSourceFilterPreset={handleSaveSourceFilterPreset} onDeleteSourceFilterPreset={handleDeleteSourceFilterPreset} panelMode="connecting" resumeState={connectingResumeState} onResumeStateChange={setConnectingResumeState} activeCanvasId={activeAnalysisCanvasId} onActiveCanvasIdChange={setActiveAnalysisCanvasId} />}
                             {view === 'triangulation' && (
                                 <TriangulationDashboard
                                     transcripts={transcripts}
@@ -7682,12 +7696,12 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
             );
         }
 
-        function AnalysisBoard({ tags, canvases, onUpdate, artifacts, transcripts, participants, observations, observationTags, sourceFilterPresets, onSaveSourceFilterPreset, onDeleteSourceFilterPreset, panelMode = 'analysis', resumeState, onResumeStateChange }) {
+        function AnalysisBoard({ tags, canvases, onUpdate, artifacts, transcripts, participants, observations, observationTags, sourceFilterPresets, onSaveSourceFilterPreset, onDeleteSourceFilterPreset, panelMode = 'analysis', resumeState, onResumeStateChange, activeCanvasId, onActiveCanvasIdChange }) {
             const { requestConfirmation, confirmationDialog } = useConfirmationDialog();
             const { requestInput, inputDialog } = useInputDialog();
             const isConnectingMode = panelMode === 'connecting';
             const [newCanvasName, setNewCanvasName] = useState('');
-            const [activeCanvasId, setActiveCanvasId] = useState(canvases[0]?.id || null);
+            const setActiveCanvasId = onActiveCanvasIdChange;
             const [newCategoryName, setNewCategoryName] = useState('');
             const [newThemeName, setNewThemeName] = useState('');
             const [selectedFolders, setSelectedFolders] = useState([]);
@@ -7986,10 +8000,9 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
 
                 if (!resumeState || typeof resumeState !== 'object') return;
 
-                const resumeCanvasId = String(resumeState.activeCanvasId || '');
-                if (resumeCanvasId && canvases.some((canvas) => String(canvas.id) === resumeCanvasId)) {
-                    setActiveCanvasId(resumeCanvasId);
-                }
+                // activeCanvasId is now owned by the parent (shared between Analysis Canvas and
+                // Connecting Analysis) via the activeCanvasId/onActiveCanvasIdChange props, so it is
+                // intentionally not restored from this view-local resumeState anymore.
 
                 if (Array.isArray(resumeState.selectedFolders)) {
                     const validFolders = resumeState.selectedFolders
