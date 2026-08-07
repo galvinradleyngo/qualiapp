@@ -8258,16 +8258,24 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
             }, [codeDetails]);
 
             const normalizeCanvas = (canvas) => {
-                const normalizedCategories = Array.isArray(canvas?.categories)
-                    ? canvas.categories.map((category, index) => ({
+                const rawCategories = Array.isArray(canvas?.categories) ? canvas.categories : [];
+
+                // Category codes are always renumbered to a gap-free C1..Cn sequence here, based on
+                // current display order. This covers both new deletions and any data saved before
+                // codes were kept sequential (e.g. a gap left by a deletion made before this existed).
+                // rawCodeByNewCode preserves each category's originally-stored code so the
+                // connection/rationale/note lookups below can find data recorded under it.
+                const rawCodeByNewCode = {};
+                const categories = rawCategories.map((category, index) => {
+                    const newCode = `C${index + 1}`;
+                    rawCodeByNewCode[newCode] = String(category.code || '').trim() || newCode;
+                    return {
                         id: category.id || `cat_${index}`,
                         name: (category.name || '').trim() || `Category ${index + 1}`,
-                        code: String(category.code || `C${index + 1}`).trim() || `C${index + 1}`,
+                        code: newCode,
                         codes: [...new Set((category.codes || []).map((name) => String(name || '').trim()).filter(Boolean))]
-                    }))
-                    : [];
-
-                const categories = normalizedCategories;
+                    };
+                });
 
                 const themes = (canvas?.themes || []).map((theme, index) => {
                     const explicitCategories = Array.isArray(theme.categories)
@@ -8295,16 +8303,18 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                         const rawConnections = (canvas && typeof canvas.connections === 'object' && canvas.connections !== null) ? canvas.connections : {};
                         const connectionMatrix = {};
                         categories.forEach((sourceCategory) => {
-                            const sourceCode = String(sourceCategory.code || '').trim();
+                            const sourceCode = sourceCategory.code;
+                            const sourceRawCode = rawCodeByNewCode[sourceCode];
                             connectionMatrix[sourceCode] = {};
                             categories.forEach((targetCategory) => {
-                                const targetCode = String(targetCategory.code || '').trim();
+                                const targetCode = targetCategory.code;
+                                const targetRawCode = rawCodeByNewCode[targetCode];
                                 if (sourceCode === targetCode) {
                                     connectionMatrix[sourceCode][targetCode] = 1;
                                     return;
                                 }
-                                const direct = rawConnections?.[sourceCode]?.[targetCode];
-                                const mirrored = rawConnections?.[targetCode]?.[sourceCode];
+                                const direct = rawConnections?.[sourceRawCode]?.[targetRawCode];
+                                const mirrored = rawConnections?.[targetRawCode]?.[sourceRawCode];
                                 const value = direct == null ? mirrored : direct;
                                 if (value === 1 || value === '1' || value === true) {
                                     connectionMatrix[sourceCode][targetCode] = 1;
@@ -8317,21 +8327,31 @@ var e,t,r="function"==typeof Symbol?Symbol:{},a=r.iterator||"@@iterator",n=r.toS
                         });
                         return connectionMatrix;
                     })(),
-                    connectionNotes: (canvas && typeof canvas.connectionNotes === 'object' && canvas.connectionNotes !== null) ? canvas.connectionNotes : {},
+                    connectionNotes: (() => {
+                        const rawNotes = (canvas && typeof canvas.connectionNotes === 'object' && canvas.connectionNotes !== null) ? canvas.connectionNotes : {};
+                        const notes = {};
+                        categories.forEach((category) => {
+                            const rawCode = rawCodeByNewCode[category.code];
+                            if (rawNotes[rawCode] != null) notes[category.code] = rawNotes[rawCode];
+                        });
+                        return notes;
+                    })(),
                     connectionRationales: (() => {
                         const rawRationales = (canvas && typeof canvas.connectionRationales === 'object' && canvas.connectionRationales !== null) ? canvas.connectionRationales : {};
                         const rationaleMatrix = {};
                         categories.forEach((sourceCategory) => {
-                            const sourceCode = String(sourceCategory.code || '').trim();
+                            const sourceCode = sourceCategory.code;
+                            const sourceRawCode = rawCodeByNewCode[sourceCode];
                             rationaleMatrix[sourceCode] = {};
                             categories.forEach((targetCategory) => {
-                                const targetCode = String(targetCategory.code || '').trim();
+                                const targetCode = targetCategory.code;
+                                const targetRawCode = rawCodeByNewCode[targetCode];
                                 if (sourceCode === targetCode) {
                                     rationaleMatrix[sourceCode][targetCode] = '';
                                     return;
                                 }
-                                const direct = rawRationales?.[sourceCode]?.[targetCode];
-                                const mirrored = rawRationales?.[targetCode]?.[sourceCode];
+                                const direct = rawRationales?.[sourceRawCode]?.[targetRawCode];
+                                const mirrored = rawRationales?.[targetRawCode]?.[sourceRawCode];
                                 const value = direct == null ? mirrored : direct;
                                 rationaleMatrix[sourceCode][targetCode] = value === 'A' || value === 'B' || value === 'C' ? value : '';
                             });
