@@ -4,50 +4,56 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>QualiApp — The Offline Qualitative Research Studio</title>
-<meta name="description" content="QualiApp is a free, single-file qualitative research studio — codebooks, transcript coding, themes, memos, and intercoder reliability — that runs entirely offline in your desktop browser. No installs, no accounts, no cloud.">
+<meta name="description" content="QualiApp is a free, single-file qualitative research studio for Reflexive Thematic Analysis, Realist Thematic Analysis, and the 4 Cs Model — codebooks, coded transcripts, themes, memos, and intercoder reliability — that runs entirely offline in your desktop browser.">
 <link rel="icon" href="data:," />
 <style>
   :root{
-    --ink:#1c1a17;
-    --paper:#faf6ef;
-    --paper-2:#f1ead9;
-    --accent:#a5462b;
-    --accent-2:#2f6b5e;
-    --gold:#c99a3c;
-    --line:#e4d9c3;
-    --muted:#6b6255;
+    --ink:#1b1a17;
+    --ink-soft:#57534e;
+    --paper:#ffffff;
+    --surface-alt:#faf9f7;
+    --border:#e5e2dd;
+    --border-strong:#d4d0c8;
+    --accent-50:#f0fdfa;
+    --accent-100:#ccfbf1;
+    --accent-600:#0d9488;
+    --accent-700:#0f766e;
+    --accent-800:#115e59;
+    --amber-50:#fffbeb;
+    --amber-500:#f59e0b;
+    --amber-600:#d97706;
   }
   *{box-sizing:border-box}
   html{scroll-behavior:smooth}
   body{
     margin:0;
-    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Helvetica,Arial,sans-serif;
     color:var(--ink);
     background:var(--paper);
     line-height:1.55;
   }
   h1,h2,h3{
-    font-family:Georgia,"Times New Roman",serif;
-    letter-spacing:-0.01em;
+    font-weight:700;
+    letter-spacing:-0.02em;
     margin:0 0 .5em;
   }
-  a{color:var(--accent)}
+  a{color:var(--accent-700)}
   .wrap{max-width:1080px;margin:0 auto;padding:0 24px}
 
   /* Header */
   header.top{
     position:sticky;top:0;z-index:20;
-    background:rgba(250,246,239,0.92);
+    background:rgba(255,255,255,0.92);
     backdrop-filter:blur(6px);
-    border-bottom:1px solid var(--line);
+    border-bottom:1px solid var(--border);
   }
   .topbar{display:flex;align-items:center;justify-content:space-between;padding:14px 24px;max-width:1080px;margin:0 auto}
   .brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:1.1rem}
   .brand .mark{
     width:30px;height:30px;border-radius:8px;
-    background:linear-gradient(135deg,var(--accent),var(--gold));
+    background:var(--accent-600);
     display:flex;align-items:center;justify-content:center;
-    color:#fff;font-family:Georgia,serif;font-weight:700;
+    color:#fff;font-weight:700;
   }
   nav.topnav a{
     color:var(--ink);text-decoration:none;font-size:.92rem;margin-left:22px;font-weight:600;
@@ -59,82 +65,89 @@
   .hero{
     padding:76px 24px 64px;
     background:
-      radial-gradient(1100px 480px at 12% -10%, #fdf1d8 0%, transparent 60%),
-      radial-gradient(900px 420px at 100% 0%, #e7f1ec 0%, transparent 55%),
+      radial-gradient(1100px 480px at 12% -10%, var(--accent-50) 0%, transparent 60%),
+      radial-gradient(900px 420px at 100% 0%, var(--amber-50) 0%, transparent 55%),
       var(--paper);
-    border-bottom:1px solid var(--line);
+    border-bottom:1px solid var(--border);
   }
   .hero-inner{max-width:1080px;margin:0 auto;text-align:center}
   .kicker{
-    display:inline-block;font-size:.78rem;font-weight:700;letter-spacing:.12em;
-    text-transform:uppercase;color:var(--accent-2);
-    background:#e4efe9;border:1px solid #cfe3da;padding:6px 14px;border-radius:999px;
+    display:inline-block;font-size:.78rem;font-weight:700;letter-spacing:.08em;
+    text-transform:uppercase;color:var(--accent-800);
+    background:var(--accent-100);border:1px solid var(--accent-700);border-color:#99f0e4;padding:6px 14px;border-radius:999px;
     margin-bottom:22px;
   }
   .hero h1{font-size:clamp(2.1rem,4.6vw,3.4rem);max-width:820px;margin:0 auto .4em}
-  .hero h1 em{font-style:italic;color:var(--accent)}
+  .hero h1 em{font-style:normal;color:var(--accent-700)}
   .hero p.lead{
-    font-size:1.18rem;color:#3d372e;max-width:660px;margin:0 auto 30px;
+    font-size:1.18rem;color:var(--ink-soft);max-width:700px;margin:0 auto 30px;
   }
+  .hero p.lead b{color:var(--ink)}
   .cta-row{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;margin-bottom:18px}
   .btn{
     display:inline-flex;align-items:center;gap:10px;
-    padding:15px 26px;border-radius:12px;font-weight:700;text-decoration:none;
+    padding:14px 24px;border-radius:8px;font-weight:700;text-decoration:none;
     font-size:1.02rem;border:1px solid transparent;transition:transform .12s ease, box-shadow .12s ease;
   }
   .btn:hover{transform:translateY(-1px)}
   .btn-primary{
-    background:var(--accent);color:#fff;
-    box-shadow:0 10px 24px -8px rgba(165,70,43,.55);
+    background:var(--accent-600);color:#fff;
+    box-shadow:0 10px 24px -8px rgba(13,148,136,.45);
   }
-  .btn-primary:hover{box-shadow:0 14px 28px -8px rgba(165,70,43,.65)}
+  .btn-primary:hover{background:var(--accent-700);box-shadow:0 14px 28px -8px rgba(13,148,136,.55)}
   .btn-ghost{
-    background:transparent;color:var(--ink);border-color:var(--line);
+    background:#fff;color:var(--ink);border-color:var(--border-strong);
   }
   .btn svg{width:18px;height:18px;flex:none}
-  .filesize{font-size:.85rem;color:var(--muted)}
+  .filesize{font-size:.85rem;color:var(--ink-soft)}
 
   .offline-note{
-    max-width:640px;margin:26px auto 0;
+    max-width:660px;margin:26px auto 0;
     display:flex;gap:12px;align-items:flex-start;text-align:left;
-    background:#fff;border:1px solid var(--line);border-radius:14px;padding:16px 18px;
-    box-shadow:0 6px 20px -12px rgba(28,26,23,.2);
+    background:#fff;border:1px solid var(--border);border-radius:12px;padding:16px 18px;
+    box-shadow:0 6px 20px -14px rgba(27,26,23,.35);
   }
-  .offline-note svg{flex:none;width:22px;height:22px;color:var(--accent-2);margin-top:2px}
+  .offline-note svg{flex:none;width:22px;height:22px;color:var(--accent-700);margin-top:2px}
   .offline-note b{color:var(--ink)}
-  .offline-note span{color:var(--muted);font-size:.92rem}
+  .offline-note span{color:var(--ink-soft);font-size:.92rem}
 
   /* Sections */
   section{padding:64px 24px}
-  .section-head{max-width:640px;margin:0 auto 40px;text-align:center}
+  .section-head{max-width:680px;margin:0 auto 40px;text-align:center}
   .section-head h2{font-size:clamp(1.6rem,3vw,2.1rem)}
-  .section-head p{color:var(--muted);font-size:1.05rem}
+  .section-head p{color:var(--ink-soft);font-size:1.05rem}
 
   .grid{
     display:grid;grid-template-columns:repeat(3,1fr);gap:20px;max-width:1080px;margin:0 auto;
   }
   .card{
-    background:#fff;border:1px solid var(--line);border-radius:16px;padding:24px;
+    background:#fff;border:1px solid var(--border);border-radius:8px;padding:24px;
   }
   .card .ico{
-    width:42px;height:42px;border-radius:10px;display:flex;align-items:center;justify-content:center;
-    background:var(--paper-2);color:var(--accent);margin-bottom:14px;
+    width:42px;height:42px;border-radius:8px;display:flex;align-items:center;justify-content:center;
+    background:var(--accent-50);color:var(--accent-700);margin-bottom:14px;
   }
-  .card h3{font-size:1.08rem;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif}
-  .card p{color:var(--muted);font-size:.94rem;margin:0}
+  .card.amber .ico{background:var(--amber-50);color:var(--amber-600)}
+  .card h3{font-size:1.08rem}
+  .card .tag{
+    display:inline-block;font-size:.7rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;
+    color:var(--ink-soft);background:var(--surface-alt);border:1px solid var(--border);
+    padding:2px 8px;border-radius:999px;margin-bottom:10px;
+  }
+  .card p{color:var(--ink-soft);font-size:.94rem;margin:0}
+  .card p.cite{margin-top:10px;font-size:.82rem;color:var(--ink-soft);font-style:italic}
 
   .steps{
     max-width:900px;margin:0 auto;display:grid;grid-template-columns:repeat(3,1fr);gap:24px;
-    counter-reset:step;
   }
   .step{position:relative;padding-left:0;text-align:center}
   .step .num{
-    width:40px;height:40px;border-radius:50%;background:var(--ink);color:var(--paper);
-    display:flex;align-items:center;justify-content:center;font-family:Georgia,serif;font-weight:700;
+    width:40px;height:40px;border-radius:50%;background:var(--accent-600);color:#fff;
+    display:flex;align-items:center;justify-content:center;font-weight:700;
     margin:0 auto 14px;
   }
   .step h3{font-size:1.05rem}
-  .step p{color:var(--muted);font-size:.92rem}
+  .step p{color:var(--ink-soft);font-size:.92rem}
 
   .band{
     background:var(--ink);color:var(--paper);
@@ -143,33 +156,43 @@
   .band .section-head h2{color:#fff}
 
   .quote{
-    max-width:720px;margin:0 auto;text-align:center;font-family:Georgia,serif;
+    max-width:720px;margin:0 auto;text-align:center;
     font-style:italic;font-size:1.3rem;color:var(--ink);
   }
 
+  .methods{
+    max-width:960px;margin:0 auto;display:grid;grid-template-columns:repeat(3,1fr);gap:20px;
+  }
+  .method-card{
+    background:var(--surface-alt);border:1px solid var(--border);border-radius:8px;padding:22px;
+  }
+  .method-card h3{font-size:1.02rem;color:var(--accent-800);margin-bottom:8px}
+  .method-card p{color:var(--ink-soft);font-size:.92rem;margin:0 0 10px}
+  .method-card p.cite{font-size:.78rem;color:var(--ink-soft);border-top:1px dashed var(--border-strong);padding-top:10px;margin:0}
+
   .license-box{
-    max-width:820px;margin:0 auto;background:#fff;border:1px solid var(--line);
-    border-radius:16px;padding:30px 32px;
+    max-width:820px;margin:0 auto;background:#fff;border:1px solid var(--border);
+    border-radius:8px;padding:30px 32px;
   }
   .license-box h3{font-size:1.15rem;display:flex;align-items:center;gap:10px}
   .license-badges{display:flex;gap:8px;margin:14px 0 18px;flex-wrap:wrap}
   .license-badges span{
     font-size:.72rem;font-weight:700;letter-spacing:.04em;
-    background:var(--paper-2);border:1px solid var(--line);color:var(--ink);
+    background:var(--surface-alt);border:1px solid var(--border);color:var(--ink);
     padding:5px 10px;border-radius:6px;
   }
-  .license-box p{color:#403a30;font-size:.96rem}
-  .license-box ul{color:#403a30;font-size:.96rem;padding-left:20px}
+  .license-box p{color:var(--ink-soft);font-size:.96rem}
+  .license-box ul{color:var(--ink-soft);font-size:.96rem;padding-left:20px}
   .license-box li{margin-bottom:6px}
 
   footer{
-    border-top:1px solid var(--line);padding:34px 24px;text-align:center;
-    color:var(--muted);font-size:.88rem;
+    border-top:1px solid var(--border);padding:34px 24px;text-align:center;
+    color:var(--ink-soft);font-size:.88rem;
   }
-  footer a{color:var(--muted);text-decoration:underline}
+  footer a{color:var(--ink-soft);text-decoration:underline}
 
   @media (max-width:820px){
-    .grid, .steps{grid-template-columns:1fr}
+    .grid, .steps, .methods{grid-template-columns:1fr}
     nav.topnav{display:none}
   }
 </style>
@@ -181,6 +204,7 @@
     <div class="brand"><span class="mark">Q</span> QualiApp</div>
     <nav class="topnav">
       <a href="#features">Features</a>
+      <a href="#methods">Methods</a>
       <a href="#how">How it works</a>
       <a href="#license">License</a>
       <a href="https://github.com/galvinradleyngo/qualiapp">GitHub</a>
@@ -194,9 +218,10 @@
     <h1>Qualitative analysis, <em>unplugged.</em></h1>
     <p class="lead">
       QualiApp is a full qualitative research studio — codebooks, coded transcripts, themes,
-      memos, and intercoder reliability — that lives entirely in one HTML file on your own
-      computer. Open it, and start making sense of your data. No sign-up, no subscription,
-      no server, no internet required.
+      memos, and intercoder reliability — built around <b>Reflexive Thematic Analysis</b>,
+      <b>Realist Thematic Analysis</b>, and the <b>4 Cs Model</b>. It lives entirely in one
+      HTML file on your own computer. Open it, and start making sense of your data. No sign-up,
+      no subscription, no server, no internet required.
     </p>
     <div class="cta-row">
       <a class="btn btn-primary" href="app.html" download="QualiApp.html">
@@ -232,22 +257,25 @@
       <div class="ico">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
       </div>
-      <h3>Codebook Builder</h3>
-      <p>Grow your codebook inductively or deductively, organize codes into hierarchies, and keep definitions consistent across every transcript.</p>
+      <span class="tag">Reflexive TA</span>
+      <h3>Codebook &amp; Theme Builder</h3>
+      <p>Grow your codebook inductively, cluster codes into initial themes, then group them into overarching themes — Braun &amp; Clarke's reflexive approach, start to finish.</p>
     </div>
     <div class="card">
       <div class="ico">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg>
       </div>
-      <h3>Transcript Coding</h3>
-      <p>Highlight, tag, and annotate interview and focus group transcripts directly in the browser, with adjustable text size for long coding sessions.</p>
+      <span class="tag">Reflexive TA</span>
+      <h3>Transcript Coding &amp; Reflexive Journal</h3>
+      <p>Highlight, tag, and annotate transcripts, then write reflexive memos before clustering — with adjustable text size for long coding sessions.</p>
     </div>
-    <div class="card">
+    <div class="card amber">
       <div class="ico">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20V10"/><path d="M18 20V4"/><path d="M6 20v-4"/></svg>
       </div>
-      <h3>Themes &amp; Memos</h3>
-      <p>Cluster codes into emerging themes and capture analytic memos and reflexivity notes right alongside the data that inspired them.</p>
+      <span class="tag">Realist TA · 4 Cs Model</span>
+      <h3>Realist Themes &amp; the 4 Cs Model</h3>
+      <p>Generate experiential, inferential, and dispositional themes, or connect codes and categories through the 4 Cs — two ready-made alternatives to reflexive theming.</p>
     </div>
     <div class="card">
       <div class="ico">
@@ -273,7 +301,31 @@
   </div>
 </section>
 
-<section id="how" class="band">
+<section id="methods" class="band">
+  <div class="section-head">
+    <h2>Grounded in the methods, not just the metaphor</h2>
+    <p>QualiApp's workflows follow published qualitative methods, so your process holds up to methodological scrutiny.</p>
+  </div>
+  <div class="methods">
+    <div class="method-card">
+      <h3>Reflexive Thematic Analysis</h3>
+      <p>Inductive coding, researcher reflexivity, and theme development as an active, interpretive process rather than a fixed procedure.</p>
+      <p class="cite">Braun, V., &amp; Clarke, V. (2022). <em>Thematic analysis: A practical guide</em> (A. Maher, Ed.).</p>
+    </div>
+    <div class="method-card">
+      <h3>Realist Thematic Analysis</h3>
+      <p>An alternative to reflexive TA that builds experiential, inferential, and dispositional themes from a critical realist standpoint.</p>
+      <p class="cite">Wiltshire, G., &amp; Ronkainen, N. (2021). A realist approach to thematic analysis: Making sense of qualitative data through experiential, inferential and dispositional themes. <em>Journal of Critical Realism</em>, <em>20</em>(2), 159–180.</p>
+    </div>
+    <div class="method-card">
+      <h3>The 4 Cs Model</h3>
+      <p>A critical realist framework for connecting codes and categories through causes, contexts, consequences, and contingencies.</p>
+      <p class="cite">Christodoulou, M. (2024). The four C's model of thematic analysis: A critical realist perspective. <em>Journal of Critical Realism</em>, <em>23</em>(1), 33–52.</p>
+    </div>
+  </div>
+</section>
+
+<section id="how">
   <div class="section-head">
     <h2>From download to your first coded excerpt in under a minute</h2>
     <p>No installers, no accounts, no cloud dashboards to configure.</p>

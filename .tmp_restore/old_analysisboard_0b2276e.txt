@@ -1,1 +1,0 @@
-function AnalysisBoard({ tags, canvases, onUpdate, artifacts, transcripts, participants, observations, observationTags, sourceFilterPresets, onSaveSourceFilterPreset, onDeleteSourceFilterPreset }
