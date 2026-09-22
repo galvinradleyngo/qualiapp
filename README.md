@@ -21,6 +21,11 @@ file, and use the password `sample123`. After it opens, go to **Reflexive TA**
 and pick **Initial Themes** from the workspace dropdown to see the finished
 analysis (it isn't auto-selected on first import).
 
+`sample-project.qbk2` is a static file, independent of `app.html` — updating
+the app doesn't touch it. If a future change to `app.html` breaks it (e.g. a
+change to the transcript editor, Reflexive TA, or the backup format), rebuild
+it with `tools/sample-project/build.js`; see `tools/sample-project/README.md`.
+
 ## Notes
 
 - Data is stored locally in your browser on this device.
