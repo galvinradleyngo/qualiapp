@@ -51,7 +51,7 @@ Download the DMG artifact from the completed Actions run page when you are ready
 
 ## Guardrails
 
-- Do not edit root `index.html` as part of this track.
+- Do not edit root `app.html` (the QualiApp offline studio) as part of this track.
 - Keep data portability ahead of native-only enhancements.
 - Validate changes here with isolated builds before moving deeper into feature migration.
 
