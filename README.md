@@ -30,5 +30,5 @@ analysis (it isn't auto-selected on first import).
 
 ## License
 
-QualiApp is released under [CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/)
-(Attribution-NonCommercial). See `LICENSE` for details.
+QualiApp is released under [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/)
+(Attribution-NonCommercial-ShareAlike). See `LICENSE` for details.
