@@ -6,19 +6,22 @@
 <title>QualiApp — The Offline Qualitative Research Studio</title>
 <meta name="description" content="QualiApp is a free, single-file qualitative research studio for Reflexive Thematic Analysis, Realist Thematic Analysis, and the 4 Cs Model — codebooks, coded transcripts, themes, memos, and intercoder reliability — that runs entirely offline in your desktop browser.">
 <link rel="icon" href="data:," />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
   :root{
-    --ink:#1b1a17;
-    --ink-soft:#57534e;
+    --ink:#333a40;
+    --ink-soft:#5b6670;
     --paper:#ffffff;
-    --surface-alt:#faf9f7;
-    --border:#e5e2dd;
-    --border-strong:#d4d0c8;
-    --accent-50:#f0fdfa;
-    --accent-100:#ccfbf1;
-    --accent-600:#0d9488;
-    --accent-700:#0f766e;
-    --accent-800:#115e59;
+    --surface-alt:#f1f4f6;
+    --border:#d6dbe0;
+    --border-strong:#b7c0c8;
+    --accent-50:#eff8fb;
+    --accent-100:#dbeff5;
+    --accent-600:#1f7b98;
+    --accent-700:#1d708c;
+    --accent-800:#134f63;
     --amber-50:#fffbeb;
     --amber-500:#f59e0b;
     --amber-600:#d97706;
@@ -27,7 +30,7 @@
   html{scroll-behavior:smooth}
   body{
     margin:0;
-    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Helvetica,Arial,sans-serif;
+    font-family:"IBM Plex Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
     color:var(--ink);
     background:var(--paper);
     line-height:1.55;
@@ -74,7 +77,7 @@
   .kicker{
     display:inline-block;font-size:.78rem;font-weight:700;letter-spacing:.08em;
     text-transform:uppercase;color:var(--accent-800);
-    background:var(--accent-100);border:1px solid var(--accent-700);border-color:#99f0e4;padding:6px 14px;border-radius:999px;
+    background:var(--accent-100);border:1px solid var(--accent-100);padding:6px 14px;border-radius:999px;
     margin-bottom:22px;
   }
   .hero h1{font-size:clamp(2.1rem,4.6vw,3.4rem);max-width:820px;margin:0 auto .4em}
@@ -92,9 +95,9 @@
   .btn:hover{transform:translateY(-1px)}
   .btn-primary{
     background:var(--accent-600);color:#fff;
-    box-shadow:0 10px 24px -8px rgba(13,148,136,.45);
+    box-shadow:0 10px 24px -8px rgba(31,123,152,.45);
   }
-  .btn-primary:hover{background:var(--accent-700);box-shadow:0 14px 28px -8px rgba(13,148,136,.55)}
+  .btn-primary:hover{background:var(--accent-700);box-shadow:0 14px 28px -8px rgba(31,123,152,.55)}
   .btn-ghost{
     background:#fff;color:var(--ink);border-color:var(--border-strong);
   }
@@ -105,7 +108,7 @@
     max-width:660px;margin:26px auto 0;
     display:flex;gap:12px;align-items:flex-start;text-align:left;
     background:#fff;border:1px solid var(--border);border-radius:12px;padding:16px 18px;
-    box-shadow:0 6px 20px -14px rgba(27,26,23,.35);
+    box-shadow:0 6px 20px -14px rgba(51,58,64,.35);
   }
   .offline-note svg{flex:none;width:22px;height:22px;color:var(--accent-700);margin-top:2px}
   .offline-note b{color:var(--ink)}
@@ -152,7 +155,7 @@
   .band{
     background:var(--ink);color:var(--paper);
   }
-  .band .section-head p{color:#cfc7b8}
+  .band .section-head p{color:#c3ccd2}
   .band .section-head h2{color:#fff}
 
   .quote{
