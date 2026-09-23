@@ -13,13 +13,22 @@ to `app.html` for download.
 
 ## Sample project
 
-`sample-project.qbk2` is a ready-made project you can import to see what a
-finished analysis looks like: 3 interview transcripts, 6 codes across 15
-excerpts, and a Reflexive TA workspace with 3 initial themes grouped under
-one overarching theme. In QualiApp, choose **Import a backup…**, select the
-file, and use the password `sample123`. After it opens, go to **Reflexive TA**
-and pick **Initial Themes** from the workspace dropdown to see the finished
-analysis (it isn't auto-selected on first import).
+Visit `app.html?sample=1` (the landing page's "Open the sample project"
+button does this) to launch QualiApp with a ready-made project already
+loaded: 3 interview transcripts, 6 codes across 15 excerpts, and a Reflexive
+TA workspace with 3 initial themes grouped under one overarching theme. No
+import steps — `app.html` fetches `sample-project.qbk2` itself, imports it
+on first visit, and reopens the same project (never a duplicate) on later
+visits, tracked via a `qualiapp_sample_project_id` key in `localStorage`.
+This only works when `app.html` is served over http(s) (e.g. on GitHub
+Pages) alongside `sample-project.qbk2` — fetching a local file doesn't work
+under `file://`, so it has no effect on a downloaded copy of `app.html`
+opened on its own. Once it opens, go to **Reflexive TA** and pick
+**Initial Themes** from the workspace dropdown to see the finished analysis
+(it isn't auto-selected on first import).
+
+You can still import `sample-project.qbk2` by hand — download it and use
+**Import a backup…** on the projects screen with the password `sample123`.
 
 `sample-project.qbk2` is a static file, independent of `app.html` — updating
 the app doesn't touch it. If a future change to `app.html` breaks it (e.g. a
