@@ -35,6 +35,13 @@ the app doesn't touch it. If a future change to `app.html` breaks it (e.g. a
 change to the transcript editor, Reflexive TA, or the backup format), rebuild
 it with `tools/sample-project/build.js`; see `tools/sample-project/README.md`.
 
+The `?sample=1` auto-load behavior itself, unlike the `.qbk2` file, lives
+*inside* `app.html` as a small patch spliced into its minified source — so
+it does **not** survive a direct upload that replaces `app.html` wholesale.
+**After any update to `app.html`, always re-run
+`node tools/sample-project/patch-app-html.js`** to put it back; see
+"The 'open sample project' feature" in `tools/sample-project/README.md`.
+
 ## Notes
 
 - Data is stored locally in your browser on this device.
