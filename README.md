@@ -42,6 +42,14 @@ it does **not** survive a direct upload that replaces `app.html` wholesale.
 `node tools/sample-project/patch-app-html.js`** to put it back; see
 "The 'open sample project' feature" in `tools/sample-project/README.md`.
 
+## Maintenance checklist (every time `app.html` or `index.html` changes)
+
+1. Re-run `node tools/sample-project/patch-app-html.js` if `app.html`
+   changed — it's idempotent, so safe to run unconditionally.
+2. Update the file-size note in `index.html`'s hero (`.filesize`) to match
+   `app.html`'s actual current size (`stat -c%s app.html` / `ls -la`).
+3. Bump the "Page last updated" date in `index.html`'s footer.
+
 ## Notes
 
 - Data is stored locally in your browser on this device.
