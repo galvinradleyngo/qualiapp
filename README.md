@@ -40,12 +40,24 @@ The `?sample=1` auto-load behavior itself, unlike the `.qbk2` file, lives
 it does **not** survive a direct upload that replaces `app.html` wholesale.
 **After any update to `app.html`, always re-run
 `node tools/sample-project/patch-app-html.js`** to put it back; see
-"The 'open sample project' feature" in `tools/sample-project/README.md`.
+"Features that live inside app.html" in `tools/sample-project/README.md`.
+
+## Update check
+
+`app.html` also checks, on every load, whether a newer build is published
+here on GitHub (comparing its own embedded build date against
+[`version.json`](version.json) at the repo root, fetched live from
+`raw.githubusercontent.com`) and shows a small dismissible bar prompting a
+download if so. Like the sample-project loader above, this lives inside
+`app.html`'s own source and is re-applied by the same
+`patch-app-html.js` script, which also keeps `version.json` in sync — see
+`tools/sample-project/README.md`.
 
 ## Maintenance checklist (every time `app.html` or `index.html` changes)
 
 1. Re-run `node tools/sample-project/patch-app-html.js` if `app.html`
-   changed — it's idempotent, so safe to run unconditionally.
+   changed — it's idempotent, so safe to run unconditionally. This also
+   regenerates `version.json`.
 2. Update the file-size note in `index.html`'s hero (`.filesize`) to match
    `app.html`'s actual current size (`stat -c%s app.html` / `ls -la`).
 3. Bump the "Page last updated" date in `index.html`'s footer.

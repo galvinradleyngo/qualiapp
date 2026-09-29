@@ -52,15 +52,27 @@ transcripts round-trip correctly before finishing.
 To change the sample's content, edit the transcript `.txt` files and/or the
 code/theme names in `build.js`, then re-run it.
 
-## The "open sample project" feature (`patch-app-html.js`)
+## Features that live inside app.html (`patch-app-html.js`)
 
-`app.html` also carries a small feature — visiting `app.html?sample=1`
-fetches `sample-project.qbk2` and opens it automatically, no manual import
-— that lives entirely inside `app.html` itself as two `useEffect`s spliced
-into its minified source. It is **not** part of this repo's build of
-`app.html`; that file gets replaced wholesale by direct uploads from
-outside this repo, which silently erases the patch every time, since the
-uploaded build never had it in the first place.
+Two small features are spliced directly into `app.html`'s own minified
+source, rather than being part of this repo's build of `app.html`:
+
+1. **Open the sample project** — visiting `app.html?sample=1` fetches
+   `sample-project.qbk2` and opens it automatically, no manual import.
+2. **Update check** — on every load, if online, `app.html` fetches
+   [`version.json`](../../version.json) from this repo's `main` branch
+   (via `raw.githubusercontent.com`, which serves permissive CORS so this
+   works even from a downloaded copy of `app.html` opened via `file://`)
+   and compares it to its own embedded `window.QUALIAPP_BUILD_VERSION`. If
+   the remote version is newer, it shows a small dismissible bar at the
+   bottom of the screen linking to the landing page to download the
+   update. Dismissing a given version is remembered in `localStorage`
+   (`qualiapp_update_dismissed_version`) so it won't nag again for that
+   same version.
+
+Because `app.html` gets replaced wholesale by direct uploads from outside
+this repo, both features are silently erased every time — the uploaded
+build never had them in the first place.
 
 **Always re-run this after any change to `app.html`, direct upload or
 otherwise:**
@@ -69,18 +81,28 @@ otherwise:**
 node tools/sample-project/patch-app-html.js [path-to-app.html]
 ```
 
-It's idempotent and safe to run unconditionally — it checks for
-`qualiapp_sample_project_id` in the file first and does nothing if the
-patch is already present. It re-locates the same two spots by their STABLE
-surroundings (the literal "This creates a new project…" UI copy, and the
-shape of the router's `{kind:"switcher"}` mount effect) rather than by
-variable names, since every rebuild mints fresh minified identifiers. If
-`app.html`'s actual structure changes (not just renamed variables — e.g.
-the mount effect's shape, or that UI copy, changes), the script will throw
-a clear error naming which anchor it couldn't find; update the regexes in
-`patch-app-html.js` to match the new shape and re-run.
+It's idempotent per-feature and safe to run unconditionally: it checks for
+each feature's own marker (`qualiapp_sample_project_id` for the sample
+loader, `QUALIAPP_BUILD_VERSION` for the update checker) and only applies
+whichever one is missing. `version.json` at the repo root is always
+rewritten to match whatever version ends up embedded in `app.html` — either
+today's date, if the update-checker patch was freshly applied, or the
+already-embedded version, if it was already present — so the two files
+never drift out of sync.
+
+It re-locates its splice points by their STABLE surroundings (literal UI
+copy, the shape of the router's `{kind:"switcher"}` mount effect, and the
+fact that `app.html` has exactly one real `</script>` closing tag) rather
+than by variable names, since every rebuild mints fresh minified
+identifiers. If `app.html`'s actual structure changes (not just renamed
+variables — e.g. the mount effect's shape, that UI copy, or a second real
+`<script>` element, change), the script will throw a clear error naming
+which anchor it couldn't find; update the regexes in `patch-app-html.js`
+to match the new shape and re-run.
 
 After patching, verify it with a quick smoke test: serve the repo
-(`python3 -m http.server`, since `fetch()` doesn't work under `file://`),
-visit `app.html?sample=1`, and confirm it opens the sample project with no
-console errors and the URL's `?sample=1` gets stripped.
+(`python3 -m http.server`, since `fetch()` doesn't work under `file://`
+for *local* files — the update checker's *remote* `raw.githubusercontent.com`
+fetch is unaffected by that), visit `app.html?sample=1`, and confirm it
+opens the sample project with no console errors and the URL's `?sample=1`
+gets stripped.
