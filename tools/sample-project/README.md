@@ -64,18 +64,39 @@ source, rather than being part of this repo's build of `app.html`:
    (via `raw.githubusercontent.com`, which serves permissive CORS so this
    works even from a downloaded copy of `app.html` opened via `file://`)
    and compares it to its own embedded `window.QUALIAPP_BUILD_VERSION`. If
-   the remote version is newer, it shows a small dismissible bar at the
-   bottom of the screen linking to the landing page to download the
-   update. Dismissing a given version is remembered in `localStorage`
+   the remote version is newer, it shows a small dismissible bar with an
+   **Update Now** button. Clicking it fetches the latest `app.html` and:
+   - On Chrome/Edge (File System Access API available), offers a native
+     save dialog pre-filled with the *current* file's own name, so picking
+     the same file overwrites it in place. If the current file lives in a
+     well-known folder (Desktop, Downloads, Documents, etc. — detected from
+     `location.pathname`, which is only meaningful under `file://`), the
+     dialog opens there directly. The bar also shows the full existing path
+     as a hint so the user knows what to pick even when we can't
+     pre-navigate there.
+   - Otherwise (Firefox/Safari, or the picker is declined/unsupported for
+     any reason), falls back to a plain browser download using that same
+     filename, and tells the user to replace the old file with it by hand.
+   - A network failure re-enables the button with an inline error instead
+     of failing silently, since this is a user-initiated action (unlike the
+     background version check itself, which stays silent on failure).
+
+   Dismissing, or a successful update, is remembered in `localStorage`
    (`qualiapp_update_dismissed_version`) so it won't nag again for that
-   same version.
+   same version. There's no web API that lets a page silently overwrite an
+   arbitrary local file without the user's confirmation — this is the
+   closest to one-click "auto-update" that's possible within that
+   constraint.
 
 Because `app.html` gets replaced wholesale by direct uploads from outside
 this repo, both features are silently erased every time — the uploaded
-build never had them in the first place.
+build never had them in the first place. **This is now handled
+automatically**: `.github/workflows/sync-app-html.yml` runs on every push
+to `main` touching `app.html` and re-applies both patches (plus syncs
+`index.html`, see below), committing the result back to `main` — no manual
+step needed after a direct upload.
 
-**Always re-run this after any change to `app.html`, direct upload or
-otherwise:**
+When working from a branch/PR instead, re-run it by hand before pushing:
 
 ```sh
 node tools/sample-project/patch-app-html.js [path-to-app.html]
@@ -106,3 +127,24 @@ for *local* files — the update checker's *remote* `raw.githubusercontent.com`
 fetch is unaffected by that), visit `app.html?sample=1`, and confirm it
 opens the sample project with no console errors and the URL's `?sample=1`
 gets stripped.
+
+## Keeping index.html in sync (`sync-index-meta.js`)
+
+`index.html`'s hero file-size note and footer "Page last updated" date are
+both derived from `app.html` and need to move in lockstep with it. Run:
+
+```sh
+node tools/sample-project/sync-index-meta.js [path-to-app.html] [path-to-index.html]
+```
+
+It computes `app.html`'s actual on-disk size for the file-size note and
+bumps the footer date to today, only rewriting `index.html` if something
+actually changed. Like the patch script, it locates its two splice points
+by stable surrounding copy and throws a clear error if that copy has
+changed shape.
+
+Both this and `patch-app-html.js` now run automatically on every push to
+`main` that touches `app.html`, via
+[`.github/workflows/sync-app-html.yml`](../../.github/workflows/sync-app-html.yml) —
+see the root `README.md`'s "Keeping app.html and index.html in sync"
+section. Run them by hand only when working from a branch/PR.

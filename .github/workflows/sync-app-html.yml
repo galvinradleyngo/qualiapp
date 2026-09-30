@@ -1,0 +1,47 @@
+name: Sync app.html patches and landing page
+
+# Every direct "Add files via upload" replacement of app.html wipes the two
+# small features spliced into its minified source (the sample-project loader
+# and the update-check banner) and leaves index.html's file-size/date copy
+# stale. This re-applies both patches and re-syncs index.html automatically,
+# so no manual maintenance PR is needed after an upload.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'app.html'
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    # Guards against the auto-commit this job makes re-triggering itself.
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Re-apply in-app-html patches
+        run: node tools/sample-project/patch-app-html.js
+
+      - name: Sync index.html file size and footer date
+        run: node tools/sample-project/sync-index-meta.js
+
+      - name: Commit and push if anything changed
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add app.html version.json index.html
+            git commit -m "Auto-sync app.html patches and landing page"
+            git push
+          else
+            echo "Already in sync, nothing to commit."
+          fi
