@@ -37,7 +37,7 @@ function applySampleLoaderPatch(src) {
   // --- find the "new backup format" import handler function name. ---
   // Anchored on the standalone Import-backup screen's stable UI copy, then
   // the shape `(headerCheck(bytes) ? newFormatHandler : oldFormatHandler)({file:`.
-  const importScreenAnchor = 'This creates a new project — it never overwrites an existing one.';
+  const importScreenAnchor = 'this creates a new project and never overwrites an existing one.';
   const importScreenIdx = src.indexOf(importScreenAnchor);
   if (importScreenIdx === -1) {
     throw new Error('Could not find the Import-backup screen anchor text — app.html copy may have changed.');
@@ -233,9 +233,31 @@ document.body.appendChild(bar);
   return { src: patched, version };
 }
 
+function applyWrongPasswordPatch(src) {
+  // A wrong password makes WebCrypto throw an OperationError whose message is
+  // an empty string, so the import screen (which shows `error.message`) shows
+  // nothing and sits on "Decrypting…" forever. Re-throw with a real message.
+  const marker = 'Incorrect password, or the file is corrupted.';
+  const re = /const ([$A-Za-z_][$\w]*)=await ([$A-Za-z_][$\w]*)\(([$A-Za-z_][$\w]*),([$A-Za-z_][$\w]*),([$A-Za-z_][$\w]*),\(([$A-Za-z_][$\w]*),([$A-Za-z_][$\w]*)\)=>([$A-Za-z_][$\w]*)\(`Decrypting… \(\$\{\6\}\/\$\{\7\}\)`,20\+Math\.round\(\6\/\7\*30\)\)\);/;
+  const m = src.match(re);
+  if (!m) {
+    if (src.includes('wrongpw-patched')) {
+      console.log('  wrong-password patch: already present, skipping.');
+      return src;
+    }
+    throw new Error('Could not find the backup decrypt call — app.html structure may have changed.');
+  }
+  const [full, out, fnName, a1, a2, a3, p1, p2, progress] = m;
+  const replacement =
+    `let ${out};try{${out}=await ${fnName}(${a1},${a2},${a3},(${p1},${p2})=>${progress}(\`Decrypting… (\${${p1}}/\${${p2}})\`,20+Math.round(${p1}/${p2}*30)))}catch(e){throw new Error("${marker}")}/*wrongpw-patched*/`;
+  console.log('  wrong-password patch: applied.');
+  return src.replace(full, replacement);
+}
+
 const candidateVersion = new Date().toISOString().slice(0, 10);
 
 src = applySampleLoaderPatch(src);
+src = applyWrongPasswordPatch(src);
 const updateCheckerResult = applyUpdateCheckerPatch(src, candidateVersion);
 src = updateCheckerResult.src;
 const version = updateCheckerResult.version;
