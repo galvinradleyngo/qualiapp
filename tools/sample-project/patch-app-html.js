@@ -37,7 +37,7 @@ function applySampleLoaderPatch(src) {
   // --- find the "new backup format" import handler function name. ---
   // Anchored on the standalone Import-backup screen's stable UI copy, then
   // the shape `(headerCheck(bytes) ? newFormatHandler : oldFormatHandler)({file:`.
-  const importScreenAnchor = 'This creates a new project — it never overwrites an existing one.';
+  const importScreenAnchor = 'this creates a new project and never overwrites an existing one.';
   const importScreenIdx = src.indexOf(importScreenAnchor);
   if (importScreenIdx === -1) {
     throw new Error('Could not find the Import-backup screen anchor text — app.html copy may have changed.');
