@@ -33,8 +33,9 @@ the password field empty.
 
 `sample-project.qbk2` is a static file, independent of `app.html` — updating
 the app doesn't touch it. If a future change to `app.html` breaks it (e.g. a
-change to the transcript editor, Reflexive TA, or the backup format), rebuild
-it with `tools/sample-project/build.js`; see `tools/sample-project/README.md`.
+change to the transcript editor, Reflexive TA, or the backup format),
+re-export it from the app with no password and replace the file; see
+`tools/sample-project/README.md`.
 
 The `?sample=1` auto-load behavior itself, unlike the `.qbk2` file, lives
 *inside* `app.html` as a small patch spliced into its minified source — so
