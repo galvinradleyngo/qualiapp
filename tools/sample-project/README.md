@@ -45,7 +45,8 @@ transcripts round-trip correctly before finishing.
 - 6 codes applied across 15 excerpts.
 - A Reflexive TA workspace ("Initial Themes") with the 6 codes clustered
   into 3 initial themes, grouped under one overarching theme.
-- The backup password is `sample123` (see `BACKUP_PASSWORD` in `build.js`)
+- (Note: the `sample-project.qbk2` currently shipped was exported by hand from the app and has **no password**; `build.js` would regenerate the older `sample123`-protected version — if you re-run it, also change the loader password in `patch-app-html.js`.)
+- The backup password built by `build.js` is `sample123` (see `BACKUP_PASSWORD` in `build.js`)
   — it's a public sample, not sensitive data, so this is intentionally
   fixed and documented on the landing page.
 
