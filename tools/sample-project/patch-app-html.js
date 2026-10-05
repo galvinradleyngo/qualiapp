@@ -29,10 +29,63 @@ const versionPath = path.join(REPO_ROOT, 'version.json');
 
 let src = fs.readFileSync(appPath, 'utf8');
 
+// The effect that runs on `?sample=1`. It always fetches the current
+// sample-project.qbk2 (bypassing the HTTP cache) and fingerprints it with
+// SHA-256. The previously imported copy is reopened only if its fingerprint
+// matches, so replacing sample-project.qbk2 in the repo is enough for every
+// visitor (including returning ones) to get the new sample. If the fetch
+// fails (e.g. offline) a previously imported copy is reopened instead.
+// The project title and no-password import come from the file itself.
+function buildSampleEffect(hooksAlias, refreshFn, importFn, openFn) {
+  return (
+    `${hooksAlias}.useEffect(()=>{(async()=>{try{` +
+    `const sp=new URLSearchParams(window.location.search);` +
+    `if(sp.get("sample")!=="1")return;` +
+    `const ls=window.localStorage;` +
+    `const markerId=ls.getItem("qualiapp_sample_project_id");` +
+    `const markerHash=ls.getItem("qualiapp_sample_project_hash");` +
+    `const list=await ${refreshFn}();` +
+    `let target=null,blob=null,hash=null;` +
+    `try{` +
+    `const res=await fetch("sample-project.qbk2",{cache:"no-cache"});` +
+    `if(!res.ok)throw new Error("sample project fetch failed: "+res.status);` +
+    `blob=await res.blob();` +
+    `hash=Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256",await blob.arrayBuffer()))).map(b=>b.toString(16).padStart(2,"0")).join("")` +
+    `}catch(fetchErr){if(!markerId)throw fetchErr}` +
+    `if(markerId&&(hash===null||markerHash===hash))target=list.find(pr=>pr.id===markerId)||null;` +
+    `if(!target){` +
+    `target=await ${importFn}({file:blob,password:"",projectTitle:""});` +
+    `ls.setItem("qualiapp_sample_project_id",target.id);` +
+    `ls.setItem("qualiapp_sample_project_hash",hash)` +
+    `}` +
+    `const cleanUrl=new URL(window.location.href);` +
+    `cleanUrl.searchParams.delete("sample");` +
+    `window.history.replaceState(null,"",cleanUrl.toString());` +
+    `await ${openFn}(target)` +
+    `}catch(err){console.error("QualiApp: failed to auto-load sample project",err)}})()},[]);`
+  );
+}
+
 function applySampleLoaderPatch(src) {
-  if (src.includes('qualiapp_sample_project_id')) {
+  if (src.includes('qualiapp_sample_project_hash')) {
     console.log('  sample-loading patch: already present, skipping.');
     return src;
+  }
+  if (src.includes('qualiapp_sample_project_id')) {
+    // An older build of this patch (no content hash) is present: swap its
+    // effect for the current one, reusing the function names it already uses.
+    const start = src.indexOf('.useEffect(()=>{(async()=>{try{const sp=new URLSearchParams(window.location.search);if(sp.get("sample")!=="1")return;');
+    const end = start === -1 ? -1 : src.indexOf('},[]);', start);
+    if (start === -1 || end === -1) {
+      throw new Error('Found an old sample-loader patch but could not locate its effect to upgrade it.');
+    }
+    const oldEffect = src.slice(start, end + 6);
+    const refreshFn = oldEffect.match(/const list=await ([$A-Za-z_][$\w]*)\(\)/)[1];
+    const importFn = oldEffect.match(/target=await ([$A-Za-z_][$\w]*)\(\{file:blob/)[1];
+    const openFn = oldEffect.match(/await ([$A-Za-z_][$\w]*)\(target\)\}catch/)[1];
+    const hooksAlias = src.slice(Math.max(0, start - 40), start).match(/([$A-Za-z_][$\w]*)$/)[1];
+    console.log('  sample-loading patch: upgrading older version (adds content-hash refresh).');
+    return src.slice(0, start - hooksAlias.length) + buildSampleEffect(hooksAlias, refreshFn, importFn, openFn) + src.slice(end + 6);
   }
   // --- find the "new backup format" import handler function name. ---
   // Anchored on the standalone Import-backup screen's stable UI copy, then
@@ -80,25 +133,7 @@ function applySampleLoaderPatch(src) {
     `.length>0&&new URLSearchParams(window.location.search).get("sample")!=="1"&&await ${openFnName}(`
   );
 
-  const newEffect =
-    `${hooksAlias}.useEffect(()=>{(async()=>{try{` +
-    `const sp=new URLSearchParams(window.location.search);` +
-    `if(sp.get("sample")!=="1")return;` +
-    `const markerId=window.localStorage.getItem("qualiapp_sample_project_id");` +
-    `const list=await ${refreshFnName}();` +
-    `let target=markerId?list.find(pr=>pr.id===markerId):null;` +
-    `if(!target){` +
-    `const res=await fetch("sample-project.qbk2");` +
-    `if(!res.ok)throw new Error("sample project fetch failed: "+res.status);` +
-    `const blob=await res.blob();` +
-    `target=await ${importFnName}({file:blob,password:"",projectTitle:"QualiApp Sample Project"});` +
-    `window.localStorage.setItem("qualiapp_sample_project_id",target.id)` +
-    `}` +
-    `const cleanUrl=new URL(window.location.href);` +
-    `cleanUrl.searchParams.delete("sample");` +
-    `window.history.replaceState(null,"",cleanUrl.toString());` +
-    `await ${openFnName}(target)` +
-    `}catch(err){console.error("QualiApp: failed to auto-load sample project",err)}})()},[]);`;
+  const newEffect = buildSampleEffect(hooksAlias, refreshFnName, importFnName, openFnName);
 
   const patchedAfterSwitcher = afterSwitcher.replace(fullEffectText, guarded + newEffect);
   const patched = src.slice(0, switcherIdx) + patchedAfterSwitcher;

@@ -8,9 +8,10 @@ and imports it automatically, and people can also download it and use the
 app's own "Import a backup" screen.
 
 To change the sample, open it in the app, edit it, export a new backup with
-**no password**, and replace `sample-project.qbk2` with the export. (If you
-ever give it a password, also change the `password:""` argument in the loader
-patch in `patch-app-html.js`.) A future change to `app.html` that alters the
+**no password**, and replace `sample-project.qbk2` with the export — that's
+all; `?sample=1` detects the new file by its fingerprint and imports it (the
+loader never caches an old copy). (The loader
+imports with an empty password, so the file must not have one.) A future change to `app.html` that alters the
 project data shapes or the `.qbk2` format may require re-exporting it.
 
 ## Features that live inside app.html (`patch-app-html.js`)
@@ -19,7 +20,10 @@ Two small features are spliced directly into `app.html`'s own minified
 source, rather than being part of this repo's build of `app.html`:
 
 1. **Open the sample project** — visiting `app.html?sample=1` fetches
-   `sample-project.qbk2` and opens it automatically, no manual import.
+   `sample-project.qbk2` (uncached), compares its SHA-256 to the one stored in
+   `localStorage` (`qualiapp_sample_project_hash`), and opens the previously
+   imported copy if it matches or imports the new file if not. Replacing the
+   file in the repo is therefore always picked up.
 2. **Update check** — on every load, if online, `app.html` fetches
    [`version.json`](../../version.json) from this repo's `main` branch
    (via `raw.githubusercontent.com`, which serves permissive CORS so this
@@ -64,8 +68,8 @@ node tools/sample-project/patch-app-html.js [path-to-app.html]
 ```
 
 It's idempotent per-feature and safe to run unconditionally: it checks for
-each feature's own marker (`qualiapp_sample_project_id` for the sample
-loader, `QUALIAPP_BUILD_VERSION` for the update checker) and only applies
+each feature's own marker (`qualiapp_sample_project_hash` for the sample
+loader — an older loader without it is upgraded in place — `QUALIAPP_BUILD_VERSION` for the update checker) and only applies
 whichever one is missing. `version.json` at the repo root is always
 rewritten to match whatever version ends up embedded in `app.html` — either
 today's date, if the update-checker patch was freshly applied, or the

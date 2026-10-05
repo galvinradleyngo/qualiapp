@@ -17,9 +17,15 @@ Visit `app.html?sample=1` (the landing page's "Open the sample project"
 button does this) to launch QualiApp with a ready-made project already
 loaded: the "QualiApp Sample Project" (transcripts, a codebook, and finished
 Reflexive TA and 4 Cs Model workspaces). No
-import steps — `app.html` fetches `sample-project.qbk2` itself, imports it
-on first visit, and reopens the same project (never a duplicate) on later
-visits, tracked via a `qualiapp_sample_project_id` key in `localStorage`.
+import steps — `app.html` fetches `sample-project.qbk2` itself on every visit
+(bypassing the browser cache) and fingerprints it. If that exact file was
+already imported, the same project is reopened (never a duplicate); if you
+replace `sample-project.qbk2` in the repo, the next visit imports the new
+file automatically. The imported project's id and the file's fingerprint are
+tracked in `localStorage` (`qualiapp_sample_project_id` and
+`qualiapp_sample_project_hash`); an earlier imported sample is left in place
+in the visitor's project list. The project takes its title from the file and
+the file must have no password.
 This only works when `app.html` is served over http(s) (e.g. on GitHub
 Pages) alongside `sample-project.qbk2` — fetching a local file doesn't work
 under `file://`, so it has no effect on a downloaded copy of `app.html`
