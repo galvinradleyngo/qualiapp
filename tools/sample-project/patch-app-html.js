@@ -91,7 +91,7 @@ function applySampleLoaderPatch(src) {
     `const res=await fetch("sample-project.qbk2");` +
     `if(!res.ok)throw new Error("sample project fetch failed: "+res.status);` +
     `const blob=await res.blob();` +
-    `target=await ${importFnName}({file:blob,password:"sample123",projectTitle:"Sample Project"});` +
+    `target=await ${importFnName}({file:blob,password:"",projectTitle:"QualiApp Sample Project"});` +
     `window.localStorage.setItem("qualiapp_sample_project_id",target.id)` +
     `}` +
     `const cleanUrl=new URL(window.location.href);` +
