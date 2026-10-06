@@ -53,7 +53,7 @@ it does **not** survive a direct upload that replaces `app.html` wholesale.
 ## Update check
 
 `app.html` also checks, on every load, whether a newer build is published
-here on GitHub (comparing its own embedded build date against
+here on GitHub (comparing its own embedded build timestamp against
 [`version.json`](version.json) at the repo root, fetched live from
 `raw.githubusercontent.com`) and shows a small dismissible bar prompting an
 update if so. Clicking **Update Now** downloads the latest `app.html` and,
