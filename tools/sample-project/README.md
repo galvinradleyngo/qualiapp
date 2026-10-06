@@ -70,10 +70,12 @@ node tools/sample-project/patch-app-html.js [path-to-app.html]
 It's idempotent per-feature and safe to run unconditionally: it checks for
 each feature's own marker (`qualiapp_sample_project_hash` for the sample
 loader — an older loader without it is upgraded in place — `QUALIAPP_BUILD_VERSION` for the update checker) and only applies
-whichever one is missing. `version.json` at the repo root is always
-rewritten to match whatever version ends up embedded in `app.html` — either
-today's date, if the update-checker patch was freshly applied, or the
-already-embedded version, if it was already present — so the two files
+whichever one is missing. The one exception is the embedded build version:
+every run re-stamps `window.QUALIAPP_BUILD_VERSION` with the current UTC
+timestamp (e.g. `2026-10-06T05:26:43Z`) and writes the same value to
+`version.json`, so every posted `app.html` counts as a new build — even two on
+the same day — and already-downloaded copies (including ones stamped with a
+plain date, which sorts earlier) show the update bar. The two files
 never drift out of sync.
 
 It re-locates its splice points by their STABLE surroundings (literal UI

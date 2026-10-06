@@ -144,9 +144,12 @@ function applySampleLoaderPatch(src) {
 function applyUpdateCheckerPatch(src, version) {
   const existing = src.match(/QUALIAPP_BUILD_VERSION=("(?:[^"\\]|\\.)*")/);
   if (existing) {
+    // Already patched: don't re-insert the banner, but re-stamp the embedded
+    // version so every posted app.html counts as a new build (the banner
+    // compares versions as strings, and ISO timestamps sort correctly).
     const existingVersion = JSON.parse(existing[1]);
-    console.log(`  update-checker patch: already present (embedded version ${existingVersion}), skipping.`);
-    return { src, version: existingVersion };
+    console.log(`  update-checker patch: already present (was ${existingVersion}), re-stamped to ${version}.`);
+    return { src: src.replace(existing[0], `QUALIAPP_BUILD_VERSION=${JSON.stringify(version)}`), version };
   }
   // Anchored on the sole real `</script>` closing tag: app.html's whole
   // bundle is one <script type="module">...</script> element (a literal
@@ -289,7 +292,9 @@ function applyWrongPasswordPatch(src) {
   return src.replace(full, replacement);
 }
 
-const candidateVersion = new Date().toISOString().slice(0, 10);
+// Full UTC timestamp (second precision), e.g. 2026-10-06T05:26:43Z, so two
+// uploads on the same day still get distinct, correctly ordered versions.
+const candidateVersion = new Date().toISOString().slice(0, 19) + 'Z';
 
 src = applySampleLoaderPatch(src);
 src = applyWrongPasswordPatch(src);
