@@ -1,0 +1,13 @@
+{
+  "name": "apa-formatting-studio",
+  "private": true,
+  "description": "Browser-based APA 7 formatting workspace (static site, no build step).",
+  "scripts": {
+    "test:engine": "node tests/engine.test.js && node tests/toc.test.js",
+    "test:browser": "node tests/features.test.js && node tests/url-metadata.test.js && node tests/home-and-draft.test.js && node tests/paper-review.test.js",
+    "test": "npm run test:engine && npm run test:browser"
+  },
+  "devDependencies": {
+    "playwright": "^1.56.1"
+  }
+}

@@ -1,363 +1,1172 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>QualiApp — The Offline Qualitative Research Studio</title>
-<meta name="description" content="QualiApp is a free, single-file qualitative research studio — choose Reflexive Thematic Analysis, Realist Thematic Analysis, or the 4 Cs Model for your study. Built to support your thinking, not replace it. Runs entirely offline in your desktop browser.">
-<link rel="icon" href="data:," />
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-<style>
-  :root{
-    --ink:#333a40;
-    --ink-soft:#5b6670;
-    --paper:#ffffff;
-    --surface-alt:#f1f4f6;
-    --border:#d6dbe0;
-    --border-strong:#b7c0c8;
-    --accent-50:#eff8fb;
-    --accent-100:#dbeff5;
-    --accent-600:#1f7b98;
-    --accent-700:#1d708c;
-    --accent-800:#134f63;
-    --amber-50:#fffbeb;
-    --amber-500:#f59e0b;
-    --amber-600:#d97706;
-  }
-  *{box-sizing:border-box}
-  html{scroll-behavior:smooth}
-  body{
-    margin:0;
-    font-family:"IBM Plex Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
-    color:var(--ink);
-    background:var(--paper);
-    line-height:1.55;
-  }
-  h1,h2,h3{
-    font-weight:700;
-    letter-spacing:-0.02em;
-    margin:0 0 .5em;
-  }
-  a{color:var(--accent-700)}
-  .wrap{max-width:1080px;margin:0 auto;padding:0 24px}
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>APA Formatting Studio | 7th Edition</title>
+    <script src="https://cdn.tailwindcss.com/3.4.1"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Playfair+Display:ital,wght@0,600;1,600&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@0.460.0"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <style>
+        body { 
+            font-family: 'Plus Jakarta Sans', sans-serif; 
+            background-color: #f8fafc; 
+        }
+        
+        /* Modern Scrollbars */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 10px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
 
-  /* Header */
-  header.top{
-    position:sticky;top:0;z-index:20;
-    background:rgba(255,255,255,0.92);
-    backdrop-filter:blur(6px);
-    border-bottom:1px solid var(--border);
-  }
-  .topbar{display:flex;align-items:center;justify-content:space-between;padding:14px 24px;max-width:1080px;margin:0 auto}
-  .brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:1.1rem}
-  .brand .mark{
-    width:30px;height:30px;border-radius:8px;
-    background:var(--accent-600);
-    display:flex;align-items:center;justify-content:center;
-    color:#fff;font-weight:700;
-  }
-  nav.topnav a{
-    color:var(--ink);text-decoration:none;font-size:.92rem;margin-left:22px;font-weight:600;
-    opacity:.75;
-  }
-  nav.topnav a:hover{opacity:1}
+        /* Live APA Preview Page Sandbox styling */
+        .preview-canvas {
+            background-color: #f1f5f9;
+            background-image: radial-gradient(#e2e8f0 1.5px, transparent 1.5px);
+            background-size: 24px 24px;
+        }
 
-  /* Hero */
-  .hero{
-    padding:72px 24px 56px;
-    background:
-      radial-gradient(1100px 480px at 12% -10%, var(--accent-50) 0%, transparent 60%),
-      radial-gradient(900px 420px at 100% 0%, var(--amber-50) 0%, transparent 55%),
-      var(--paper);
-    border-bottom:1px solid var(--border);
-  }
-  .hero-inner{max-width:1080px;margin:0 auto;text-align:center}
-  .kicker{
-    display:inline-block;font-size:.78rem;font-weight:700;letter-spacing:.08em;
-    text-transform:uppercase;color:var(--accent-800);
-    background:var(--accent-100);border:1px solid var(--accent-100);padding:6px 14px;border-radius:999px;
-    margin-bottom:22px;
-  }
-  .hero h1{font-size:clamp(2.1rem,4.6vw,3.4rem);max-width:820px;margin:0 auto .4em}
-  .hero h1 em{font-style:normal;color:var(--accent-700)}
-  .hero p.lead{
-    font-size:1.2rem;color:var(--ink-soft);max-width:600px;margin:0 auto 30px;
-  }
-  .hero p.lead b{color:var(--ink)}
-  .cta-row{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;margin-bottom:18px}
-  .btn{
-    display:inline-flex;align-items:center;gap:10px;
-    padding:14px 24px;border-radius:8px;font-weight:700;text-decoration:none;
-    font-size:1.02rem;border:1px solid transparent;transition:transform .12s ease, box-shadow .12s ease;
-  }
-  .btn:hover{transform:translateY(-1px)}
-  .btn-primary{
-    background:var(--accent-600);color:#fff;
-    box-shadow:0 10px 24px -8px rgba(31,123,152,.45);
-  }
-  .btn-primary:hover{background:var(--accent-700);box-shadow:0 14px 28px -8px rgba(31,123,152,.55)}
-  .btn-ghost{
-    background:#fff;color:var(--ink);border-color:var(--border-strong);
-  }
-  .btn svg{width:18px;height:18px;flex:none}
-  .filesize{font-size:.85rem;color:var(--ink-soft)}
+        .apa-preview-container {
+            font-family: 'Times New Roman', Times, serif;
+            color: #000000;
+            background: #ffffff;
+            line-height: 2; /* True APA standard is double spaced */
+            font-size: 12pt;
+        }
 
-  .hero-meta{list-style:none;display:flex;flex-wrap:wrap;gap:6px 20px;justify-content:center;margin:22px auto 0;padding:0;max-width:760px;font-size:.88rem;color:var(--ink-soft)}
-  .hero-meta li::before{content:'✓';color:var(--accent-700);font-weight:700;margin-right:7px}
-  .fine{text-align:center;font-size:.9rem;color:var(--ink-soft);margin:0}
-  section.soft{background:var(--surface-alt);border-top:1px solid var(--border);border-bottom:1px solid var(--border)}
-  .offline-note{
-    max-width:660px;margin:26px auto 0;
-    display:flex;gap:12px;align-items:flex-start;text-align:left;
-    background:#fff;border:1px solid var(--border);border-radius:12px;padding:16px 18px;
-    box-shadow:0 6px 20px -14px rgba(51,58,64,.35);
-  }
-  .offline-note svg{flex:none;width:22px;height:22px;color:var(--accent-700);margin-top:2px}
-  .offline-note b{color:var(--ink)}
-  .offline-note span{color:var(--ink-soft);font-size:.92rem}
+        .apa-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 12pt;
+            margin-bottom: 12pt;
+            line-height: 1.5; /* Slightly condensed within tables for ideal layout spacing */
+        }
+        .apa-table th, .apa-table td {
+            padding: 8px 10px;
+            text-align: center;
+            border: none;
+            font-size: 11pt;
+        }
+        .apa-table.preview-fixed {
+            table-layout: fixed;
+        }
+        .apa-table.preview-fixed th,
+        .apa-table.preview-fixed td {
+            overflow-wrap: break-word;
+            word-break: normal;
+        }
+        /* In a fixed layout the stub column gets a larger share so row labels do not break mid-word */
+        .apa-table.preview-fixed th:first-child { width: 30%; }
+        .apa-table.preview-compact th,
+        .apa-table.preview-compact td {
+            font-size: 10pt;
+            padding: 6px 6px;
+            line-height: 1.35;
+        }
+        .apa-table.preview-tight th,
+        .apa-table.preview-tight td {
+            font-size: 9pt;
+            padding: 4px 4px;
+            line-height: 1.25;
+        }
+        /* APA Standard: Stub column (first column) is always left-aligned */
+        .apa-table th:first-child, .apa-table td:first-child {
+            text-align: left; 
+        }
+        .apa-table th {
+            border-top: 1px solid #000000;
+            border-bottom: 1px solid #000000;
+            font-weight: normal;
+            vertical-align: bottom;
+        }
+        .apa-table tr:last-child td {
+            border-bottom: 1px solid #000000;
+        }
+        
+        /* Seamless Spreadsheet Cells */
+        .editor-cell {
+            transition: all 0.15s ease-in-out;
+        }
+        .editor-cell:focus {
+            outline: none;
+            background-color: #eff6ff;
+            box-shadow: inset 0 0 0 2px #3b82f6;
+        }
+        [contenteditable]:empty:before {
+            content: attr(data-placeholder);
+            color: #94a3b8;
+            pointer-events: none;
+            display: block;
+        }
 
-  /* Sections */
-  section{padding:56px 24px}
-  .section-head{max-width:680px;margin:0 auto 32px;text-align:center}
-  .section-head h2{margin-bottom:.35em}
-  .section-head h2{font-size:clamp(1.6rem,3vw,2.1rem)}
-  .section-head p{color:var(--ink-soft);font-size:1.05rem}
+        /* Soft gradient glassmorphism effects */
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.8);
+            backdrop-filter: blur(12px);
+        }
 
-  .grid{
-    display:grid;grid-template-columns:repeat(3,1fr);gap:20px;max-width:1080px;margin:0 auto;
-  }
-  .card{
-    background:#fff;border:1px solid var(--border);border-radius:8px;padding:24px;
-  }
-  .card .ico{
-    width:42px;height:42px;border-radius:8px;display:flex;align-items:center;justify-content:center;
-    background:var(--accent-50);color:var(--accent-700);margin-bottom:14px;
-  }
-  .card.amber .ico{background:var(--amber-50);color:var(--amber-600)}
-  .card h3{font-size:1.05rem;margin-bottom:.3em}
-  .card .tag{
-    display:inline-block;font-size:.7rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;
-    color:var(--ink-soft);background:var(--surface-alt);border:1px solid var(--border);
-    padding:2px 8px;border-radius:999px;margin-bottom:10px;
-  }
-  .card p{color:var(--ink-soft);font-size:.94rem;margin:0}
-  .card p.cite{margin-top:10px;font-size:.82rem;color:var(--ink-soft);font-style:italic}
+        .apa-reference-list {
+            margin-top: 12pt;
+            margin-bottom: 0;
+            padding-left: 0;
+            list-style: none;
+            line-height: 2;
+            font-size: 12pt;
+        }
 
-  .steps{
-    max-width:900px;margin:0 auto;display:grid;grid-template-columns:repeat(3,1fr);gap:24px;
-  }
-  .step{position:relative;padding-left:0;text-align:center}
-  .step .num{
-    width:40px;height:40px;border-radius:50%;background:var(--accent-600);color:#fff;
-    display:flex;align-items:center;justify-content:center;font-weight:700;
-    margin:0 auto 14px;
-  }
-  .step h3{font-size:1.05rem}
-  .step p{color:var(--ink-soft);font-size:.92rem}
+        .apa-reference-item {
+            margin: 0;
+            padding-left: 0.5in;
+            text-indent: -0.5in;
+        }
 
-  .band{
-    background:var(--ink);color:var(--paper);
-  }
-  .band .section-head p{color:#c3ccd2}
-  .band .section-head h2{color:#fff}
+        .issue-list {
+            list-style: disc;
+            padding-left: 1rem;
+            margin: 0.25rem 0 0;
+        }
 
-  .quote{
-    max-width:720px;margin:0 auto;text-align:center;
-    font-style:italic;font-size:1.3rem;color:var(--ink);
-  }
-
-  .methods{
-    max-width:960px;margin:0 auto;display:grid;grid-template-columns:repeat(3,1fr);gap:20px;
-  }
-  .method-card{
-    background:var(--surface-alt);border:1px solid var(--border);border-radius:8px;padding:22px;
-  }
-  .method-card h3{font-size:1.02rem;color:var(--accent-800);margin-bottom:10px}
-  .method-card p{color:var(--ink-soft);font-size:.92rem;margin:0 0 10px}
-  .method-card p.cite{font-size:.78rem;color:var(--ink-soft);border-top:1px dashed var(--border-strong);padding-top:10px;margin:0}
-
-  .license-box{
-    max-width:820px;margin:0 auto;background:#fff;border:1px solid var(--border);
-    border-radius:8px;padding:30px 32px;
-  }
-  .license-box h3{font-size:1.15rem;display:flex;align-items:center;gap:10px}
-  .license-badges{display:flex;gap:8px;margin:14px 0 18px;flex-wrap:wrap}
-  .license-badges span{
-    font-size:.72rem;font-weight:700;letter-spacing:.04em;
-    background:var(--surface-alt);border:1px solid var(--border);color:var(--ink);
-    padding:5px 10px;border-radius:6px;
-  }
-  .license-box p{color:var(--ink-soft);font-size:.96rem}
-  .license-box ul{color:var(--ink-soft);font-size:.96rem;padding-left:20px}
-  .license-box li{margin-bottom:6px}
-
-  footer{
-    border-top:1px solid var(--border);padding:34px 24px;text-align:center;
-    color:var(--ink-soft);font-size:.88rem;
-  }
-  footer a{color:var(--ink-soft);text-decoration:underline}
-
-  @media (max-width:820px){
-    .grid, .steps, .methods{grid-template-columns:1fr}
-    nav.topnav{display:none}
-  }
-</style>
+        .issue-list li {
+            margin: 0.125rem 0;
+        }
+        /* Responsive behaviour */
+        html { -webkit-text-size-adjust: 100%; }
+        body.h-screen { height: 100vh; height: 100dvh; }
+        .apa-preview-container { overflow-x: auto; }
+        .tap-target { min-width: 2rem; min-height: 2rem; }
+        @media (max-width: 1023px) {
+            #editor-view[data-pane="edit"] #preview-pane { display: none; }
+            #editor-view[data-pane="preview"] #edit-pane { display: none; }
+        }
+        @media (max-width: 639px) {
+            input[type="text"], input:not([type]), select, textarea { font-size: 16px !important; }
+            #toast { max-width: calc(100vw - 2rem); }
+        }
+        @media (hover: none) { .group:hover .group-hover\:opacity-100 { opacity: 0; } }
+        @supports not (backdrop-filter: blur(1px)) { .backdrop-blur-md, .backdrop-blur-sm { background-color: rgba(255,255,255,0.95); } }
+        .toc-row { display: flex; align-items: flex-end; }
+        .toc-text { flex: 0 1 auto; padding-left: 0.5in; text-indent: -0.5in; }
+        .toc-dots { flex: 1 1 2rem; min-width: 1rem; border-bottom: 2px dotted #000; margin: 0 4px 0.45em; }
+        .toc-gap { flex: 1 1 2rem; }
+        .toc-page { flex: none; padding-left: 4px; }
+        .pr-stage-done { color: #047857; }
+        .pr-stage-active { color: #4f46e5; font-weight: 600; }
+        .pr-stage-wait { color: #94a3b8; }
+        .pr-diff-before { background: #fee2e2; border-radius: 4px; padding: 0 3px; }
+        .pr-diff-after { background: #dcfce7; border-radius: 4px; padding: 0 3px; }
+        :focus-visible { outline: 2px solid #4f46e5; outline-offset: 2px; }
+        .prov-found { box-shadow: inset 3px 0 0 #10b981 !important; }
+        .prov-guess { box-shadow: inset 3px 0 0 #f59e0b !important; }
+        .prov-missing { box-shadow: inset 3px 0 0 #f43f5e !important; }
+    </style>
 </head>
-<body>
+<body class="h-screen flex flex-col overflow-hidden text-slate-800">
 
-<header class="top">
-  <div class="topbar">
-    <div class="brand"><span class="mark">Q</span> QualiApp</div>
-    <nav class="topnav">
-      <a href="#features">Features</a>
-      <a href="#methods">Methods</a>
-      <a href="#how">How it works</a>
-      <a href="#sample">Sample</a>
-    </nav>
-  </div>
-</header>
+    <!-- Toast Notification system -->
+    <div id="toast" role="status" aria-live="polite" class="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 transform translate-y-12 opacity-0 pointer-events-none transition-all duration-300 flex items-center gap-3 bg-slate-900 text-white px-5 py-3.5 rounded-xl shadow-xl border border-slate-800 text-sm">
+        <div class="bg-emerald-500/20 text-emerald-400 p-1 rounded-lg">
+            <i data-lucide="check" class="w-4 h-4"></i>
+        </div>
+        <span id="toast-message" class="font-medium">Success Action completed!</span>
+    </div>
 
-<section class="hero">
-  <div class="hero-inner">
-    <span class="kicker">Free &amp; open · Single file · Zero setup</span>
-    <h1>Qualitative analysis, <em>unplugged.</em></h1>
-    <p class="lead">
-      A full qualitative research studio in one HTML file — codebooks, coded transcripts,
-      themes, and intercoder reliability. No sign-up, no server, no internet required.
-    </p>
-    <div class="cta-row">
-      <a class="btn btn-primary" href="app.html" download="QualiApp.html">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
-        Download QualiApp
-      </a>
-      <a class="btn btn-ghost" href="app.html">
-        Try it in this browser
-      </a>
-    </div>
-    <div class="filesize">One file, ~6.0 MB. Works the moment it finishes downloading.</div>
-    <ul class="hero-meta">
-      <li>Desktop &amp; laptop browsers</li>
-      <li>Completely offline — your data never leaves your machine</li>
-      <li>Supports your thinking; never generates codes or themes</li>
-    </ul>
-  </div>
-</section>
+    <!-- Main Workspace Navbar -->
+    <header class="bg-white/80 backdrop-blur-md border-b border-slate-200/80 px-3 sm:px-8 py-3 sm:py-4 flex justify-between items-center gap-2 shrink-0 z-20">
+        <div class="flex items-center gap-2 sm:gap-3 cursor-pointer min-w-0" onclick="showHome()" title="Back to home">
+            <div class="bg-gradient-to-tr from-blue-600 to-indigo-600 text-white p-2 sm:p-2.5 rounded-xl shadow-md shadow-blue-500/10 shrink-0">
+                <i data-lucide="graduation-cap" class="w-5 h-5"></i>
+            </div>
+            <div>
+                <h1 class="text-base sm:text-lg font-bold bg-gradient-to-r from-slate-900 to-indigo-950 bg-clip-text text-transparent flex items-center gap-2">
+                    APA Formatting Studio
+                    <span class="hidden sm:inline text-[10px] font-semibold uppercase tracking-wider bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded-full border border-indigo-100">7th Edition</span>
+                </h1>
+                <p class="hidden md:block text-xs text-slate-400">Citations, references, tables, contents and full papers</p>
+            </div>
+        </div>
+        <div class="flex items-center gap-2 sm:gap-3 shrink-0">
+            <button id="btn-home" onclick="showHome()" class="hidden text-sm font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-50 border border-slate-200 px-3 sm:px-4 py-2.5 rounded-xl transition-all duration-200 items-center gap-2" aria-label="Home">
+                <i data-lucide="home" class="w-4 h-4"></i> <span class="sr-only sm:not-sr-only">Home</span>
+            </button>
+            <button id="btn-copy" onclick="copyFormattedContent()" class="hidden bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold py-2.5 px-3 sm:px-4 rounded-xl border border-slate-200 transition-all duration-200 items-center gap-2">
+                <i data-lucide="copy" class="w-4 h-4"></i> <span id="btn-copy-label" class="sr-only sm:not-sr-only">Copy Formatted Table</span>
+            </button>
+            <button id="btn-export" onclick="exportToWord()" class="hidden bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold py-2.5 px-3 sm:px-5 rounded-xl shadow-lg shadow-blue-500/15 border border-blue-500/10 transition-all duration-200 items-center gap-2">
+                <i data-lucide="download-cloud" class="w-4 h-4"></i> <span id="btn-export-label" class="sr-only sm:not-sr-only">Export Table to Word</span>
+            </button>
+        </div>
+    </header>
 
-<section id="features">
-  <div class="section-head">
-    <h2>Built for how you actually analyze</h2>
-  </div>
-  <div class="grid">
-    <div class="card">
-      <div class="ico"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></div>
-      <h3>Codebook &amp; Theme Builder</h3>
-      <p>Cluster codes into initial themes, then overarching themes.</p>
-    </div>
-    <div class="card">
-      <div class="ico"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg></div>
-      <h3>Transcript Coding</h3>
-      <p>Highlight, tag and annotate, with a reflexive journal alongside.</p>
-    </div>
-    <div class="card amber">
-      <div class="ico"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20V10"/><path d="M18 20V4"/><path d="M6 20v-4"/></svg></div>
-      <h3>Realist Themes &amp; 4 Cs</h3>
-      <p>Two ready-made alternatives to reflexive theming.</p>
-    </div>
-    <div class="card">
-      <div class="ico"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
-      <h3>Intercoder Reliability</h3>
-      <p>Send out assignments, bring back coding, check agreement.</p>
-    </div>
-    <div class="card">
-      <div class="ico"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></div>
-      <h3>Fieldnotes &amp; Observations</h3>
-      <p>Keep what you saw alongside what was said.</p>
-    </div>
-    <div class="card">
-      <div class="ico"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>
-      <h3>Encrypted Backups</h3>
-      <p>Move between devices or share with a collaborator, password-protected.</p>
-    </div>
-  </div>
-</section>
+    <!-- Main Workspace Frame -->
+    <main class="flex-1 flex overflow-hidden relative">
+        
+        <!-- Dashboard Home View (Template Selection Workspace) -->
+        <div id="home-view" class="absolute inset-0 bg-slate-50/50 z-30 flex flex-col items-center overflow-y-auto custom-scrollbar p-4 sm:p-6 md:p-12">
+            <div class="max-w-5xl w-full space-y-8 sm:space-y-10">
 
-<section id="methods" class="band">
-  <div class="section-head">
-    <h2>Grounded in published methods</h2>
-  </div>
-  <div class="methods">
-    <div class="method-card">
-      <h3>Reflexive Thematic Analysis</h3>
-      <p class="cite">Braun, V., &amp; Clarke, V. (2022). <em>Thematic analysis: A practical guide</em> (A. Maher, Ed.).</p>
-    </div>
-    <div class="method-card">
-      <h3>Realist Thematic Analysis</h3>
-      <p class="cite">Wiltshire, G., &amp; Ronkainen, N. (2021). A realist approach to thematic analysis: Making sense of qualitative data through experiential, inferential and dispositional themes. <em>Journal of Critical Realism</em>, <em>20</em>(2), 159–180.</p>
-    </div>
-    <div class="method-card">
-      <h3>The 4 Cs Model</h3>
-      <p class="cite">Christodoulou, M. (2024). The four C's model of thematic analysis: A critical realist perspective. <em>Journal of Critical Realism</em>, <em>23</em>(1), 33–52.</p>
-    </div>
-  </div>
-</section>
+                <!-- Hero -->
+                <div class="text-center space-y-3 max-w-2xl mx-auto">
+                    <h2 class="text-3xl sm:text-4xl font-extrabold tracking-tight text-slate-900">
+                        APA 7 Formatting, <span class="bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">Simplified.</span>
+                    </h2>
+                    <p class="text-slate-500 text-base leading-relaxed">
+                        Generate citations, tidy your reference list, build tables and contents pages, or reformat a whole paper, then copy or export to Word.
+                    </p>
+                </div>
 
-<section id="how">
-  <div class="section-head">
-    <h2>Up and running in a minute</h2>
-  </div>
-  <div class="steps">
-    <div class="step">
-      <div class="num">1</div>
-      <h3>Download</h3>
-      <p>One HTML file is the entire app.</p>
-    </div>
-    <div class="step">
-      <div class="num">2</div>
-      <h3>Open</h3>
-      <p>Double-click it. No install, no terminal.</p>
-    </div>
-    <div class="step">
-      <div class="num">3</div>
-      <h3>Analyze</h3>
-      <p>Create a project and code your data, offline.</p>
-    </div>
-  </div>
-</section>
+                <!-- Resume saved work -->
+                <div id="home-continue" class="hidden max-w-3xl w-full mx-auto bg-emerald-50 border border-emerald-200 rounded-2xl px-5 py-4 flex flex-wrap items-center justify-between gap-3">
+                    <div class="flex items-center gap-3 text-sm text-emerald-900">
+                        <i data-lucide="history" class="w-5 h-5 text-emerald-600"></i>
+                        <span><strong>Welcome back.</strong> <span id="home-continue-text">Your bibliography draft was saved.</span></span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button type="button" onclick="loadBibliographyWorkspace()" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-4 py-2 rounded-lg transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-600">Resume bibliography</button>
+                        <button type="button" onclick="discardBibliographyDraft()" class="text-xs font-semibold text-emerald-800 hover:underline px-2 py-2">Discard</button>
+                    </div>
+                </div>
 
-<section id="sample" class="soft">
-  <div class="section-head">
-    <h2>Explore a finished project</h2>
-    <p>A ready-made project with coded data and completed analysis workspaces.</p>
-  </div>
-  <div class="cta-row">
-    <a class="btn btn-primary" href="app.html?sample=1" target="_blank" rel="noopener">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-      Open the sample project
-    </a>
-  </div>
-  <p class="fine">
-    Loads straight into your browser, no import needed. Or
-    <a href="sample-project.qbk2" download="sample-project.qbk2">download the .qbk2 file</a>
-    and use <b>Import a backup…</b> (no password).
-  </p>
-</section>
+                <!-- Tools -->
+                <div id="home-tools" class="space-y-10">
+                    <div class="space-y-4">
+                        <h3 class="text-sm font-extrabold uppercase tracking-widest text-slate-500 text-center">What do you need?</h3>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+                            <button type="button" onclick="loadCitationWorkspace()" class="text-left bg-white border border-slate-200/80 hover:border-indigo-500 hover:shadow-xl hover:shadow-indigo-500/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-500 rounded-2xl p-6 transition-all duration-300 flex flex-col gap-4 group">
+                                <div class="flex items-center justify-between">
+                                    <div class="bg-indigo-50 text-indigo-600 p-3.5 rounded-xl group-hover:bg-indigo-600 group-hover:text-white transition-all duration-300"><i data-lucide="quote" class="w-5 h-5"></i></div>
+                                    <span class="text-[10px] font-bold uppercase tracking-wider text-indigo-600 bg-indigo-50 px-2 py-1 rounded-full">Step 1</span>
+                                </div>
+                                <div class="space-y-1">
+                                    <h4 class="font-bold text-slate-800 group-hover:text-indigo-600 transition-colors">Citation Generator</h4>
+                                    <p class="text-xs text-slate-500 leading-relaxed">Paste a DOI or web link, or upload a PDF, to get an APA 7 reference and in-text citations.</p>
+                                </div>
+                            </button>
 
-<footer>
-  <div class="wrap">
-    QualiApp — an offline qualitative research studio.
-    <br>
-    Free to share and adapt under
-    <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" target="_blank" rel="noopener">CC BY-NC-SA 4.0</a>:
-    credit QualiApp, keep it non-commercial, and share changes under the same license.
-    <br>
-    Co-designed with Claude by Galvin Ngo (<a href="mailto:gngo@ateneo.edu">gngo@ateneo.edu</a>).
-    <br>
-    <!-- Bump this date on every push to index.html or app.html. -->
-    Page last updated: October 12, 2026.
-  </div>
-</footer>
+                            <button type="button" onclick="loadBibliographyWorkspace()" class="text-left bg-white border border-slate-200/80 hover:border-emerald-500 hover:shadow-xl hover:shadow-emerald-500/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-500 rounded-2xl p-6 transition-all duration-300 flex flex-col gap-4 group">
+                                <div class="flex items-center justify-between">
+                                    <div class="bg-emerald-50 text-emerald-600 p-3.5 rounded-xl group-hover:bg-emerald-600 group-hover:text-white transition-all duration-300"><i data-lucide="book-copy" class="w-5 h-5"></i></div>
+                                    <span class="text-[10px] font-bold uppercase tracking-wider text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full">Step 2</span>
+                                </div>
+                                <div class="space-y-1">
+                                    <h4 class="font-bold text-slate-800 group-hover:text-emerald-600 transition-colors">Bibliography Formatter</h4>
+                                    <p class="text-xs text-slate-500 leading-relaxed">Paste references to sort them, apply hanging indents and italics, and run APA checks.</p>
+                                </div>
+                            </button>
 
+                            <button type="button" onclick="openTableTemplates()" class="text-left bg-white border border-slate-200/80 hover:border-blue-500 hover:shadow-xl hover:shadow-blue-500/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500 rounded-2xl p-6 transition-all duration-300 flex flex-col gap-4 group">
+                                <div class="flex items-center justify-between">
+                                    <div class="bg-blue-50 text-blue-600 p-3.5 rounded-xl group-hover:bg-blue-600 group-hover:text-white transition-all duration-300"><i data-lucide="table-properties" class="w-5 h-5"></i></div>
+                                    <span class="text-[10px] font-bold uppercase tracking-wider text-blue-600 bg-blue-50 px-2 py-1 rounded-full">Tables</span>
+                                </div>
+                                <div class="space-y-1">
+                                    <h4 class="font-bold text-slate-800 group-hover:text-blue-600 transition-colors">Table Formatter</h4>
+                                    <p class="text-xs text-slate-500 leading-relaxed">Build APA 7 tables from templates or paste one from Word or Excel, with live preview.</p>
+                                </div>
+                            </button>
+
+                            <button type="button" onclick="loadTocWorkspace()" class="text-left bg-white border border-slate-200/80 hover:border-amber-500 hover:shadow-xl hover:shadow-amber-500/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-500 rounded-2xl p-6 transition-all duration-300 flex flex-col gap-4 group">
+                                <div class="flex items-center justify-between">
+                                    <div class="bg-amber-50 text-amber-600 p-3.5 rounded-xl group-hover:bg-amber-500 group-hover:text-white transition-all duration-300"><i data-lucide="list-ordered" class="w-5 h-5"></i></div>
+                                    <span class="text-[10px] font-bold uppercase tracking-wider text-amber-700 bg-amber-50 px-2 py-1 rounded-full">New</span>
+                                </div>
+                                <div class="space-y-1">
+                                    <h4 class="font-bold text-slate-800 group-hover:text-amber-600 transition-colors">Table of Contents</h4>
+                                    <p class="text-xs text-slate-500 leading-relaxed">Build an APA-style contents page in a form, or upload a rough draft to clean up, then export to Word.</p>
+                                </div>
+                            </button>
+
+                            <button type="button" onclick="loadPaperReviewer()" class="text-left bg-white border border-slate-200/80 hover:border-violet-500 hover:shadow-xl hover:shadow-violet-500/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-500 rounded-2xl p-6 transition-all duration-300 flex flex-col gap-4 group sm:col-span-2">
+                                <div class="flex items-center justify-between">
+                                    <div class="bg-violet-50 text-violet-600 p-3.5 rounded-xl group-hover:bg-violet-600 group-hover:text-white transition-all duration-300"><i data-lucide="file-check-2" class="w-5 h-5"></i></div>
+                                    <span class="text-[10px] font-bold uppercase tracking-wider text-violet-700 bg-violet-50 px-2 py-1 rounded-full">New</span>
+                                </div>
+                                <div class="space-y-1">
+                                    <h4 class="font-bold text-slate-800 group-hover:text-violet-600 transition-colors">Reformat Your Paper</h4>
+                                    <p class="text-xs text-slate-500 leading-relaxed">Upload a Word paper for an end-to-end APA 7 review: page setup, headings, pagination, table and figure numbering, citations and references. Formatting is fixed for you; anything that could change your wording is asked first.</p>
+                                </div>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- How it works -->
+                    <div class="bg-white border border-slate-200/80 rounded-2xl p-6">
+                        <h3 class="text-sm font-extrabold uppercase tracking-widest text-slate-500 mb-4">How it works</h3>
+                        <ol class="grid grid-cols-1 md:grid-cols-3 gap-5 text-sm text-slate-600">
+                            <li class="flex gap-3"><span class="shrink-0 w-6 h-6 rounded-full bg-indigo-100 text-indigo-700 text-xs font-bold flex items-center justify-center">1</span><span><strong class="text-slate-800">Generate.</strong> Create each reference from a link, DOI or PDF and review the flagged fields.</span></li>
+                            <li class="flex gap-3"><span class="shrink-0 w-6 h-6 rounded-full bg-emerald-100 text-emerald-700 text-xs font-bold flex items-center justify-center">2</span><span><strong class="text-slate-800">Collect.</strong> Add citations to the bibliography. It sorts them and fixes common APA slips.</span></li>
+                            <li class="flex gap-3"><span class="shrink-0 w-6 h-6 rounded-full bg-blue-100 text-blue-700 text-xs font-bold flex items-center justify-center">3</span><span><strong class="text-slate-800">Export.</strong> Copy with formatting or download a Word file. Tables work the same way.</span></li>
+                        </ol>
+                    </div>
+                <p id="privacy-note" class="max-w-3xl mx-auto text-center text-xs text-slate-500 leading-relaxed flex items-start justify-center gap-2">
+                    <i data-lucide="shield-check" class="w-4 h-4 text-emerald-600 shrink-0 mt-0.5"></i>
+                    <span><strong class="text-slate-700">Your data stays on your device.</strong> Papers, tables, bibliographies and contents pages are processed in your browser and never uploaded. The only exception is the Citation Generator, which sends the link or DOI you enter to public lookup services (such as Crossref) to find its details. A saved bibliography draft is kept in this browser only, and you can discard it from the home page.</span>
+                </p>
+                </div>
+
+                <!-- Table templates (shown after choosing Table Formatter) -->
+                <div id="table-templates-section" class="hidden space-y-8">
+                    <div class="flex items-center justify-between gap-4 border-b border-slate-200/80 pb-3">
+                        <div>
+                            <h3 class="text-xl font-extrabold text-slate-900">Table Formatter</h3>
+                            <p class="text-sm text-slate-500">Choose a starting point.</p>
+                        </div>
+                        <button type="button" onclick="showHome()" class="text-sm font-semibold text-slate-600 hover:text-slate-900 border border-slate-200 bg-white hover:bg-slate-50 px-4 py-2 rounded-xl flex items-center gap-2 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500">
+                            <i data-lucide="arrow-left" class="w-4 h-4"></i> All tools
+                        </button>
+                    </div>
+
+                    <div class="space-y-4">
+                        <h4 class="text-base font-bold text-slate-800 tracking-tight">Start from scratch</h4>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <button type="button" onclick="loadTemplate('blank')" class="text-left bg-white border border-slate-200/80 hover:border-blue-500 hover:shadow-xl hover:shadow-blue-500/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500 rounded-2xl p-6 transition-all duration-300 flex items-center gap-4 group">
+                                <div class="bg-slate-50 text-slate-500 p-3.5 rounded-2xl group-hover:bg-blue-50 group-hover:text-blue-600 transition-all duration-300"><i data-lucide="plus" class="w-6 h-6"></i></div>
+                                <div>
+                                    <h5 class="font-bold text-slate-800 group-hover:text-blue-600 transition-colors">Start Empty Canvas</h5>
+                                    <p class="text-xs text-slate-500 mt-1">Begin with a blank custom table grid.</p>
+                                </div>
+                            </button>
+                            <button type="button" onclick="openPasteTableModal()" class="text-left bg-white border border-slate-200/80 hover:border-amber-500 hover:shadow-xl hover:shadow-amber-500/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-500 rounded-2xl p-6 transition-all duration-300 flex items-center gap-4 group">
+                                <div class="bg-amber-50 text-amber-500 p-3.5 rounded-2xl group-hover:bg-amber-500 group-hover:text-white transition-all duration-300"><i data-lucide="clipboard-paste" class="w-6 h-6"></i></div>
+                                <div>
+                                    <h5 class="font-bold text-slate-800 group-hover:text-amber-600 transition-colors">Paste Existing Table</h5>
+                                    <p class="text-xs text-slate-500 mt-1">Import from Word, Google Docs, Excel, or Google Sheets.</p>
+                                </div>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="space-y-4">
+                        <div class="flex items-center gap-2 border-b border-slate-200/80 pb-3">
+                            <span class="p-1 bg-blue-50 text-blue-600 rounded-lg"><i data-lucide="binary" class="w-4 h-4"></i></span>
+                            <h4 class="text-base font-bold text-slate-800 tracking-tight">Quantitative Table Blueprints</h4>
+                        </div>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <button type="button" onclick="loadTemplate('descriptive')" class="text-left bg-white border border-slate-200/80 hover:border-blue-500 hover:shadow-xl hover:shadow-blue-500/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500 rounded-2xl p-6 transition-all duration-300 flex gap-4 group">
+                                <div class="bg-blue-50 text-blue-600 p-4 rounded-xl group-hover:bg-blue-600 group-hover:text-white transition-all duration-300 shrink-0 self-start"><i data-lucide="bar-chart-3" class="w-5 h-5"></i></div>
+                                <div class="space-y-1">
+                                    <h5 class="font-bold text-slate-800 group-hover:text-blue-600 transition-colors">Descriptive Statistics</h5>
+                                    <p class="text-xs text-slate-500 leading-relaxed">Means (M), standard deviations (SD), and sample sizes (n).</p>
+                                </div>
+                            </button>
+                            <button type="button" onclick="loadTemplate('correlation')" class="text-left bg-white border border-slate-200/80 hover:border-blue-500 hover:shadow-xl hover:shadow-blue-500/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500 rounded-2xl p-6 transition-all duration-300 flex gap-4 group">
+                                <div class="bg-blue-50 text-blue-600 p-4 rounded-xl group-hover:bg-blue-600 group-hover:text-white transition-all duration-300 shrink-0 self-start"><i data-lucide="trending-up" class="w-5 h-5"></i></div>
+                                <div class="space-y-1">
+                                    <h5 class="font-bold text-slate-800 group-hover:text-blue-600 transition-colors">Correlation Matrix</h5>
+                                    <p class="text-xs text-slate-500 leading-relaxed">Correlation grid with significance footnotes (p-values).</p>
+                                </div>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="space-y-4">
+                        <div class="flex items-center gap-2 border-b border-slate-200/80 pb-3">
+                            <span class="p-1 bg-purple-50 text-purple-600 rounded-lg"><i data-lucide="align-left" class="w-4 h-4"></i></span>
+                            <h4 class="text-base font-bold text-slate-800 tracking-tight">Qualitative Table Blueprints</h4>
+                        </div>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <button type="button" onclick="loadTemplate('qual_themes')" class="text-left bg-white border border-slate-200/80 hover:border-purple-500 hover:shadow-xl hover:shadow-purple-500/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-purple-500 rounded-2xl p-6 transition-all duration-300 flex gap-4 group">
+                                <div class="bg-purple-50 text-purple-600 p-4 rounded-xl group-hover:bg-purple-600 group-hover:text-white transition-all duration-300 shrink-0 self-start"><i data-lucide="message-square-quote" class="w-5 h-5"></i></div>
+                                <div class="space-y-1">
+                                    <h5 class="font-bold text-slate-800 group-hover:text-purple-600 transition-colors">Themes &amp; Quotes Matrix</h5>
+                                    <p class="text-xs text-slate-500 leading-relaxed">Themes, subthemes, and illustrative participant quotes.</p>
+                                </div>
+                            </button>
+                            <button type="button" onclick="loadTemplate('qual_demographics')" class="text-left bg-white border border-slate-200/80 hover:border-purple-500 hover:shadow-xl hover:shadow-purple-500/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-purple-500 rounded-2xl p-6 transition-all duration-300 flex gap-4 group">
+                                <div class="bg-purple-50 text-purple-600 p-4 rounded-xl group-hover:bg-purple-600 group-hover:text-white transition-all duration-300 shrink-0 self-start"><i data-lucide="users" class="w-5 h-5"></i></div>
+                                <div class="space-y-1">
+                                    <h5 class="font-bold text-slate-800 group-hover:text-purple-600 transition-colors">Participant Characteristics</h5>
+                                    <p class="text-xs text-slate-500 leading-relaxed">Pseudonyms, demographics, cohorts, and metrics.</p>
+                                </div>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Reformat Your Paper (full-width wizard) -->
+        <div id="paper-view" class="absolute inset-0 bg-slate-50 z-30 overflow-y-auto custom-scrollbar p-4 sm:p-6 md:p-10" style="display: none;">
+            <div class="max-w-4xl w-full mx-auto space-y-6">
+                <div class="flex items-start justify-between gap-4">
+                    <div>
+                        <h2 class="text-2xl font-extrabold text-slate-900 flex items-center gap-2"><i data-lucide="file-check-2" class="w-6 h-6 text-violet-600"></i> Reformat Your Paper</h2>
+                        <p class="text-sm text-slate-500 mt-1">Upload a Word file. It is checked against APA 7 and reformatted. Formatting fixes happen automatically; anything that could change your wording is shown to you first.</p>
+                    </div>
+                </div>
+
+                <!-- Step 1: upload and options -->
+                <div id="pr-step-upload" class="space-y-5">
+                    <label id="pr-dropzone" for="pr-file-input" class="block bg-white border-2 border-dashed border-slate-300 rounded-2xl p-6 sm:p-10 text-center cursor-pointer hover:border-violet-400 hover:bg-violet-50/30 transition-colors">
+                        <span class="block mx-auto w-12 h-12 rounded-2xl bg-violet-50 text-violet-600 flex items-center justify-center mb-3"><i data-lucide="file-up" class="w-6 h-6"></i></span>
+                        <span id="pr-file-name" class="block text-base font-bold text-slate-800">Drop your paper here, or click to browse</span>
+                        <span class="block text-xs text-slate-500 mt-1">Word .docx files. Saved from an older .doc? In Word choose File &gt; Save As &gt; Word Document (.docx).</span>
+                    </label>
+                    <input type="file" id="pr-file-input" accept=".docx" class="sr-only">
+                    <p id="pr-upload-error" class="hidden text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-xl p-3" role="alert"></p>
+
+                    <div class="bg-white border border-slate-200 rounded-2xl p-5 space-y-4">
+                        <h3 class="font-bold text-slate-800 text-sm">Options</h3>
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                            <div>
+                                <label for="pr-type" class="block text-xs font-semibold text-slate-600 mb-1">Paper type</label>
+                                <select id="pr-type" class="w-full border border-slate-200 rounded-xl p-3 text-sm bg-white">
+                                    <option value="student">Student paper</option>
+                                    <option value="professional">Professional paper (running head)</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label for="pr-font" class="block text-xs font-semibold text-slate-600 mb-1">Font</label>
+                                <select id="pr-font" class="w-full border border-slate-200 rounded-xl p-3 text-sm bg-white">
+                                    <option>Times New Roman</option><option>Calibri</option><option>Arial</option><option>Georgia</option><option>Lucida Sans Unicode</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label for="pr-runhead" class="block text-xs font-semibold text-slate-600 mb-1">Running head (professional)</label>
+                                <input id="pr-runhead" type="text" maxlength="50" placeholder="SHORT TITLE IN CAPITALS" class="w-full border border-slate-200 rounded-xl p-3 text-sm">
+                            </div>
+                        </div>
+                        <details class="border border-slate-200 rounded-xl px-4 py-3">
+                            <summary class="cursor-pointer text-sm font-semibold text-slate-700">Title page details (optional)</summary>
+                            <p class="text-xs text-slate-500 mt-2">Only used if your paper has no title page. You will be asked before a title page is added.</p>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
+                                <input id="pr-tp-title" aria-label="Paper title" placeholder="Paper title" class="border border-slate-200 rounded-xl p-3 text-sm">
+                                <input id="pr-tp-author" aria-label="Author" placeholder="Author name" class="border border-slate-200 rounded-xl p-3 text-sm">
+                                <input id="pr-tp-affil" aria-label="Affiliation" placeholder="Department, University" class="border border-slate-200 rounded-xl p-3 text-sm">
+                                <input id="pr-tp-course" aria-label="Course" placeholder="Course number and name" class="border border-slate-200 rounded-xl p-3 text-sm">
+                                <input id="pr-tp-instr" aria-label="Instructor" placeholder="Instructor" class="border border-slate-200 rounded-xl p-3 text-sm">
+                                <input id="pr-tp-date" aria-label="Due date" placeholder="Due date" class="border border-slate-200 rounded-xl p-3 text-sm">
+                            </div>
+                        </details>
+                        <div class="flex items-center gap-3">
+                            <button id="pr-start" type="button" onclick="prStartReview()" disabled class="bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold py-3 px-6 rounded-xl shadow-md flex items-center gap-2"><i data-lucide="scan-search" class="w-4 h-4"></i> Review my paper</button>
+                            <span class="text-xs text-slate-500">Your file is processed in this browser tab and is not uploaded anywhere.</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Progress (used for both phases) -->
+                <div id="pr-step-progress" class="hidden bg-white border border-slate-200 rounded-2xl p-6 space-y-5" aria-live="polite">
+                    <div class="flex items-end justify-between">
+                        <div>
+                            <p id="pr-progress-title" class="text-xs font-extrabold uppercase tracking-widest text-violet-600">Reviewing</p>
+                            <p id="pr-progress-label" class="text-lg font-bold text-slate-900">Starting…</p>
+                        </div>
+                        <p id="pr-progress-pct" class="text-3xl font-extrabold text-slate-900 tabular-nums">0%</p>
+                    </div>
+                    <div class="h-3 bg-slate-100 rounded-full overflow-hidden" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="pr-bar-track" aria-label="Review progress">
+                        <div id="pr-bar" class="h-full bg-gradient-to-r from-violet-500 to-indigo-500 rounded-full" style="width: 0%; transition: width 0.5s ease;"></div>
+                    </div>
+                    <ol id="pr-stage-list" class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm"></ol>
+                </div>
+
+                <!-- Step 3: questions -->
+                <div id="pr-step-review" class="hidden space-y-5"></div>
+
+                <!-- Step 4: done -->
+                <div id="pr-step-done" class="hidden space-y-5"></div>
+            </div>
+        </div>
+
+        <!-- Integrated Editor and Workspace Preview Workspace -->
+        <div id="editor-view" data-pane="edit" class="hidden flex-1 flex flex-col lg:flex-row overflow-hidden w-full">
+            <div class="lg:hidden shrink-0 bg-white border-b border-slate-200 px-3 py-2">
+                <div role="tablist" class="flex gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200">
+                    <button type="button" role="tab" id="pane-tab-edit" onclick="setEditorPane('edit')" class="flex-1 py-2 text-xs font-bold rounded-lg transition-all bg-white text-blue-600 shadow-sm" aria-selected="true">Edit</button>
+                    <button type="button" role="tab" id="pane-tab-preview" onclick="setEditorPane('preview')" class="flex-1 py-2 text-xs font-bold rounded-lg transition-all text-slate-600" aria-selected="false">Preview</button>
+                </div>
+            </div>
+            
+            <!-- Left Side Interactive Control Dock -->
+            <div id="edit-pane" class="w-full lg:w-1/2 flex-1 min-h-0 bg-white flex flex-col overflow-y-auto lg:border-r border-slate-200 custom-scrollbar">
+                <div class="p-4 sm:p-6 lg:p-8 space-y-6 lg:space-y-8">
+                    <div id="table-editor-panel" class="space-y-8">
+                    
+                    <!-- Structural Customizer -->
+                    <div class="bg-slate-50 border border-slate-200/80 rounded-2xl p-5 space-y-4">
+                        <div class="flex items-center justify-between border-b border-slate-200/60 pb-3">
+                            <h3 class="font-bold text-slate-800 text-sm flex items-center gap-2">
+                                <i data-lucide="settings-2" class="w-4 h-4 text-blue-600"></i>
+                                1. Table Metadata
+                            </h3>
+                        </div>
+                        
+                        <div class="grid grid-cols-4 gap-4">
+                            <div class="col-span-1">
+                                <label class="block text-xs font-semibold text-slate-600 mb-1">Table no.</label>
+                                <input type="text" id="table-number" value="1" class="w-full border border-slate-200 rounded-xl p-3 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all" oninput="updatePreview()">
+                            </div>
+                            <div class="col-span-3">
+                                <div class="flex items-center gap-1 mb-1.5">
+                                    <label class="block text-xs font-semibold text-slate-600">Table title (title case)</label>
+                                    <div class="group relative">
+                                        <i data-lucide="help-circle" class="w-3.5 h-3.5 text-slate-400 cursor-pointer"></i>
+                                        <span class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-56 p-2.5 bg-slate-900 text-white text-[11px] rounded-lg shadow-lg opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity z-30 leading-normal">
+                                            APA requires table titles to be in title case (capitalize major words) and italicized.
+                                        </span>
+                                    </div>
+                                </div>
+                                <input type="text" id="table-title" value="Descriptive Statistics for Study Variables" class="w-full border border-slate-200 rounded-xl p-3 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all" oninput="updatePreview()">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Spreadsheet Table Sandbox -->
+                    <div class="space-y-4">
+                        <div class="flex flex-wrap justify-between items-center gap-3">
+                            <h3 class="font-bold text-slate-800 text-sm flex items-center gap-2 shrink-0 whitespace-nowrap">
+                                <i data-lucide="edit-3" class="w-4 h-4 text-indigo-600"></i>
+                                2. Populate Grid Data
+                            </h3>
+                            
+                            <!-- Inline Controller buttons -->
+                            <div class="flex flex-wrap items-center gap-1 bg-slate-100 p-1.5 rounded-xl border border-slate-200">
+                                <button onclick="modifyGrid('row', 'add')" class="text-xs font-semibold hover:bg-white text-slate-700 hover:shadow-sm px-2.5 py-1.5 rounded-lg transition-all flex items-center gap-1 whitespace-nowrap" title="Add Row Below">
+                                    <i data-lucide="plus" class="w-3.5 h-3.5 text-emerald-600"></i> Add row
+                                </button>
+                                <button onclick="modifyGrid('row', 'remove')" class="text-xs font-semibold hover:bg-white text-slate-700 hover:shadow-sm px-2.5 py-1.5 rounded-lg transition-all flex items-center gap-1 whitespace-nowrap" title="Remove Bottom Row">
+                                    <i data-lucide="minus" class="w-3.5 h-3.5 text-rose-600"></i> Remove row
+                                </button>
+                                <div class="w-px h-4 bg-slate-200 mx-1"></div>
+                                <button onclick="modifyGrid('col', 'add')" class="text-xs font-semibold hover:bg-white text-slate-700 hover:shadow-sm px-2.5 py-1.5 rounded-lg transition-all flex items-center gap-1 whitespace-nowrap" title="Add Column Right">
+                                    <i data-lucide="plus" class="w-3.5 h-3.5 text-emerald-600"></i> Add column
+                                </button>
+                                <button onclick="modifyGrid('col', 'remove')" class="text-xs font-semibold hover:bg-white text-slate-700 hover:shadow-sm px-2.5 py-1.5 rounded-lg transition-all flex items-center gap-1 whitespace-nowrap" title="Remove Last Column">
+                                    <i data-lucide="minus" class="w-3.5 h-3.5 text-rose-600"></i> Remove column
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <!-- High-fidelity custom table editor wrapper -->
+                        <div class="border border-slate-200 rounded-2xl overflow-hidden bg-slate-50/50 p-4">
+                            <div class="overflow-x-auto border border-slate-200/60 rounded-xl bg-white shadow-sm custom-scrollbar">
+                                <table class="w-full border-collapse">
+                                    <tbody id="editor-grid">
+                                        <!-- Interactive table items injected by JS -->
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div class="flex items-center gap-2 text-xs text-slate-400 mt-3 px-1">
+                                <i data-lucide="sparkles" class="w-3.5 h-3.5 text-amber-500 shrink-0"></i>
+                                <span>The first row is styled as the APA Header. Tap cells directly to write, and tab through to navigate rapidly.</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- APA Footnote Configurator -->
+                    <div class="bg-slate-50 border border-slate-200/80 rounded-2xl p-5 space-y-4">
+                        <div class="flex items-center justify-between border-b border-slate-200/60 pb-3">
+                            <h3 class="font-bold text-slate-800 text-sm flex items-center gap-2">
+                                <i data-lucide="file-text" class="w-4 h-4 text-purple-600"></i>
+                                3. Table Notes & Annotations
+                            </h3>
+                            <div class="group relative">
+                                <i data-lucide="help-circle" class="w-4 h-4 text-slate-400 cursor-pointer"></i>
+                                <span class="absolute bottom-full right-0 mb-2 w-64 p-3 bg-slate-900 text-white text-[11px] rounded-xl shadow-xl opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity z-30 leading-relaxed">
+                                    <strong>APA Note Hierachy:</strong><br/>
+                                    1. <em>General notes</em> (clarify sample abbreviations)<br/>
+                                    2. <em>Specific notes</em> (superscript pointers)<br/>
+                                    3. <em>Probability notes</em> (*p values)
+                                </span>
+                            </div>
+                        </div>
+                        
+                        <div class="space-y-4">
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-600 mb-1">General note</label>
+                                <textarea id="note-general" rows="2" class="w-full border border-slate-200 rounded-xl p-3 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all placeholder-slate-400" placeholder="e.g., N = 150. All values rounded to nearest decimal." oninput="updatePreview()"></textarea>
+                            </div>
+                            
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-600 mb-1">Specific note</label>
+                                    <textarea id="note-specific" rows="2" class="w-full border border-slate-200 rounded-xl p-3 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all placeholder-slate-400" placeholder="e.g., a Value indicates extreme outlier." oninput="updatePreview()"></textarea>
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-600 mb-1">Probability note</label>
+                                    <textarea id="note-prob" rows="2" class="w-full border border-slate-200 rounded-xl p-3 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all placeholder-slate-400" placeholder="e.g., * p < .05. ** p < .01." oninput="updatePreview()"></textarea>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    </div>
+
+                    <div id="bibliography-editor-panel" class="hidden space-y-6">
+                        <div class="bg-slate-50 border border-slate-200/80 rounded-2xl p-5 space-y-4">
+                            <div class="flex items-center justify-between border-b border-slate-200/60 pb-3">
+                                <h3 class="font-bold text-slate-800 text-sm flex items-center gap-2">
+                                    <i data-lucide="book-text" class="w-4 h-4 text-emerald-600"></i>
+                                    1. Paste Your Bibliography
+                                </h3>
+                                <span class="text-[10px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-600 border border-emerald-100 px-2.5 py-0.5 rounded-full">APA 7 Reference List</span>
+                            </div>
+                            <textarea id="bibliography-input" rows="9" class="w-full border border-slate-200 rounded-xl p-3 text-sm leading-relaxed focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all placeholder-slate-400" placeholder="Paste references here. You can paste one per line or as grouped paragraphs."></textarea>
+                            <div class="flex flex-wrap items-center gap-2">
+                                <button onclick="formatBibliography()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2.5 px-4 rounded-xl transition-all duration-200 whitespace-nowrap flex items-center gap-2">
+                                    <i data-lucide="wand-sparkles" class="w-4 h-4"></i>
+                                    Format Bibliography
+                                </button>
+                                <label for="reference-file-input" class="cursor-pointer bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 text-xs font-semibold py-2.5 px-3 whitespace-nowrap rounded-xl flex items-center gap-2">
+                                    <i data-lucide="file-up" class="w-4 h-4"></i> Import BibTeX / RIS file
+                                </label>
+                                <input type="file" id="reference-file-input" accept=".bib,.ris,.txt,.enw" class="sr-only" onchange="handleReferenceFileImport(event)">
+                            </div>
+                            <label class="flex items-start gap-2 text-xs text-slate-600">
+                                <input type="checkbox" id="rebuild-toggle" checked class="mt-0.5 rounded border-slate-300">
+                                <span><strong>Rebuild entries from their parts</strong> (standardizes punctuation, capitalization and italics). Entries that can't be read with confidence stay as typed.</span>
+                            </label>
+                            <p class="text-xs text-slate-500">Removes bullets and numbers, sorts alphabetically and applies hanging indents. Import accepts BibTeX or RIS exports from Zotero, Mendeley or EndNote.</p>
+                                                </div>
+
+                        <details class="bg-slate-50 border border-slate-200/80 rounded-2xl px-5 py-3">
+                            <summary class="cursor-pointer font-semibold text-slate-700 text-sm">How the list is formatted</summary>
+                            <div class="pt-2"><p class="text-xs text-slate-500 leading-relaxed">
+                                This formatter applies reference-list structure rules: entries are sorted by first author surname, rendered as double-spaced lines, and displayed with hanging indents suitable for manuscript references.
+                            </p></div>
+                        </details>
+
+                        <details class="bg-slate-50 border border-slate-200/80 rounded-2xl px-5 py-3">
+                            <summary class="cursor-pointer font-semibold text-slate-700 text-sm">2. Check in-text citations (optional)</summary>
+                            <div class="space-y-3 pt-3">
+                            <p class="text-xs text-slate-500 leading-relaxed">Paste your manuscript text (without the reference list) to find citations missing from the list and references that are never cited.</p>
+                            <label for="manuscript-input" class="sr-only">Manuscript text</label>
+                            <textarea id="manuscript-input" rows="6" placeholder="Paste your paper text here…" class="w-full border border-slate-200 rounded-xl p-3 text-sm focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none bg-white"></textarea>
+                            <button type="button" onclick="checkCitationsAgainstReferences()" class="bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 text-xs font-semibold py-2 px-3 rounded-xl">Check citations</button>
+                            <div id="citation-check-results" class="text-xs text-slate-700 leading-relaxed" aria-live="polite"></div>
+                        </div>
+                        </details>
+
+                        <div class="bg-amber-50 border border-amber-200 rounded-2xl p-5 space-y-3">
+                            <h3 class="font-bold text-amber-900 text-sm flex items-center gap-2">
+                                <i data-lucide="triangle-alert" class="w-4 h-4 text-amber-600"></i>
+                                APA Metadata Warnings
+                            </h3>
+                            <p class="text-xs text-amber-800 leading-relaxed">
+                                These checks flag likely APA 7 issues. Review and correct references manually where needed.
+                            </p>
+                            <div id="bibliography-issues" class="text-xs text-amber-900 leading-relaxed">
+                                No warnings yet. Format your bibliography to run checks.
+                            </div>
+                        </div>
+
+                        <div class="bg-indigo-50 border border-indigo-200/80 rounded-2xl p-4 flex items-center justify-between">
+                            <div class="flex items-center gap-3">
+                                <div class="bg-indigo-600 text-white p-2.5 rounded-xl shadow-sm">
+                                    <i data-lucide="quote" class="w-4 h-4"></i>
+                                </div>
+                                <div>
+                                    <h4 class="text-xs font-bold text-indigo-950">Have a PDF file or Web Link?</h4>
+                                    <p class="text-[11px] text-indigo-700">Extract bibliographic metadata automatically and generate an APA 7 citation.</p>
+                                </div>
+                            </div>
+                            <button onclick="loadCitationWorkspace()" class="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold px-3 py-2 rounded-xl transition flex items-center gap-1.5 shrink-0 shadow-sm">
+                                Citation Generator <i data-lucide="arrow-right" class="w-3.5 h-3.5"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div id="citation-editor-panel" class="hidden space-y-6">
+                        <!-- Source Selection Tabs -->
+                        <div class="bg-slate-50 border border-slate-200/80 rounded-2xl p-5 space-y-4">
+                            <div class="flex items-center justify-between border-b border-slate-200/60 pb-3">
+                                <h3 class="font-bold text-slate-800 text-sm flex items-center gap-2">
+                                    <i data-lucide="quote" class="w-4 h-4 text-indigo-600"></i>
+                                    1. Choose Citation Source
+                                </h3>
+                            </div>
+
+                            <!-- Source Tabs -->
+                            <div class="flex p-1 bg-slate-200/70 rounded-xl gap-1">
+                                <button id="tab-btn-link" onclick="switchCitationTab('link')" class="flex-1 py-2 px-3 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-2 bg-white text-indigo-600 shadow-sm">
+                                    <i data-lucide="link-2" class="w-4 h-4"></i> Web Link / DOI
+                                </button>
+                                <button id="tab-btn-pdf" onclick="switchCitationTab('pdf')" class="flex-1 py-2 px-3 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-2 text-slate-600 hover:text-slate-900">
+                                    <i data-lucide="file-up" class="w-4 h-4"></i> Upload PDF File
+                                </button>
+                            </div>
+
+                            <!-- Tab 1: PDF Upload -->
+                            <div id="citation-pdf-tab" class="hidden space-y-4">
+                                <div id="pdf-dropzone" onclick="document.getElementById('pdf-file-input').click()"
+                                    class="border-2 border-dashed border-slate-300 hover:border-indigo-500 hover:bg-indigo-50/20 rounded-2xl p-5 flex flex-col items-center justify-center text-center cursor-pointer transition-all duration-200 group">
+                                    <input type="file" id="pdf-file-input" accept=".pdf,application/pdf" multiple class="hidden" onchange="handlePdfFileInput(event)">
+                                    <div class="bg-indigo-50 group-hover:bg-indigo-100 text-indigo-600 p-2.5 rounded-xl mb-2 transition-colors">
+                                        <i data-lucide="file-text" class="w-5 h-5"></i>
+                                    </div>
+                                    <p class="text-sm font-bold text-slate-800 group-hover:text-indigo-600 transition-colors">
+                                        Click to upload or drag &amp; drop one or more PDFs
+                                    </p>
+                                    <p class="text-xs text-slate-400 mt-1 max-w-sm">
+                                        Select several files at once. Each PDF's DOI, title and authors are read in your browser; files are not uploaded.
+                                    </p>
+                                </div>
+                            </div>
+
+                            <!-- Tab 2: Web Link / DOI -->
+                            <div id="citation-link-tab" class="space-y-4">
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-600 mb-1">Web Link or DOI</label>
+                                    <div class="flex gap-2">
+                                        <input type="text" id="citation-url-input"
+                                            placeholder="DOI, article link, or social media post link"
+                                            onkeydown="if(event.key === 'Enter') handleResolveUrl()"
+                                            class="flex-1 border border-slate-200 rounded-xl p-3 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all placeholder-slate-400">
+                                        <button onclick="handleResolveUrl()" id="btn-resolve-url"
+                                            class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2.5 px-4 rounded-xl transition-all flex items-center gap-1.5 shrink-0 shadow-sm">
+                                            <i data-lucide="sparkles" class="w-4 h-4"></i> Generate
+                                        </button>
+                                    </div>
+                                    <div class="flex flex-wrap items-center gap-1.5 mt-2.5">
+                                        <span class="text-[11px] text-slate-400">Try an example:</span>
+                                        <button onclick="loadSampleCitation('nature')" class="text-[11px] font-medium bg-slate-100 hover:bg-indigo-50 hover:text-indigo-600 text-slate-600 px-2 py-0.5 rounded-lg border border-slate-200 transition">Nature DOI</button>
+                                        <button onclick="loadSampleCitation('arxiv')" class="text-[11px] font-medium bg-slate-100 hover:bg-indigo-50 hover:text-indigo-600 text-slate-600 px-2 py-0.5 rounded-lg border border-slate-200 transition">arXiv Preprint</button>
+                                        <button onclick="loadSampleCitation('who')" class="text-[11px] font-medium bg-slate-100 hover:bg-indigo-50 hover:text-indigo-600 text-slate-600 px-2 py-0.5 rounded-lg border border-slate-200 transition">WHO Report</button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <p class="text-[11px] text-slate-400 -mt-2">Tip: paste several links or DOIs separated by spaces or new lines to generate them all at once. A link to a PDF is downloaded and read like an uploaded file.</p>
+
+                            <!-- Resolution Status Banner -->
+                            <div id="citation-status-card" role="status" aria-live="polite" class="hidden rounded-xl p-3.5 text-xs flex items-start gap-2.5 transition-all">
+                                <div id="citation-status-icon" class="shrink-0 mt-0.5"></div>
+                                <div class="flex-1">
+                                    <p id="citation-status-title" class="font-bold"></p>
+                                    <p id="citation-status-desc" class="mt-0.5 opacity-90"></p>
+                                </div>
+                            </div>
+
+                            <!-- Several PDFs or links at once -->
+                            <div id="citation-batch" class="hidden space-y-3 bg-slate-50 border border-slate-200/80 rounded-2xl p-4"></div>
+                            <p id="citation-batch-note" class="hidden text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-xl p-3">
+                                <span data-note-text></span>
+                                <button type="button" onclick="loadBibliographyWorkspace()" class="font-semibold underline">Open the Bibliography Formatter</button>
+                            </p>
+                        </div>
+
+                        <!-- Extracted / Editable Metadata Form -->
+                        <div class="bg-slate-50 border border-slate-200/80 rounded-2xl p-5 space-y-4">
+                            <div class="flex items-center justify-between border-b border-slate-200/60 pb-3">
+                                <h3 class="font-bold text-slate-800 text-sm flex items-center gap-2">
+                                    <i data-lucide="sliders-horizontal" class="w-4 h-4 text-indigo-600"></i>
+                                    2. Review &amp; Edit Metadata
+                                </h3>
+                                <button onclick="resetCitationForm()" class="text-xs text-slate-400 hover:text-rose-600 transition flex items-center gap-1">
+                                    <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i> Clear
+                                </button>
+                            </div>
+                            <p id="citation-prov-legend" class="hidden text-[11px] text-slate-500 -mt-1">
+                                Field markers:
+                                <span class="inline-block w-2 h-2 rounded-sm align-middle" style="background:#10b981"></span> found in source &nbsp;
+                                <span class="inline-block w-2 h-2 rounded-sm align-middle" style="background:#f59e0b"></span> guessed from link &nbsp;
+                                <span class="inline-block w-2 h-2 rounded-sm align-middle" style="background:#f43f5e"></span> missing, please add
+                            </p>
+
+                            <div class="space-y-4">
+                                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                    <div class="col-span-2">
+                                        <label class="block text-xs font-semibold text-slate-600 mb-1">Source Type</label>
+                                        <select id="cite-type" onchange="handleCiteTypeChange()" class="w-full border border-slate-200 rounded-xl p-3 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all bg-white">
+                                            <option value="journal">Journal Article</option>
+                                            <option value="book">Book / Monograph</option>
+                                            <option value="webpage">Webpage / Website Page</option>
+                                            <option value="article">News / Magazine / Blog Article</option>
+                                            <option value="video">Online Video (YouTube, etc.)</option>
+                                            <option value="chapter">Book Chapter (Edited Book)</option>
+                                            <option value="thesis">Thesis / Dissertation</option>
+                                            <option value="dataset">Dataset</option>
+                                            <option value="software">Software / App</option>
+                                            <option value="podcast">Podcast Episode</option>
+                                            <option value="social">Social Media Post (X, Instagram, TikTok…)</option>
+                                            <option value="report">Report / Working Paper</option>
+                                            <option value="religious">Religious / Foundational Document</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-span-1">
+                                        <label class="block text-xs font-semibold text-slate-600 mb-1">Year</label>
+                                        <input type="text" id="cite-year" placeholder="e.g. 2024" oninput="updateCitationPreview()" class="w-full border border-slate-200 rounded-xl p-3 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all bg-white">
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <div class="flex items-center justify-between mb-1.5">
+                                        <label class="block text-xs font-semibold text-slate-600">Title of Work</label>
+                                        <button type="button" onclick="autoApplySentenceCaseToTitle()" class="text-[11px] text-indigo-600 hover:text-indigo-800 font-semibold flex items-center gap-1">
+                                            <i data-lucide="wand-2" class="w-3 h-3"></i> Apply APA Sentence Case
+                                        </button>
+                                    </div>
+                                    <textarea id="cite-title" rows="2" placeholder="Title of article, book, or webpage..." oninput="updateCitationPreview()" class="w-full border border-slate-200 rounded-xl p-3 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all bg-white placeholder-slate-400"></textarea>
+                                </div>
+
+                                <div>
+                                    <div class="flex items-center justify-between mb-1.5">
+                                        <label class="block text-xs font-semibold text-slate-600">Authors</label>
+                                    </div>
+                                    <input type="text" id="cite-authors" placeholder="Smith, J. A., & Davis, M." oninput="updateCitationPreview()" class="w-full border border-slate-200 rounded-xl p-3 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all bg-white">
+                                </div>
+
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div>
+                                        <label id="cite-source-label" class="block text-xs font-semibold text-slate-600 mb-1">Journal Name</label>
+                                        <input type="text" id="cite-source" placeholder="e.g. Nature or Academic Press" oninput="updateCitationPreview()" class="w-full border border-slate-200 rounded-xl p-3 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all bg-white">
+                                    </div>
+                                    <div id="cite-monthday-wrapper" class="hidden">
+                                        <label class="block text-xs font-semibold text-slate-600 mb-1">Month, Day (Webpage)</label>
+                                        <input type="text" id="cite-monthday" placeholder="e.g. October 14" oninput="updateCitationPreview()" class="w-full border border-slate-200 rounded-xl p-3 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all bg-white">
+                                    </div>
+                                    <div id="cite-journal-meta-wrapper" class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                                        <div id="cite-wrap-volume">
+                                            <label class="block text-xs font-semibold text-slate-600 mb-1">Volume</label>
+                                            <input type="text" id="cite-volume" placeholder="585" oninput="updateCitationPreview()" class="w-full border border-slate-200 rounded-xl p-3 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all bg-white">
+                                        </div>
+                                        <div id="cite-wrap-issue">
+                                            <label class="block text-xs font-semibold text-slate-600 mb-1">Issue</label>
+                                            <input type="text" id="cite-issue" placeholder="7825" oninput="updateCitationPreview()" class="w-full border border-slate-200 rounded-xl p-3 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all bg-white">
+                                        </div>
+                                        <div id="cite-wrap-pages">
+                                            <label class="block text-xs font-semibold text-slate-600 mb-1">Pages</label>
+                                            <input type="text" id="cite-pages" placeholder="357-362" oninput="updateCitationPreview()" class="w-full border border-slate-200 rounded-xl p-3 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all bg-white">
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div id="cite-extra-fields" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div id="cite-wrap-container" class="hidden md:col-span-2">
+                                        <label id="cite-container-label" for="cite-container" class="block text-xs font-semibold text-slate-600 mb-1">Container Title</label>
+                                        <input type="text" id="cite-container" oninput="updateCitationPreview()" class="w-full border border-slate-200 rounded-xl p-3 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all bg-white">
+                                    </div>
+                                    <div id="cite-wrap-media" class="hidden md:col-span-2">
+                                        <label for="cite-media" class="block text-xs font-semibold text-slate-600 mb-1">Attached media (optional)</label>
+                                        <input type="text" id="cite-media" placeholder="e.g. Image attached, Video attached, Thumbnail with link attached" oninput="updateCitationPreview()" class="w-full border border-slate-200 rounded-xl p-3 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all bg-white">
+                                    </div>
+                                    <div id="cite-wrap-editors" class="hidden md:col-span-2">
+                                        <label for="cite-editors" class="block text-xs font-semibold text-slate-600 mb-1">Editors</label>
+                                        <input type="text" id="cite-editors" placeholder="Smith, J. A., & Davis, M." oninput="updateCitationPreview()" class="w-full border border-slate-200 rounded-xl p-3 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all bg-white">
+                                    </div>
+                                    <details id="cite-more-options" class="md:col-span-2 rounded-xl border border-slate-200 bg-white/60 px-4 py-2.5">
+                                        <summary class="cursor-pointer text-xs font-semibold text-slate-600">More options</summary>
+                                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 pt-3 pb-1">
+                                    <div id="cite-wrap-edition" class="hidden">
+                                        <label id="cite-edition-label" for="cite-edition" class="block text-xs font-semibold text-slate-600 mb-1">Edition</label>
+                                        <input type="text" id="cite-edition" placeholder="2nd" oninput="updateCitationPreview()" class="w-full border border-slate-200 rounded-xl p-3 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all bg-white">
+                                    </div>
+                                    <div id="cite-wrap-translator" class="hidden">
+                                        <label for="cite-translator" class="block text-xs font-semibold text-slate-600 mb-1">Translator</label>
+                                        <input type="text" id="cite-translator" placeholder="J. A. Smith" oninput="updateCitationPreview()" class="w-full border border-slate-200 rounded-xl p-3 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all bg-white">
+                                    </div>
+                                    <div id="cite-wrap-descriptor" class="hidden">
+                                        <label for="cite-descriptor" class="block text-xs font-semibold text-slate-600 mb-1">Format Description (optional)</label>
+                                        <input type="text" id="cite-descriptor" oninput="updateCitationPreview()" class="w-full border border-slate-200 rounded-xl p-3 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all bg-white">
+                                    </div>
+                                    <div id="cite-wrap-retrieved" class="hidden md:col-span-2 flex flex-wrap items-center gap-3">
+                                        <label class="flex items-center gap-2 text-xs font-semibold text-slate-600">
+                                            <input type="checkbox" id="cite-retrieved-on" onchange="updateCitationPreview()" class="rounded border-slate-300">
+                                            Add a retrieval date (for pages that change over time)
+                                        </label>
+                                        <input type="text" id="cite-retrieved-date" aria-label="Retrieval date" oninput="updateCitationPreview()" class="w-48 border border-slate-200 rounded-xl p-2 text-sm bg-white">
+                                    </div>
+                                        </div>
+                                    </details>
+                                </div>
+
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-600 mb-1">DOI or URL</label>
+                                    <input type="text" id="cite-doi-url" placeholder="https://doi.org/... or https://..." oninput="updateCitationPreview()" class="w-full border border-slate-200 rounded-xl p-3 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all bg-white">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div id="toc-editor-panel" class="hidden space-y-6">
+                        <div class="bg-slate-50 border border-slate-200/80 rounded-2xl p-5 space-y-4">
+                            <div class="flex items-center justify-between border-b border-slate-200/60 pb-3">
+                                <h3 class="font-bold text-slate-800 text-sm flex items-center gap-2"><i data-lucide="list-ordered" class="w-4 h-4 text-amber-600"></i> 1. Start from</h3>
+                                <span class="text-[10px] font-bold uppercase tracking-wider bg-amber-50 text-amber-700 border border-amber-100 px-2.5 py-0.5 rounded-full">APA 7 Contents</span>
+                            </div>
+                            <div role="tablist" class="flex gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200">
+                                <button type="button" role="tab" id="toc-tab-form" onclick="tocSwitchInput('form')" class="flex-1 py-2 px-3 text-xs font-bold rounded-lg transition-all">Build in form</button>
+                                <button type="button" role="tab" id="toc-tab-paste" onclick="tocSwitchInput('paste')" class="flex-1 py-2 px-3 text-xs font-bold rounded-lg transition-all">Paste a draft</button>
+                                <button type="button" role="tab" id="toc-tab-upload" onclick="tocSwitchInput('upload')" class="flex-1 py-2 px-3 text-xs font-bold rounded-lg transition-all">Upload Word draft</button>
+                            </div>
+                            <div id="toc-input-form" class="space-y-2">
+                                <p class="text-xs text-slate-500">Add entries in section 2 below. Quick-add common sections:</p>
+                                <div id="toc-common" class="flex flex-wrap gap-1.5"></div>
+                            </div>
+                            <div id="toc-input-paste" class="hidden space-y-3">
+                                <label for="toc-paste-input" class="block text-xs font-semibold text-slate-600">Paste your rough contents (one entry per line)</label>
+                                <textarea id="toc-paste-input" rows="8" class="w-full border border-slate-200 rounded-xl p-3 text-sm font-mono focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none placeholder-slate-400" placeholder="Introduction ........ 3&#10;Method ........ 5&#10;    Participants ........ 5&#10;    Procedure ........ 6&#10;Results 8&#10;References 14"></textarea>
+                                <p class="text-xs text-slate-500">Indented lines become sub-levels. Dot leaders, tabs or a trailing number all work, and so do numbered outlines (1, 1.1, 1.1.1).</p>
+                                <button type="button" onclick="tocLoadPasted()" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs py-2.5 px-4 rounded-xl">Clean up and load into the form</button>
+                            </div>
+                            <div id="toc-input-upload" class="hidden space-y-3">
+                                <label id="toc-dropzone" for="toc-file-input" class="block border-2 border-dashed border-slate-200 rounded-xl p-6 text-center cursor-pointer hover:border-blue-400 transition-colors">
+                                    <span class="block text-sm font-semibold text-slate-700">Drop a Word draft here, or click to browse</span>
+                                    <span class="block text-xs text-slate-500 mt-1">.docx or .txt. Uses its contents page if it has one, otherwise builds one from its Heading styles. Tables and figures are read from their captions.</span>
+                                </label>
+                                <input type="file" id="toc-file-input" accept=".docx,.txt" class="sr-only">
+                                <p id="toc-upload-status" class="text-xs text-slate-500" role="status" aria-live="polite"></p>
+                            </div>
+                        </div>
+
+                        <div class="space-y-3">
+                            <div class="flex items-center justify-between gap-2">
+                                <h3 class="font-bold text-slate-800 text-sm flex items-center gap-2"><i data-lucide="edit-3" class="w-4 h-4 text-indigo-600"></i> 2. Entries</h3>
+                                <div role="tablist" class="flex gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200">
+                                    <button type="button" role="tab" id="toc-list-contents" onclick="tocSwitchList('contents')" class="py-1.5 px-3 text-xs font-bold rounded-lg">Contents <span class="toc-count text-slate-400 font-semibold"></span></button>
+                                    <button type="button" role="tab" id="toc-list-tables" onclick="tocSwitchList('tables')" class="py-1.5 px-3 text-xs font-bold rounded-lg">Tables <span class="toc-count text-slate-400 font-semibold"></span></button>
+                                    <button type="button" role="tab" id="toc-list-figures" onclick="tocSwitchList('figures')" class="py-1.5 px-3 text-xs font-bold rounded-lg">Figures <span class="toc-count text-slate-400 font-semibold"></span></button>
+                                </div>
+                            </div>
+                            <p id="toc-level-hint" class="text-[11px] text-slate-500">Level 1 = main sections. Levels 2 to 5 indent 0.5 inch each, matching APA heading levels.</p>
+                            <div id="toc-rows" class="space-y-2"></div>
+                            <div class="flex flex-wrap gap-2">
+                                <button type="button" onclick="tocAddEntry()" class="bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 text-xs font-semibold py-2 px-3 rounded-xl">+ Add entry</button>
+                                <button type="button" onclick="tocTitleCaseAll()" class="bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 text-xs font-semibold py-2 px-3 rounded-xl">Title-case all entries</button>
+                                <button type="button" onclick="tocClearAll()" class="bg-white hover:bg-rose-50 border border-slate-200 text-rose-700 text-xs font-semibold py-2 px-3 rounded-xl">Clear this list</button>
+                            </div>
+                            <p id="toc-lists-note" class="text-[11px] text-slate-500"></p>
+                        </div>
+
+                        <div class="bg-slate-50 border border-slate-200/80 rounded-2xl p-5 space-y-4">
+                            <h3 class="font-bold text-slate-800 text-sm flex items-center gap-2"><i data-lucide="settings-2" class="w-4 h-4 text-blue-600"></i> 3. Layout</h3>
+                            <div>
+                                <label id="toc-title-label" for="toc-title-input" class="block text-xs font-semibold text-slate-600 mb-1">Page title</label>
+                                <input type="text" id="toc-title-input" oninput="tocTitleChanged()" class="w-full border border-slate-200 rounded-xl p-3 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none">
+                            </div>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div>
+                                    <label for="toc-opt-spacing" class="block text-xs font-semibold text-slate-600 mb-1">Line spacing</label>
+                                    <select id="toc-opt-spacing" onchange="tocOptionChanged()" class="w-full border border-slate-200 rounded-xl p-3 text-sm bg-white">
+                                        <option value="double">Double (APA default)</option>
+                                        <option value="mixed">Single within entries, space between</option>
+                                        <option value="single">Single</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label for="toc-opt-indent" class="block text-xs font-semibold text-slate-600 mb-1">Indent per level</label>
+                                    <select id="toc-opt-indent" onchange="tocOptionChanged()" class="w-full border border-slate-200 rounded-xl p-3 text-sm bg-white">
+                                        <option value="0.5">0.5 inch (APA)</option>
+                                        <option value="0.25">0.25 inch</option>
+                                        <option value="0.75">0.75 inch</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <label class="flex items-center gap-2 text-xs text-slate-700"><input type="checkbox" id="toc-opt-leaders" checked onchange="tocOptionChanged()" class="rounded border-slate-300"> Dot leaders to the page numbers</label>
+                            <label class="flex items-center gap-2 text-xs text-slate-700"><input type="checkbox" id="toc-opt-header" checked onchange="tocOptionChanged()" class="rounded border-slate-300"> Page number at top right</label>
+                            <label class="flex items-start gap-2 text-xs text-slate-700"><input type="checkbox" id="toc-opt-field" onchange="tocOptionChanged()" class="mt-0.5 rounded border-slate-300"> <span>Make the contents a live Word field (advanced)</span></label>
+                            <p id="toc-field-warning" class="hidden text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-2.5">Only use this if you will paste the page into a paper that uses Word's Heading 1 to 3 styles. When you right-click it in Word and choose Update Field, Word rebuilds the entries from those headings, and an empty document would give an empty list.</p>
+                        </div>
+
+                        <div class="bg-amber-50 border border-amber-200 rounded-2xl p-5 space-y-2">
+                            <h3 class="font-bold text-amber-900 text-sm flex items-center gap-2"><i data-lucide="triangle-alert" class="w-4 h-4 text-amber-600"></i> Checks</h3>
+                            <div id="toc-checks" class="text-xs text-amber-900 leading-relaxed" aria-live="polite"></div>
+                        </div>
+                    </div>
+
+                    <div class="h-12"></div>
+                </div>
+            </div>
+
+            <!-- Right Side Workspace Canvas (Live Preview) -->
+            <div id="preview-pane" class="w-full lg:w-1/2 flex-1 min-h-0 min-w-0 preview-canvas p-3 sm:p-6 lg:p-10 flex flex-col overflow-y-auto custom-scrollbar relative">
+                
+                <div class="max-w-3xl w-full mx-auto flex flex-col h-full">
+                    
+                    <!-- Paper Workspace Header Controls -->
+                    <div class="flex justify-between items-center mb-4 shrink-0">
+                        <span id="preview-mode-label" class="text-xs font-extrabold text-slate-500 uppercase tracking-widest flex items-center gap-2">
+                            <span class="w-2 h-2 rounded-full bg-blue-500"></span>
+                            Manuscript Paper Preview
+                        </span>
+                        
+                        <div class="flex gap-2 text-xs">
+                            <button onclick="toggleGridLineHelper()" class="bg-white border border-slate-200 hover:bg-slate-50 font-semibold px-3 py-1.5 rounded-lg text-slate-600 transition flex items-center gap-1.5">
+                                <i data-lucide="grid" class="w-3.5 h-3.5 text-slate-400"></i> Margin guides
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- Premium Manuscript Layout Sandbox -->
+                    <div class="flex-1 flex justify-center items-start">
+                        <div class="bg-white rounded-xl shadow-2xl border border-slate-200 p-4 sm:p-8 lg:p-12 w-full transform origin-top transition-all duration-300 relative min-w-0" id="preview-paper">
+                            
+                            <!-- Document Margin Overlay Hint -->
+                            <div class="hidden sm:block absolute inset-y-0 left-0 w-12 border-r border-dashed border-red-100 pointer-events-none opacity-50"></div>
+                            <div class="hidden sm:block absolute inset-y-0 right-0 w-12 border-l border-dashed border-red-100 pointer-events-none opacity-50"></div>
+
+                            <!-- Target HTML Copy/Export Wrapper -->
+                            <div id="table-export-container" class="apa-preview-container">
+                                
+                                <div style="font-weight: bold; margin-bottom: 0;">Table <span id="prev-num">1</span></div>
+                                <div style="font-style: italic; margin-bottom: 12pt;" id="prev-title">Descriptive Statistics for Study Variables</div>
+                                
+                                <table class="apa-table" id="prev-table">
+                                    <!-- Populated on load/edit -->
+                                </table>
+                                
+                                <div id="prev-notes-container" style="font-size: 10.5pt; line-height: 1.5; margin-top: 10pt;">
+                                    <span id="prev-note-general-wrapper" style="display: none;">
+                                        <i>Note.</i> <span id="prev-note-general"></span>
+                                    </span>
+                                    <span id="prev-note-specific-wrapper" style="display: none;">
+                                        <span id="prev-note-specific"></span>
+                                    </span>
+                                    <span id="prev-note-prob-wrapper" style="display: none;">
+                                        <span id="prev-note-prob"></span>
+                                    </span>
+                                </div>
+
+                            </div>
+
+                            <div id="bibliography-export-container" class="apa-preview-container" style="display: none;">
+                                <div style="text-align: center; font-weight: bold; margin-bottom: 12pt;">References</div>
+                                <div id="bibliography-preview-list" class="apa-reference-list">
+                                    <p class="apa-reference-item">Paste references and click Format Bibliography to generate an APA 7 reference list.</p>
+                                </div>
+                            </div>
+
+                            <div id="toc-export-container" class="apa-preview-container" style="display: none;"></div>
+
+                            <div id="citation-preview-wrapper" style="display: none;">
+                                <div style="text-align: center; font-weight: bold; margin-bottom: 12pt; font-family: 'Times New Roman', Times, serif; font-size: 12pt;">Reference</div>
+
+                                <!-- Target citation copy/export wrapper (contains ONLY the reference itself) -->
+                                <div id="citation-export-container" class="apa-preview-container">
+                                    <div class="apa-reference-list" style="margin-top: 0; margin-bottom: 0;">
+                                        <p id="prev-citation-reference" class="apa-reference-item" style="margin: 0;">
+                                            Upload a PDF or enter a link/DOI to generate an APA 7 reference.
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <!-- Actions and in-text citations (outside citation-export-container so they are never copied with the reference) -->
+                                <div class="flex flex-wrap items-center gap-2 mt-4" style="font-family: 'Plus Jakarta Sans', sans-serif;">
+                                    <button type="button" onclick="copyFormattedContent()" class="bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold px-3.5 py-2 rounded-lg flex items-center gap-1.5">
+                                        <i data-lucide="copy" class="w-3.5 h-3.5"></i> Copy reference
+                                    </button>
+                                    <button type="button" onclick="addCitationToBibliography()" class="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold px-3.5 py-2 rounded-lg flex items-center gap-1.5">
+                                        <i data-lucide="plus" class="w-3.5 h-3.5"></i> Add to bibliography
+                                    </button>
+                                </div>
+                                <p id="citation-added-note" class="hidden mt-3 text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-xl p-3" style="font-family: 'Plus Jakarta Sans', sans-serif;">
+                                    <span data-note-text></span>
+                                    <button type="button" onclick="loadBibliographyWorkspace()" class="font-semibold underline">Open the Bibliography Formatter</button>
+                                </p>
+
+                                <div id="citation-intext-container" class="border-t border-slate-200 pt-4 mt-6 space-y-3" style="font-family: 'Plus Jakarta Sans', sans-serif;">
+                                    <h4 class="text-xs font-bold text-slate-600">In-text citations</h4>
+                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                        <div>
+                                            <span class="text-[11px] font-semibold text-slate-500">Parenthetical</span>
+                                            <div class="flex items-center gap-2 mt-1">
+                                                <p id="prev-citation-parenthetical" class="flex-1 min-w-0 text-sm font-semibold text-slate-900 font-mono bg-slate-50 px-2.5 py-2 rounded-lg border border-slate-200 select-all">(Author, Year)</p>
+                                                <button type="button" onclick="copyInTextCitation('parenthetical')" aria-label="Copy parenthetical citation" class="text-xs font-semibold text-indigo-600 hover:text-indigo-800 shrink-0">Copy</button>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <span class="text-[11px] font-semibold text-slate-500">Narrative</span>
+                                            <div class="flex items-center gap-2 mt-1">
+                                                <p id="prev-citation-narrative" class="flex-1 min-w-0 text-sm font-semibold text-slate-900 font-mono bg-slate-50 px-2.5 py-2 rounded-lg border border-slate-200 select-all">Author (Year)</p>
+                                                <button type="button" onclick="copyInTextCitation('narrative')" aria-label="Copy narrative citation" class="text-xs font-semibold text-indigo-600 hover:text-indigo-800 shrink-0">Copy</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                        </div>
+                    </div>
+
+                    <!-- Paper margin disclaimer -->
+                    <p id="preview-disclaimer" class="text-[11px] text-slate-400 text-center mt-6">
+                        Table styling matches exact APA manuscript guidelines (double-spaced headers, no vertical borders, 1-inch margins).
+                    </p>
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+    <footer class="shrink-0 bg-white/80 border-t border-slate-200/80 px-4 py-2 text-center text-[11px] leading-snug text-slate-500">
+        Co-developed with <a href="https://claude.ai" target="_blank" rel="noopener" class="font-semibold text-slate-600 hover:underline">Claude</a> (AI by Anthropic) and tested by humans. Your files and text stay on your device.
+    </footer>
+
+    <!-- Paste Table Modal -->
+    <div id="paste-table-modal" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-6">
+        <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-xl max-h-[92vh] overflow-y-auto p-5 sm:p-8 space-y-5">
+            <div class="flex items-start justify-between">
+                <div class="space-y-1">
+                    <h3 class="text-lg font-bold text-slate-900">Import Table from Clipboard</h3>
+                    <p class="text-sm text-slate-500">Paste a copied table from Word, Google Docs, Excel, or Google Sheets.</p>
+                </div>
+                <button onclick="closePasteTableModal()" class="text-slate-400 hover:text-slate-700 hover:bg-slate-100 p-2 rounded-xl transition shrink-0 ml-4">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+
+            <div class="bg-slate-50 border border-slate-200 rounded-xl p-4 text-xs text-slate-500 space-y-1.5">
+                <p class="font-semibold text-slate-700 flex items-center gap-1.5"><i data-lucide="info" class="w-3.5 h-3.5 text-blue-500 shrink-0"></i> How to use</p>
+                <ol class="list-decimal list-inside space-y-0.5 pl-1">
+                    <li>Select your table in Word, Google Docs, Excel, or Google Sheets.</li>
+                    <li>Copy it with <kbd class="bg-white border border-slate-200 px-1 py-0.5 rounded text-[10px]">Ctrl+C</kbd> / <kbd class="bg-white border border-slate-200 px-1 py-0.5 rounded text-[10px]">Cmd+C</kbd>.</li>
+                    <li>Click the paste zone below and press <kbd class="bg-white border border-slate-200 px-1 py-0.5 rounded text-[10px]">Ctrl+V</kbd> / <kbd class="bg-white border border-slate-200 px-1 py-0.5 rounded text-[10px]">Cmd+V</kbd>.</li>
+                </ol>
+            </div>
+
+            <div id="paste-zone"
+                contenteditable="true"
+                class="min-h-[120px] border-2 border-dashed border-slate-200 rounded-xl p-5 text-sm text-slate-400 focus:outline-none focus:border-blue-400 focus:bg-blue-50/20 transition-all cursor-text leading-relaxed"
+                data-placeholder="Click here and press Ctrl+V / Cmd+V to paste your table…">
+            </div>
+
+            <div id="paste-preview-info" class="hidden bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3 text-sm text-emerald-800 flex items-center gap-2.5">
+                <i data-lucide="check-circle-2" class="w-4 h-4 text-emerald-600 shrink-0"></i>
+                <span id="paste-preview-text"></span>
+            </div>
+
+            <div id="paste-error-info" class="hidden bg-rose-50 border border-rose-200 rounded-xl px-4 py-3 text-sm text-rose-800 flex items-center gap-2.5">
+                <i data-lucide="alert-circle" class="w-4 h-4 text-rose-500 shrink-0"></i>
+                <span>Could not detect a table. Copy a table (not just text) from your document and try again.</span>
+            </div>
+
+            <div class="flex items-center gap-3 pt-1">
+                <button id="btn-import-table" onclick="importPastedTable()" disabled
+                    class="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold py-2.5 px-5 rounded-xl shadow-md shadow-blue-500/15 transition-all flex items-center gap-2">
+                    <i data-lucide="table-2" class="w-4 h-4"></i> Import & Format Table
+                </button>
+                <button onclick="closePasteTableModal()" class="text-slate-600 hover:text-slate-900 font-semibold py-2.5 px-4 rounded-xl hover:bg-slate-100 transition">
+                    Cancel
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>window.APA_METADATA_PROXY = 'https://apa-metadata-proxy.gngo-240.workers.dev/';</script>
+    <script src="js/reference-engine.js"></script>
+    <script src="js/reference-parser.js"></script>
+    <script src="js/web-metadata.js"></script>
+    <script src="js/docx-io.js"></script>
+    <script src="js/paper-ooxml.js"></script>
+    <script src="js/paper-review.js"></script>
+    <script src="js/paper-findings.js"></script>
+    <script src="js/paper-finish.js"></script>
+    <script src="js/app.js"></script>
+    <script src="js/table-formatter.js"></script>
+    <script src="js/bibliography-ui.js"></script>
+    <script src="js/citation-ui.js"></script>
+    <script src="js/export.js"></script>
+    <script src="js/toc-formatter.js"></script>
+    <script src="js/paper-review-ui.js"></script>
+    <script src="js/main.js"></script>
 </body>
 </html>
